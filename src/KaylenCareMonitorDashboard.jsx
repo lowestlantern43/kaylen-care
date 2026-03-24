@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { supabase } from "./supabase";
 
 const todayValue = () => new Date().toISOString().split("T")[0];
 const nowTimeValue = () => new Date().toTimeString().slice(0, 5);
@@ -215,6 +216,50 @@ export default function KaylenCareMonitorDashboard() {
     });
   };
 
+  const saveFoodEntry = async () => {
+    const showOtherFood = foodValue === "Other";
+    const showOtherLocation = foodForm.location === "Other";
+
+    const itemToSave = showOtherFood
+      ? foodForm.otherItem || ""
+      : foodForm.item || "";
+
+    const locationToSave = showOtherLocation
+      ? foodForm.otherLocation || ""
+      : foodForm.location || "";
+
+    const { error } = await supabase.from("food_logs").insert([
+      {
+        entry_date: foodForm.date,
+        entry_time: foodForm.time,
+        food_or_drink: itemToSave,
+        amount: foodForm.amount,
+        notes: foodForm.notes,
+        location: locationToSave,
+      },
+    ]);
+
+    if (error) {
+      console.error("Supabase save error:", error);
+      alert("Failed to save food entry");
+      return;
+    }
+
+    addLogEntry({
+      section: "Food Diary",
+      date: foodForm.date,
+      time: foodForm.time,
+      summary: `${itemToSave || "Food entry"} · ${foodForm.amount || "No amount"}`,
+      details: [
+        `Location: ${locationToSave || "Not set"}`,
+        foodForm.notes ? `Notes: ${foodForm.notes}` : null,
+      ].filter(Boolean),
+    });
+
+    resetFoodForm();
+    alert("Food entry saved");
+  };
+
   const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
 
@@ -376,19 +421,7 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
-                section: "Food Diary",
-                date: foodForm.date,
-                time: foodForm.time,
-                summary: `${showOtherFood ? foodForm.otherItem || "Food entry" : foodForm.item || "Food entry"} · ${foodForm.amount || "No amount"}`,
-                details: [
-                  `Location: ${showOtherLocation ? foodForm.otherLocation || "Other" : foodForm.location || "Not set"}`,
-                  foodForm.notes ? `Notes: ${foodForm.notes}` : null,
-                ].filter(Boolean),
-              });
-              resetFoodForm();
-            }}
+            onClick={saveFoodEntry}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
             Save food entry
