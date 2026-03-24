@@ -228,20 +228,22 @@ export default function KaylenCareMonitorDashboard() {
       ? foodForm.otherLocation || ""
       : foodForm.location || "";
 
-    const { error } = await supabase.from("food_logs").insert([
-      {
-        entry_date: foodForm.date,
-        entry_time: foodForm.time,
-        food_or_drink: itemToSave,
-        amount: foodForm.amount,
-        notes: foodForm.notes,
-        location: locationToSave,
-      },
-    ]);
+    const payload = {
+      entry_date: foodForm.date,
+      entry_time: foodForm.time,
+      food_or_drink: itemToSave,
+      amount: foodForm.amount,
+      notes: foodForm.notes,
+      location: locationToSave,
+    };
+
+    console.log("Saving to Supabase:", payload);
+
+    const { error } = await supabase.from("food_logs").insert([payload]);
 
     if (error) {
       console.error("Supabase save error:", error);
-      alert("Failed to save food entry");
+      alert(`Failed to save food entry: ${error.message}`);
       return;
     }
 
