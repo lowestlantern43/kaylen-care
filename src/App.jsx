@@ -1,5 +1,5 @@
-import KaylenCareMonitorDashboard from './KaylenCareMonitorDashboard.jsx'
+import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 
 export default function App() {
-  return <KaylenCareMonitorDashboard />
+  return <KaylenCareMonitorDashboard />;
 }
