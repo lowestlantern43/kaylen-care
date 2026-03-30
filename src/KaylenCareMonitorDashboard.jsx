@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "./Superbase";
 
 const todayValue = () => {
   const d = new Date();
@@ -29,6 +30,26 @@ const dedupeAppend = (items, value) => {
 const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
+const parseEntryDateTime = (dateStr, timeStr = "00:00") => {
+  if (!dateStr) return new Date(0);
+
+  const [day, month, year] = (dateStr || "").split("/");
+  if (!day || !month || !year) return new Date(0);
+
+  const [hours = "00", minutes = "00"] = (timeStr || "00:00").split(":");
+  const parsed = new Date(
+    Number(year),
+    Number(month) - 1,
+    Number(day),
+    Number(hours),
+    Number(minutes),
+    0,
+    0,
+  );
+
+  return Number.isNaN(parsed.getTime()) ? new Date(0) : parsed;
+};
+
 export default function KaylenCareMonitorDashboard() {
   const APP_PASSWORD = "Kaylen0309!";
 
@@ -42,6 +63,9 @@ export default function KaylenCareMonitorDashboard() {
   const [reportDays, setReportDays] = useState("7");
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
+  const [isLoadingLog, setIsLoadingLog] = useState(false);
+  const [isSavingEntry, setIsSavingEntry] = useState(false);
+  const [logError, setLogError] = useState("");
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
   const [savedMedicationOptions, setSavedMedicationOptions] = useState([]);
@@ -188,6 +212,44 @@ export default function KaylenCareMonitorDashboard() {
   const cardClassName =
     "rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm";
 
+  const fetchSharedLog = async () => {
+    setIsLoadingLog(true);
+    setLogError("");
+
+    const { data, error } = await supabase
+      .from("shared_log")
+      .select("*")
+      .order("logged_at", { ascending: false })
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Failed to load log:", error);
+      setLogError("Could not load the shared log.");
+      setSharedLog([]);
+      setIsLoadingLog(false);
+      return;
+    }
+
+    const mapped = (data || []).map((row) => ({
+      id: row.id,
+      createdAt: row.created_at,
+      section: row.section,
+      date: row.entry_date,
+      time: row.entry_time,
+      summary: row.summary,
+      details: Array.isArray(row.details) ? row.details : [],
+    }));
+
+    setSharedLog(mapped);
+    setIsLoadingLog(false);
+  };
+
+  useEffect(() => {
+    if (isUnlocked) {
+      fetchSharedLog();
+    }
+  }, [isUnlocked]);
+
   const openSection = (section) => {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
@@ -202,16 +264,47 @@ export default function KaylenCareMonitorDashboard() {
     setShareCopied(false);
   };
 
-  const addLogEntry = (entry) => {
-    setSharedLog((current) => [
-      {
-        id: makeId(),
-        createdAt: new Date().toISOString(),
-        ...entry,
-      },
-      ...current,
-    ]);
+  const addLogEntry = async (entry) => {
+    setIsSavingEntry(true);
+    setLogError("");
+
+    const rowToInsert = {
+      id: makeId(),
+      section: entry.section,
+      entry_date: entry.date || "",
+      entry_time: entry.time || "",
+      summary: entry.summary || "",
+      details: entry.details || [],
+      logged_at: parseEntryDateTime(entry.date, entry.time).toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from("shared_log")
+      .insert([rowToInsert])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Failed to save entry:", error);
+      setLogError("Failed to save entry.");
+      setIsSavingEntry(false);
+      return false;
+    }
+
+    const savedEntry = {
+      id: data.id,
+      createdAt: data.created_at,
+      section: data.section,
+      date: data.entry_date,
+      time: data.entry_time,
+      summary: data.summary,
+      details: Array.isArray(data.details) ? data.details : [],
+    };
+
+    setSharedLog((current) => [savedEntry, ...current]);
     closeSection();
+    setIsSavingEntry(false);
+    return true;
   };
 
   const resetFoodForm = () => {
@@ -308,8 +401,8 @@ export default function KaylenCareMonitorDashboard() {
     cutoff.setDate(cutoff.getDate() - (days - 1));
 
     return sharedLog.filter((entry) => {
-      const entryDate = new Date();
-      return !!entry.date && entryDate >= cutoff;
+      const entryDate = parseEntryDateTime(entry.date, entry.time);
+      return entryDate >= cutoff;
     });
   }, [reportDays, sharedLog]);
 
@@ -529,12 +622,13 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
+            disabled={isSavingEntry}
+            onClick={async () => {
               const amountText = isMilk
                 ? `${foodForm.amount || 0}oz`
                 : foodForm.amount || "No amount";
 
-              addLogEntry({
+              const saved = await addLogEntry({
                 section: "Food Diary",
                 date: foodForm.date,
                 time: foodForm.time,
@@ -553,6 +647,8 @@ export default function KaylenCareMonitorDashboard() {
                 ].filter(Boolean),
               });
 
+              if (!saved) return;
+
               if (showOtherFood && saveFoodForFuture) {
                 setSavedFoodOptions((current) =>
                   dedupeAppend(current, foodForm.otherItem),
@@ -561,9 +657,11 @@ export default function KaylenCareMonitorDashboard() {
 
               resetFoodForm();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} ${
+              isSavingEntry ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Save food entry
+            {isSavingEntry ? "Saving..." : "Save food entry"}
           </button>
         </div>
       </div>
@@ -707,8 +805,9 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
+            disabled={isSavingEntry}
+            onClick={async () => {
+              const saved = await addLogEntry({
                 section: "Medication",
                 date: medicationForm.date,
                 time: medicationForm.time,
@@ -723,6 +822,8 @@ export default function KaylenCareMonitorDashboard() {
                 ].filter(Boolean),
               });
 
+              if (!saved) return;
+
               if (showOtherMedication && saveMedicationForFuture) {
                 setSavedMedicationOptions((current) =>
                   dedupeAppend(current, medicationForm.otherMedicine),
@@ -731,9 +832,11 @@ export default function KaylenCareMonitorDashboard() {
 
               resetMedicationForm();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} ${
+              isSavingEntry ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Save medication entry
+            {isSavingEntry ? "Saving..." : "Save medication entry"}
           </button>
         </div>
       </div>
@@ -809,8 +912,9 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
+            disabled={isSavingEntry}
+            onClick={async () => {
+              const saved = await addLogEntry({
                 section: "Toileting",
                 date: toiletingForm.date,
                 time: toiletingForm.time,
@@ -819,11 +923,15 @@ export default function KaylenCareMonitorDashboard() {
                   toiletingForm.notes ? `Notes: ${toiletingForm.notes}` : null,
                 ].filter(Boolean),
               });
+
+              if (!saved) return;
               resetToiletingForm();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} ${
+              isSavingEntry ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Save toileting entry
+            {isSavingEntry ? "Saving..." : "Save toileting entry"}
           </button>
         </div>
       </div>
@@ -1018,8 +1126,9 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
+            disabled={isSavingEntry}
+            onClick={async () => {
+              const saved = await addLogEntry({
                 section: "Health",
                 date: healthForm.date,
                 time: healthForm.time,
@@ -1049,11 +1158,15 @@ export default function KaylenCareMonitorDashboard() {
                     : null,
                 ].filter(Boolean),
               });
+
+              if (!saved) return;
               resetHealthForm();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} ${
+              isSavingEntry ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Save health entry
+            {isSavingEntry ? "Saving..." : "Save health entry"}
           </button>
         </div>
       </div>
@@ -1170,8 +1283,9 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
+            disabled={isSavingEntry}
+            onClick={async () => {
+              const saved = await addLogEntry({
                 section: "Sleep",
                 date: sleepForm.date,
                 time: sleepForm.bedtime,
@@ -1184,11 +1298,15 @@ export default function KaylenCareMonitorDashboard() {
                   sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
                 ].filter(Boolean),
               });
+
+              if (!saved) return;
               resetSleepForm();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} ${
+              isSavingEntry ? "opacity-70 cursor-not-allowed" : ""
+            }`}
           >
-            Save sleep entry
+            {isSavingEntry ? "Saving..." : "Save sleep entry"}
           </button>
         </div>
       </div>
@@ -1267,7 +1385,7 @@ export default function KaylenCareMonitorDashboard() {
             Entries found
           </label>
           <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-            {recentEntries.length} entries in shared log
+            {isLoadingLog ? "Loading..." : `${recentEntries.length} entries in shared log`}
           </div>
         </div>
 
@@ -1276,7 +1394,11 @@ export default function KaylenCareMonitorDashboard() {
             Shared log
           </label>
           <div className="mt-3 space-y-3">
-            {recentEntries.length ? (
+            {isLoadingLog ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
+                Loading entries...
+              </div>
+            ) : recentEntries.length ? (
               recentEntries.map((entry) => (
                 <div
                   key={entry.id}
@@ -1315,6 +1437,7 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2 grid gap-3 sm:grid-cols-2">
           <button
             type="button"
+            onClick={fetchSharedLog}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
             Run report
@@ -1443,6 +1566,11 @@ export default function KaylenCareMonitorDashboard() {
             <div className="rounded-full border border-slate-300 bg-slate-100 px-5 py-2 text-sm font-semibold text-slate-700">
               12 month logs
             </div>
+            {logError ? (
+              <div className="w-full max-w-2xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                {logError}
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -1519,7 +1647,9 @@ export default function KaylenCareMonitorDashboard() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               Shared log
             </p>
-            <p className="mt-2 text-4xl font-bold">{sharedLog.length}</p>
+            <p className="mt-2 text-4xl font-bold">
+              {isLoadingLog ? "..." : sharedLog.length}
+            </p>
           </div>
         </section>
       </div>
@@ -1551,6 +1681,12 @@ export default function KaylenCareMonitorDashboard() {
                   </p>
                 </div>
               </div>
+
+              {logError ? (
+                <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                  {logError}
+                </div>
+              ) : null}
 
               {renderActiveForm()}
             </div>
