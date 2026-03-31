@@ -9,7 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@supabase/supabase-js": "^2.49.0",
+=======
+    "@supabase/supabase-js": "^2.101.0",
+>>>>>>> 4d63e7e (Fix Supabase filename)
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
