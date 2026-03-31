@@ -215,6 +215,54 @@ export default function KaylenCareMonitorDashboard() {
     closeSection();
   };
 
+  const loadFoodEntriesFromSupabase = async () => {
+    const { data, error } = await supabase
+      .from("milk_logs")
+      .select("*")
+      .order("time", { ascending: false });
+
+    if (error) {
+      console.error("Error loading Supabase entries:", error);
+      return;
+    }
+
+    const mappedEntries = (data || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const item = getValue("Item") || "Food entry";
+      const location = getValue("Location") || "Not set";
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const extraNotes = getValue("Notes");
+
+      const amountText =
+        row.unit === "oz"
+          ? `${row.amount || 0}oz`
+          : row.unit || "No amount";
+
+      return {
+        id: row.id ? String(row.id) : makeId(),
+        createdAt: row.time || new Date().toISOString(),
+        section: "Food Diary",
+        date,
+        time: timeText,
+        summary: `${item} · ${amountText}`,
+        details: [
+          `Location: ${location}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    setSharedLog(mappedEntries);
+  };
+
   const resetFoodForm = () => {
     setFoodForm({
       date: todayValue(),
@@ -281,6 +329,12 @@ export default function KaylenCareMonitorDashboard() {
     });
   };
 
+  useEffect(() => {
+    if (isUnlocked) {
+      loadFoodEntriesFromSupabase();
+    }
+  }, [isUnlocked]);
+
   const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
 
@@ -309,8 +363,12 @@ export default function KaylenCareMonitorDashboard() {
     cutoff.setDate(cutoff.getDate() - (days - 1));
 
     return sharedLog.filter((entry) => {
-      const entryDate = new Date();
-      return !!entry.date && entryDate >= cutoff;
+      if (!entry.date) return false;
+
+      const [day, month, year] = entry.date.split("/");
+      const entryDate = new Date(`${year}-${month}-${day}T00:00:00`);
+
+      return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
     });
   }, [reportDays, sharedLog]);
 
@@ -566,10 +624,6 @@ export default function KaylenCareMonitorDashboard() {
           <button
             type="button"
             onClick={async () => {
-              const amountText = isMilk
-                ? `${foodForm.amount || 0}oz`
-                : foodForm.amount || "No amount";
-
               const saved = await saveFoodEntryToSupabase({
                 selectedFood,
                 selectedLocation,
@@ -578,16 +632,7 @@ export default function KaylenCareMonitorDashboard() {
 
               if (!saved) return;
 
-              addLogEntry({
-                section: "Food Diary",
-                date: foodForm.date,
-                time: foodForm.time,
-                summary: `${selectedFood || "Food entry"} · ${amountText}`,
-                details: [
-                  `Location: ${selectedLocation}`,
-                  foodForm.notes ? `Notes: ${foodForm.notes}` : null,
-                ].filter(Boolean),
-              });
+              await loadFoodEntriesFromSupabase();
 
               if (showOtherFood && saveFoodForFuture) {
                 setSavedFoodOptions((current) =>
@@ -596,6 +641,7 @@ export default function KaylenCareMonitorDashboard() {
               }
 
               resetFoodForm();
+              closeSection();
             }}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
