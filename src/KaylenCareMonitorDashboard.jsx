@@ -216,17 +216,21 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const loadFoodEntriesFromSupabase = async () => {
-    const { data, error } = await supabase
-      .from("milk_logs")
-      .select("*")
-      .order("time", { ascending: false });
+    const [{ data: milkData, error: milkError }, { data: foodData, error: foodError }] =
+      await Promise.all([
+        supabase.from("milk_logs").select("*").order("time", { ascending: false }),
+        supabase.from("food_logs").select("*").order("time", { ascending: false }),
+      ]);
 
-    if (error) {
-      console.error("Error loading Supabase entries:", error);
-      return;
+    if (milkError) {
+      console.error("Error loading milk entries:", milkError);
     }
 
-    const mappedEntries = (data || []).map((row) => {
+    if (foodError) {
+      console.error("Error loading food entries:", foodError);
+    }
+
+    const mappedMilkEntries = (milkData || []).map((row) => {
       const notesText = row.notes || "";
       const parts = notesText.split(" | ");
 
@@ -235,24 +239,19 @@ export default function KaylenCareMonitorDashboard() {
         return found ? found.replace(`${label}: `, "") : "";
       };
 
-      const item = getValue("Item") || "Food entry";
+      const item = getValue("Item") || "Milk";
       const location = getValue("Location") || "Not set";
       const date = getValue("Date") || todayValue();
       const timeText = getValue("Time") || "";
       const extraNotes = getValue("Notes");
 
-      const amountText =
-        row.unit === "oz"
-          ? `${row.amount || 0}oz`
-          : row.unit || "No amount";
-
       return {
-        id: row.id ? String(row.id) : makeId(),
+        id: `milk-${row.id}`,
         createdAt: row.time || new Date().toISOString(),
         section: "Food Diary",
         date,
         time: timeText,
-        summary: `${item} · ${amountText}`,
+        summary: `${item} · ${row.amount || 0}oz`,
         details: [
           `Location: ${location}`,
           extraNotes ? `Notes: ${extraNotes}` : null,
@@ -260,7 +259,39 @@ export default function KaylenCareMonitorDashboard() {
       };
     });
 
-    setSharedLog(mappedEntries);
+    const mappedFoodEntries = (foodData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const location = getValue("Location") || "Not set";
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `food-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Food Diary",
+        date,
+        time: timeText,
+        summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
+        details: [
+          `Location: ${location}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const combined = [...mappedMilkEntries, ...mappedFoodEntries].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    );
+
+    setSharedLog(combined);
   };
 
   const resetFoodForm = () => {
@@ -412,30 +443,55 @@ export default function KaylenCareMonitorDashboard() {
     selectedLocation,
     isMilk,
   }) => {
+    if (isMilk) {
+      const payload = {
+        amount: Number(foodForm.amount || 0),
+        unit: "oz",
+        time: new Date().toISOString(),
+        notes: [
+          `Date: ${foodForm.date}`,
+          `Time: ${foodForm.time}`,
+          `Location: ${selectedLocation}`,
+          `Item: ${selectedFood || "Milk"}`,
+          foodForm.notes ? `Notes: ${foodForm.notes}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      };
+
+      const { error } = await supabase.from("milk_logs").insert([payload]);
+
+      if (error) {
+        console.error("Supabase milk save failed:", error);
+        alert("Milk save failed - check console");
+        return false;
+      }
+
+      return true;
+    }
+
     const payload = {
-      amount: isMilk ? Number(foodForm.amount || 0) : null,
-      unit: isMilk ? "oz" : foodForm.amount || "",
+      item: selectedFood || "Food entry",
+      amount: foodForm.amount || "",
       time: new Date().toISOString(),
       notes: [
         `Date: ${foodForm.date}`,
         `Time: ${foodForm.time}`,
         `Location: ${selectedLocation}`,
-        `Item: ${selectedFood || "Food entry"}`,
         foodForm.notes ? `Notes: ${foodForm.notes}` : null,
       ]
         .filter(Boolean)
         .join(" | "),
     };
 
-    const { error } = await supabase.from("milk_logs").insert([payload]);
+    const { error } = await supabase.from("food_logs").insert([payload]);
 
     if (error) {
-      console.error("Supabase save failed:", error);
-      alert("Save failed - check console");
+      console.error("Supabase food save failed:", error);
+      alert("Food save failed - check console");
       return false;
     }
 
-    console.log("Saved to Supabase");
     return true;
   };
 
