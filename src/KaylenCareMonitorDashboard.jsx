@@ -215,12 +215,37 @@ export default function KaylenCareMonitorDashboard() {
     closeSection();
   };
 
+  const parseNotesField = (notesText = "") => {
+    const parts = notesText.split(" | ");
+
+    const getValue = (label) => {
+      const found = parts.find((part) => part.startsWith(`${label}: `));
+      return found ? found.replace(`${label}: `, "") : "";
+    };
+
+    return {
+      date: getValue("Date"),
+      time: getValue("Time"),
+      location: getValue("Location"),
+      item: getValue("Item"),
+      notes: getValue("Notes"),
+    };
+  };
+
   const loadFoodEntriesFromSupabase = async () => {
-    const [{ data: milkData, error: milkError }, { data: foodData, error: foodError }] =
-      await Promise.all([
-        supabase.from("milk_logs").select("*").order("time", { ascending: false }),
-        supabase.from("food_logs").select("*").order("time", { ascending: false }),
-      ]);
+    const [
+      { data: milkData, error: milkError },
+      { data: foodData, error: foodError },
+    ] = await Promise.all([
+      supabase
+        .from("milk_logs")
+        .select("*")
+        .order("time", { ascending: false }),
+      supabase
+        .from("food_logs")
+        .select("*")
+        .order("time", { ascending: false }),
+    ]);
 
     if (milkError) {
       console.error("Error loading milk entries:", milkError);
@@ -231,58 +256,37 @@ export default function KaylenCareMonitorDashboard() {
     }
 
     const mappedMilkEntries = (milkData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
-
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const item = getValue("Item") || "Milk";
-      const location = getValue("Location") || "Not set";
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const extraNotes = getValue("Notes");
+      const parsed = parseNotesField(row.notes || "");
 
       return {
         id: `milk-${row.id}`,
         createdAt: row.time || new Date().toISOString(),
         section: "Food Diary",
-        date,
-        time: timeText,
-        summary: `${item} · ${row.amount || 0}oz`,
+        date: parsed.date || todayValue(),
+        time: parsed.time || "",
+        summary: `${parsed.item || "Milk"} · ${row.amount || 0}oz`,
         details: [
-          `Location: ${location}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
+          `Location: ${parsed.location || "Not set"}`,
+          parsed.notes ? `Notes: ${parsed.notes}` : null,
         ].filter(Boolean),
       };
     });
 
     const mappedFoodEntries = (foodData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
-
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const location = getValue("Location") || "Not set";
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const extraNotes = getValue("Notes");
+      const parsed = parseNotesField(row.notes || "");
 
       return {
         id: `food-${row.id}`,
         createdAt: row.time || new Date().toISOString(),
         section: "Food Diary",
-        date,
-        time: timeText,
-        summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
+        date: parsed.date || todayValue(),
+        time: parsed.time || "",
+        summary: `${row.item || parsed.item || "Food entry"} · ${
+          row.amount || "No amount"
+        }`,
         details: [
-          `Location: ${location}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
+          `Location: ${parsed.location || "Not set"}`,
+          parsed.notes ? `Notes: ${parsed.notes}` : null,
         ].filter(Boolean),
       };
     });
@@ -478,6 +482,7 @@ export default function KaylenCareMonitorDashboard() {
         `Date: ${foodForm.date}`,
         `Time: ${foodForm.time}`,
         `Location: ${selectedLocation}`,
+        `Item: ${selectedFood || "Food entry"}`,
         foodForm.notes ? `Notes: ${foodForm.notes}` : null,
       ]
         .filter(Boolean)
