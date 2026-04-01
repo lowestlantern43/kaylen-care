@@ -215,89 +215,6 @@ export default function KaylenCareMonitorDashboard() {
     closeSection();
   };
 
-  const parseNotesField = (notesText = "") => {
-    const parts = notesText.split(" | ");
-
-    const getValue = (label) => {
-      const found = parts.find((part) => part.startsWith(`${label}: `));
-      return found ? found.replace(`${label}: `, "") : "";
-    };
-
-    return {
-      date: getValue("Date"),
-      time: getValue("Time"),
-      location: getValue("Location"),
-      item: getValue("Item"),
-      notes: getValue("Notes"),
-    };
-  };
-
-  const loadFoodEntriesFromSupabase = async () => {
-    const [
-      { data: milkData, error: milkError },
-      { data: foodData, error: foodError },
-    ] = await Promise.all([
-      supabase
-        .from("milk_logs")
-        .select("*")
-        .order("time", { ascending: false }),
-      supabase
-        .from("food_logs")
-        .select("*")
-        .order("time", { ascending: false }),
-    ]);
-
-    if (milkError) {
-      console.error("Error loading milk entries:", milkError);
-    }
-
-    if (foodError) {
-      console.error("Error loading food entries:", foodError);
-    }
-
-    const mappedMilkEntries = (milkData || []).map((row) => {
-      const parsed = parseNotesField(row.notes || "");
-
-      return {
-        id: `milk-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Food Diary",
-        date: parsed.date || todayValue(),
-        time: parsed.time || "",
-        summary: `${parsed.item || "Milk"} · ${row.amount || 0}oz`,
-        details: [
-          `Location: ${parsed.location || "Not set"}`,
-          parsed.notes ? `Notes: ${parsed.notes}` : null,
-        ].filter(Boolean),
-      };
-    });
-
-    const mappedFoodEntries = (foodData || []).map((row) => {
-      const parsed = parseNotesField(row.notes || "");
-
-      return {
-        id: `food-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Food Diary",
-        date: parsed.date || todayValue(),
-        time: parsed.time || "",
-        summary: `${row.item || parsed.item || "Food entry"} · ${
-          row.amount || "No amount"
-        }`,
-        details: [
-          `Location: ${parsed.location || "Not set"}`,
-          parsed.notes ? `Notes: ${parsed.notes}` : null,
-        ].filter(Boolean),
-      };
-    });
-
-    const combined = [...mappedMilkEntries, ...mappedFoodEntries].sort(
-      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
-    );
-
-    setSharedLog(combined);
-  };
-
   const resetFoodForm = () => {
     setFoodForm({
       date: todayValue(),
@@ -364,9 +281,129 @@ export default function KaylenCareMonitorDashboard() {
     });
   };
 
+  const loadEntriesFromSupabase = async () => {
+    const [
+      { data: milkData, error: milkError },
+      { data: foodData, error: foodError },
+      { data: medicationData, error: medicationError },
+    ] = await Promise.all([
+      supabase.from("milk_logs").select("*").order("time", { ascending: false }),
+      supabase.from("food_logs").select("*").order("time", { ascending: false }),
+      supabase
+        .from("medication_logs")
+        .select("*")
+        .order("time", { ascending: false }),
+    ]);
+
+    if (milkError) {
+      console.error("Error loading milk entries:", milkError);
+    }
+
+    if (foodError) {
+      console.error("Error loading food entries:", foodError);
+    }
+
+    if (medicationError) {
+      console.error("Error loading medication entries:", medicationError);
+    }
+
+    const mappedMilkEntries = (milkData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const item = getValue("Item") || "Milk";
+      const location = getValue("Location") || "Not set";
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `milk-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Food Diary",
+        date,
+        time: timeText,
+        summary: `${item} · ${row.amount || 0}oz`,
+        details: [
+          `Location: ${location}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const mappedFoodEntries = (foodData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const location = getValue("Location") || "Not set";
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `food-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Food Diary",
+        date,
+        time: timeText,
+        summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
+        details: [
+          `Location: ${location}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const mappedMedicationEntries = (medicationData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const givenBy = getValue("Given by") || "Not set";
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `medication-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Medication",
+        date,
+        time: timeText,
+        summary: `${row.medicine || "Medication"} · ${row.dose || "No dose"}`,
+        details: [
+          `Given by: ${givenBy}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const combined = [
+      ...mappedMilkEntries,
+      ...mappedFoodEntries,
+      ...mappedMedicationEntries,
+    ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    setSharedLog(combined);
+  };
+
   useEffect(() => {
     if (isUnlocked) {
-      loadFoodEntriesFromSupabase();
+      loadEntriesFromSupabase();
     }
   }, [isUnlocked]);
 
@@ -482,7 +519,6 @@ export default function KaylenCareMonitorDashboard() {
         `Date: ${foodForm.date}`,
         `Time: ${foodForm.time}`,
         `Location: ${selectedLocation}`,
-        `Item: ${selectedFood || "Food entry"}`,
         foodForm.notes ? `Notes: ${foodForm.notes}` : null,
       ]
         .filter(Boolean)
@@ -494,6 +530,34 @@ export default function KaylenCareMonitorDashboard() {
     if (error) {
       console.error("Supabase food save failed:", error);
       alert("Food save failed - check console");
+      return false;
+    }
+
+    return true;
+  };
+
+  const saveMedicationEntryToSupabase = async ({ selectedMedicine }) => {
+    const payload = {
+      medicine: selectedMedicine || "Medication",
+      dose: medicationForm.dose || "",
+      time: new Date().toISOString(),
+      notes: [
+        `Date: ${medicationForm.date}`,
+        `Time: ${medicationForm.time}`,
+        `Given by: ${medicationForm.givenBy || "Not set"}`,
+        medicationForm.notes ? `Notes: ${medicationForm.notes}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    };
+
+    const { error } = await supabase
+      .from("medication_logs")
+      .insert([payload]);
+
+    if (error) {
+      console.error("Supabase medication save failed:", error);
+      alert("Medication save failed - check console");
       return false;
     }
 
@@ -693,7 +757,7 @@ export default function KaylenCareMonitorDashboard() {
 
               if (!saved) return;
 
-              await loadFoodEntriesFromSupabase();
+              await loadEntriesFromSupabase();
 
               if (showOtherFood && saveFoodForFuture) {
                 setSavedFoodOptions((current) =>
@@ -850,21 +914,18 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
-                section: "Medication",
-                date: medicationForm.date,
-                time: medicationForm.time,
-                summary: `${
-                  showOtherMedication
-                    ? medicationForm.otherMedicine || "Other medicine"
-                    : medicationForm.medicine || "Medication"
-                } · ${medicationForm.dose || "No dose"}`,
-                details: [
-                  `Given by: ${medicationForm.givenBy || "Not set"}`,
-                  medicationForm.notes ? `Notes: ${medicationForm.notes}` : null,
-                ].filter(Boolean),
+            onClick={async () => {
+              const selectedMedicine = showOtherMedication
+                ? medicationForm.otherMedicine || "Other medicine"
+                : medicationForm.medicine || "Medication";
+
+              const saved = await saveMedicationEntryToSupabase({
+                selectedMedicine,
               });
+
+              if (!saved) return;
+
+              await loadEntriesFromSupabase();
 
               if (showOtherMedication && saveMedicationForFuture) {
                 setSavedMedicationOptions((current) =>
@@ -873,6 +934,7 @@ export default function KaylenCareMonitorDashboard() {
               }
 
               resetMedicationForm();
+              closeSection();
             }}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
