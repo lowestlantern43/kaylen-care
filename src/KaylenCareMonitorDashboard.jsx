@@ -31,7 +31,7 @@ const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 export default function KaylenCareMonitorDashboard() {
-  const APP_PASSWORD = "Kaylen0309!";
+  const APP_PASSWORD = "030920";
 
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
@@ -85,6 +85,7 @@ export default function KaylenCareMonitorDashboard() {
     duration: "",
     happened: "",
     action: "",
+    notes: "",
     weightKg: "",
     weightLb: "",
     heightCm: "",
@@ -203,6 +204,32 @@ export default function KaylenCareMonitorDashboard() {
     setShareCopied(false);
   };
 
+  const handlePinPress = (value) => {
+    if (passwordInput.length >= 6) return;
+    const next = `${passwordInput}${value}`;
+    setPasswordInput(next);
+    if (passwordError) setPasswordError("");
+  };
+
+  const handlePinDelete = () => {
+    setPasswordInput((current) => current.slice(0, -1));
+    if (passwordError) setPasswordError("");
+  };
+
+  const handlePinClear = () => {
+    setPasswordInput("");
+    if (passwordError) setPasswordError("");
+  };
+
+  const handleUnlock = () => {
+    if (passwordInput === APP_PASSWORD) {
+      setIsUnlocked(true);
+      setPasswordError("");
+    } else {
+      setPasswordError("Incorrect PIN");
+    }
+  };
+
   const addLogEntry = (entry) => {
     setSharedLog((current) => [
       {
@@ -261,6 +288,7 @@ export default function KaylenCareMonitorDashboard() {
       duration: "",
       happened: "",
       action: "",
+      notes: "",
       weightKg: "",
       weightLb: "",
       heightCm: "",
@@ -1321,6 +1349,19 @@ export default function KaylenCareMonitorDashboard() {
         </div>
 
         <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">Notes</label>
+          <textarea
+            rows={4}
+            placeholder="Anything else important"
+            className={`${inputClassName} min-h-[48px]`}
+            value={healthForm.notes}
+            onChange={(e) =>
+              setHealthForm({ ...healthForm, notes: e.target.value })
+            }
+          />
+        </div>
+
+        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Weight</label>
           <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div className="min-w-0">
@@ -1728,51 +1769,75 @@ export default function KaylenCareMonitorDashboard() {
                 Kaylen’s Diary
               </h1>
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-                Enter the password to access the diary.
+                Enter PIN to access the diary.
               </p>
             </div>
 
             <div className="mt-8">
-              <label className="text-sm font-semibold text-slate-700">
-                Password
-              </label>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => {
-                  setPasswordInput(e.target.value);
-                  if (passwordError) setPasswordError("");
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    if (passwordInput === APP_PASSWORD) {
-                      setIsUnlocked(true);
-                      setPasswordError("");
-                    } else {
-                      setPasswordError("Incorrect password");
-                    }
-                  }
-                }}
-                className="mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
-                placeholder="Enter password"
-              />
+              <label className="text-sm font-semibold text-slate-700">PIN</label>
+
+              <div className="mt-3 flex justify-center gap-3">
+                {Array.from({ length: 6 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className={`flex h-12 w-12 items-center justify-center rounded-xl border text-xl font-bold ${
+                      passwordInput[index]
+                        ? "border-indigo-400 bg-indigo-50 text-slate-900"
+                        : "border-slate-300 bg-white text-slate-300"
+                    }`}
+                  >
+                    {passwordInput[index] ? "•" : ""}
+                  </div>
+                ))}
+              </div>
+
               {passwordError ? (
-                <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                   {passwordError}
                 </p>
               ) : null}
             </div>
 
+            <div className="mt-8 grid grid-cols-3 gap-3">
+              {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => handlePinPress(num)}
+                  className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+                >
+                  {num}
+                </button>
+              ))}
+
+              <button
+                type="button"
+                onClick={handlePinClear}
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+              >
+                Clear
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handlePinPress("0")}
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+              >
+                0
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePinDelete}
+                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+              >
+                Delete
+              </button>
+            </div>
+
             <button
               type="button"
-              onClick={() => {
-                if (passwordInput === APP_PASSWORD) {
-                  setIsUnlocked(true);
-                  setPasswordError("");
-                } else {
-                  setPasswordError("Incorrect password");
-                }
-              }}
+              onClick={handleUnlock}
               className="mt-6 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 px-5 py-4 text-base font-semibold text-white shadow-md transition hover:scale-[1.01]"
             >
               Unlock diary
