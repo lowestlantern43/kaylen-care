@@ -16,11 +16,6 @@ const nowTimeValue = () => {
   return `${hours}:${mins}`;
 };
 
-const makeId = () =>
-  typeof crypto !== "undefined" && crypto.randomUUID
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random()}`;
-
 const dedupeAppend = (items, value) => {
   const next = (value || "").trim();
   if (!next) return items;
@@ -1784,8 +1779,8 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div id="report-print-area" className={`${cardClassName} md:col-span-2`}>
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <div id="report-print-area" className={`${cardClassName} report-print-wrap md:col-span-2`}>
+          <div className="report-screen-header flex flex-wrap items-center justify-between gap-3">
             <div>
               <label className="text-sm font-semibold text-slate-700">
                 Report view
@@ -1799,7 +1794,7 @@ export default function KaylenCareMonitorDashboard() {
             </span>
           </div>
 
-          <div className="mt-4 space-y-5">
+          <div className="mt-4 space-y-5 report-content">
             {recentEntries.length ? (
               orderedSections.map((section) => {
                 const entries = groupedReportEntries[section] || [];
@@ -1812,7 +1807,7 @@ export default function KaylenCareMonitorDashboard() {
                 };
 
                 return (
-                  <div key={section} className="space-y-3">
+                  <div key={section} className="space-y-3 print-section-block">
                     <div
                       className={`report-section-title rounded-2xl border px-4 py-3 ${theme.solidHeader}`}
                     >
@@ -1917,11 +1912,13 @@ export default function KaylenCareMonitorDashboard() {
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-400 to-purple-500 text-4xl text-white shadow-lg">
                 🔒
               </div>
-              <div className="mt-6 inline-block rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-3 shadow-md">
-                <h1 className="text-2xl font-extrabold uppercase tracking-[0.22em] text-white md:text-3xl">
+
+              <div className="mt-6 w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
+                <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
                   Kaylen’s Diary
                 </h1>
               </div>
+
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
                 Enter PIN to access the diary.
               </p>
@@ -2005,22 +2002,49 @@ export default function KaylenCareMonitorDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <style>{`
+        @page {
+          margin: 10mm;
+        }
+
         @media print {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+
           body * {
             visibility: hidden;
           }
 
-          #report-print-area, #report-print-area * {
+          #report-print-area,
+          #report-print-area * {
             visibility: visible;
           }
 
           #report-print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-            padding: 24px;
+            position: static !important;
+            left: auto !important;
+            top: auto !important;
+            width: 100% !important;
+            max-width: none !important;
+            background: white !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+          }
+
+          .report-print-wrap,
+          .report-content,
+          .print-section-block {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
+          }
+
+          .report-screen-header {
+            display: none !important;
           }
 
           #report-print-area,
@@ -2031,6 +2055,14 @@ export default function KaylenCareMonitorDashboard() {
 
           .report-section-title {
             border-width: 2px !important;
+            margin-top: 0 !important;
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+
+          .print-section-block {
+            break-inside: avoid;
+            page-break-inside: avoid;
           }
         }
       `}</style>
@@ -2050,8 +2082,9 @@ export default function KaylenCareMonitorDashboard() {
             >
               Lock
             </button>
-            <div className="inline-block rounded-3xl bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4 shadow-lg">
-              <h1 className="text-2xl font-extrabold uppercase tracking-[0.24em] text-white md:text-4xl">
+
+            <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
+              <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
                 Kaylen’s Diary
               </h1>
             </div>
