@@ -286,11 +286,16 @@ export default function KaylenCareMonitorDashboard() {
       { data: milkData, error: milkError },
       { data: foodData, error: foodError },
       { data: medicationData, error: medicationError },
+      { data: toiletingData, error: toiletingError },
     ] = await Promise.all([
       supabase.from("milk_logs").select("*").order("time", { ascending: false }),
       supabase.from("food_logs").select("*").order("time", { ascending: false }),
       supabase
         .from("medication_logs")
+        .select("*")
+        .order("time", { ascending: false }),
+      supabase
+        .from("toileting_logs")
         .select("*")
         .order("time", { ascending: false }),
     ]);
@@ -305,6 +310,10 @@ export default function KaylenCareMonitorDashboard() {
 
     if (medicationError) {
       console.error("Error loading medication entries:", medicationError);
+    }
+
+    if (toiletingError) {
+      console.error("Error loading toileting entries:", toiletingError);
     }
 
     const mappedMilkEntries = (milkData || []).map((row) => {
@@ -392,10 +401,35 @@ export default function KaylenCareMonitorDashboard() {
       };
     });
 
+    const mappedToiletingEntries = (toiletingData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const date = getValue("Date") || todayValue();
+      const timeText = getValue("Time") || "";
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `toileting-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Toileting",
+        date,
+        time: timeText,
+        summary: row.entry || "Toileting entry",
+        details: [extraNotes ? `Notes: ${extraNotes}` : null].filter(Boolean),
+      };
+    });
+
     const combined = [
       ...mappedMilkEntries,
       ...mappedFoodEntries,
       ...mappedMedicationEntries,
+      ...mappedToiletingEntries,
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     setSharedLog(combined);
@@ -558,6 +592,32 @@ export default function KaylenCareMonitorDashboard() {
     if (error) {
       console.error("Supabase medication save failed:", error);
       alert("Medication save failed - check console");
+      return false;
+    }
+
+    return true;
+  };
+
+  const saveToiletingEntryToSupabase = async () => {
+    const payload = {
+      entry: toiletingForm.entry || "Toileting entry",
+      time: new Date().toISOString(),
+      notes: [
+        `Date: ${toiletingForm.date}`,
+        `Time: ${toiletingForm.time}`,
+        toiletingForm.notes ? `Notes: ${toiletingForm.notes}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    };
+
+    const { error } = await supabase
+      .from("toileting_logs")
+      .insert([payload]);
+
+    if (error) {
+      console.error("Supabase toileting save failed:", error);
+      alert("Toileting save failed - check console");
       return false;
     }
 
@@ -1014,17 +1074,14 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
-                section: "Toileting",
-                date: toiletingForm.date,
-                time: toiletingForm.time,
-                summary: toiletingForm.entry || "Toileting entry",
-                details: [
-                  toiletingForm.notes ? `Notes: ${toiletingForm.notes}` : null,
-                ].filter(Boolean),
-              });
+            onClick={async () => {
+              const saved = await saveToiletingEntryToSupabase();
+
+              if (!saved) return;
+
+              await loadEntriesFromSupabase();
               resetToiletingForm();
+              closeSection();
             }}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
