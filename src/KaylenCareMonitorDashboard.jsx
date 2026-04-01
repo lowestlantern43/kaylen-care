@@ -287,6 +287,8 @@ export default function KaylenCareMonitorDashboard() {
       { data: foodData, error: foodError },
       { data: medicationData, error: medicationError },
       { data: toiletingData, error: toiletingError },
+      { data: sleepData, error: sleepError },
+      { data: healthData, error: healthError },
     ] = await Promise.all([
       supabase.from("milk_logs").select("*").order("time", { ascending: false }),
       supabase.from("food_logs").select("*").order("time", { ascending: false }),
@@ -298,23 +300,24 @@ export default function KaylenCareMonitorDashboard() {
         .from("toileting_logs")
         .select("*")
         .order("time", { ascending: false }),
+      supabase
+        .from("sleep_logs")
+        .select("*")
+        .order("time", { ascending: false }),
+      supabase
+        .from("health_logs")
+        .select("*")
+        .order("time", { ascending: false }),
     ]);
 
-    if (milkError) {
-      console.error("Error loading milk entries:", milkError);
-    }
-
-    if (foodError) {
-      console.error("Error loading food entries:", foodError);
-    }
-
-    if (medicationError) {
+    if (milkError) console.error("Error loading milk entries:", milkError);
+    if (foodError) console.error("Error loading food entries:", foodError);
+    if (medicationError)
       console.error("Error loading medication entries:", medicationError);
-    }
-
-    if (toiletingError) {
+    if (toiletingError)
       console.error("Error loading toileting entries:", toiletingError);
-    }
+    if (sleepError) console.error("Error loading sleep entries:", sleepError);
+    if (healthError) console.error("Error loading health entries:", healthError);
 
     const mappedMilkEntries = (milkData || []).map((row) => {
       const notesText = row.notes || "";
@@ -425,11 +428,81 @@ export default function KaylenCareMonitorDashboard() {
       };
     });
 
+    const mappedSleepEntries = (sleepData || []).map((row) => {
+      const notesText = row.notes || "";
+      const parts = notesText.split(" | ");
+
+      const getValue = (label) => {
+        const found = parts.find((part) => part.startsWith(`${label}: `));
+        return found ? found.replace(`${label}: `, "") : "";
+      };
+
+      const date = getValue("Date") || todayValue();
+      const extraNotes = getValue("Notes");
+
+      return {
+        id: `sleep-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Sleep",
+        date,
+        time: row.bedtime || "",
+        summary: `${row.quality || "Sleep"} · wake ${
+          row.wake_time || "Not set"
+        }`,
+        details: [
+          `Night wakings: ${row.night_wakings || "0"}`,
+          `Daytime nap: ${row.nap || "Not set"}`,
+          extraNotes ? `Notes: ${extraNotes}` : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const mappedHealthEntries = (healthData || []).map((row) => {
+      return {
+        id: `health-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Health",
+        date: row.notes?.includes("Date: ")
+          ? row.notes
+              .split(" | ")
+              .find((part) => part.startsWith("Date: "))
+              ?.replace("Date: ", "") || todayValue()
+          : todayValue(),
+        time: row.notes?.includes("Time: ")
+          ? row.notes
+              .split(" | ")
+              .find((part) => part.startsWith("Time: "))
+              ?.replace("Time: ", "") || ""
+          : "",
+        summary: `${row.event || "Health"} · ${row.duration || "No duration"}`,
+        details: [
+          row.happened ? `What happened: ${row.happened}` : null,
+          row.action ? `Action taken: ${row.action}` : null,
+          row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
+          row.weight_lb ? `Weight (lb): ${row.weight_lb}` : null,
+          row.height_cm ? `Height (cm): ${row.height_cm}` : null,
+          row.height_ft || row.height_in
+            ? `Height (ft/in): ${row.height_ft || 0}ft ${row.height_in || 0}in`
+            : null,
+          row.notes?.includes("Notes: ")
+            ? `Notes: ${
+                row.notes
+                  .split(" | ")
+                  .find((part) => part.startsWith("Notes: "))
+                  ?.replace("Notes: ", "") || ""
+              }`
+            : null,
+        ].filter(Boolean),
+      };
+    });
+
     const combined = [
       ...mappedMilkEntries,
       ...mappedFoodEntries,
       ...mappedMedicationEntries,
       ...mappedToiletingEntries,
+      ...mappedSleepEntries,
+      ...mappedHealthEntries,
     ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
     setSharedLog(combined);
@@ -618,6 +691,65 @@ export default function KaylenCareMonitorDashboard() {
     if (error) {
       console.error("Supabase toileting save failed:", error);
       alert("Toileting save failed - check console");
+      return false;
+    }
+
+    return true;
+  };
+
+  const saveSleepEntryToSupabase = async () => {
+    const payload = {
+      quality: sleepForm.quality || "",
+      bedtime: sleepForm.bedtime || "",
+      wake_time: sleepForm.wakeTime || "",
+      night_wakings: sleepForm.nightWakings || "0",
+      nap: sleepForm.nap || "",
+      time: new Date().toISOString(),
+      notes: [
+        `Date: ${sleepForm.date}`,
+        sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    };
+
+    const { error } = await supabase.from("sleep_logs").insert([payload]);
+
+    if (error) {
+      console.error("Supabase sleep save failed:", error);
+      alert("Sleep save failed - check console");
+      return false;
+    }
+
+    return true;
+  };
+
+  const saveHealthEntryToSupabase = async () => {
+    const payload = {
+      event: healthForm.event || "Health",
+      duration: healthForm.duration || "",
+      time: new Date().toISOString(),
+      happened: healthForm.happened || "",
+      action: healthForm.action || "",
+      weight_kg: healthForm.weightKg || "",
+      weight_lb: healthForm.weightLb || "",
+      height_cm: healthForm.heightCm || "",
+      height_ft: healthForm.heightFt || "",
+      height_in: healthForm.heightIn || "",
+      notes: [
+        `Date: ${healthForm.date}`,
+        `Time: ${healthForm.time}`,
+        healthForm.notes ? `Notes: ${healthForm.notes}` : null,
+      ]
+        .filter(Boolean)
+        .join(" | "),
+    };
+
+    const { error } = await supabase.from("health_logs").insert([payload]);
+
+    if (error) {
+      console.error("Supabase health save failed:", error);
+      alert("Health save failed - check console");
       return false;
     }
 
@@ -1280,38 +1412,14 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
-                section: "Health",
-                date: healthForm.date,
-                time: healthForm.time,
-                summary: `${healthForm.event || "Health"} · ${
-                  healthForm.duration || "No duration"
-                }`,
-                details: [
-                  healthForm.happened
-                    ? `What happened: ${healthForm.happened}`
-                    : null,
-                  healthForm.action
-                    ? `Action taken: ${healthForm.action}`
-                    : null,
-                  healthForm.weightKg
-                    ? `Weight (kg): ${healthForm.weightKg}`
-                    : null,
-                  healthForm.weightLb
-                    ? `Weight (lb): ${healthForm.weightLb}`
-                    : null,
-                  healthForm.heightCm
-                    ? `Height (cm): ${healthForm.heightCm}`
-                    : null,
-                  healthForm.heightFt || healthForm.heightIn
-                    ? `Height (ft/in): ${healthForm.heightFt || 0}ft ${
-                        healthForm.heightIn || 0
-                      }in`
-                    : null,
-                ].filter(Boolean),
-              });
+            onClick={async () => {
+              const saved = await saveHealthEntryToSupabase();
+
+              if (!saved) return;
+
+              await loadEntriesFromSupabase();
               resetHealthForm();
+              closeSection();
             }}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
@@ -1432,21 +1540,14 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            onClick={() => {
-              addLogEntry({
-                section: "Sleep",
-                date: sleepForm.date,
-                time: sleepForm.bedtime,
-                summary: `${sleepForm.quality || "Sleep"} · wake ${
-                  sleepForm.wakeTime || "Not set"
-                }`,
-                details: [
-                  `Night wakings: ${sleepForm.nightWakings || "0"}`,
-                  `Daytime nap: ${sleepForm.nap || "Not set"}`,
-                  sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
-                ].filter(Boolean),
-              });
+            onClick={async () => {
+              const saved = await saveSleepEntryToSupabase();
+
+              if (!saved) return;
+
+              await loadEntriesFromSupabase();
               resetSleepForm();
+              closeSection();
             }}
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
           >
