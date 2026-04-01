@@ -27,8 +27,50 @@ const dedupeAppend = (items, value) => {
   return items.includes(next) ? items : [...items, next];
 };
 
+const formatTimeInput = (value) => {
+  const digits = (value || "").replace(/\D/g, "").slice(0, 4);
+  if (digits.length <= 2) return digits;
+  return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
+
 const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+
+const sectionTheme = {
+  "Food Diary": {
+    report: "border-emerald-200 bg-emerald-50",
+    badge: "bg-emerald-100 text-emerald-700",
+  },
+  Medication: {
+    report: "border-rose-200 bg-rose-50",
+    badge: "bg-rose-100 text-rose-700",
+  },
+  Toileting: {
+    report: "border-sky-200 bg-sky-50",
+    badge: "bg-sky-100 text-sky-700",
+  },
+  Health: {
+    report: "border-emerald-200 bg-green-50",
+    badge: "bg-green-100 text-green-700",
+  },
+  Sleep: {
+    report: "border-indigo-200 bg-indigo-50",
+    badge: "bg-indigo-100 text-indigo-700",
+  },
+};
+
+const getDefaultDoseForMedicine = (medicine) => {
+  switch ((medicine || "").trim()) {
+    case "Kepra (Levetiracetam)":
+      return "5ml";
+    case "Chlorphenamine Maleate":
+      return "2.5ml";
+    case "Melatonin":
+      return "3ml";
+    default:
+      return "";
+  }
+};
 
 export default function KaylenCareMonitorDashboard() {
   const APP_PASSWORD = "030920";
@@ -95,11 +137,11 @@ export default function KaylenCareMonitorDashboard() {
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
-    quality: "",
+    quality: "Good",
     bedtime: nowTimeValue(),
     wakeTime: "",
     nightWakings: "",
-    nap: "",
+    nap: "No",
     notes: "",
   });
 
@@ -157,6 +199,7 @@ export default function KaylenCareMonitorDashboard() {
   const defaultMedicationOptions = [
     "Kepra (Levetiracetam)",
     "Chlorphenamine Maleate",
+    "Melatonin",
     "Calpol",
     "Ibuprofen",
     "Vitamin D",
@@ -206,8 +249,7 @@ export default function KaylenCareMonitorDashboard() {
 
   const handlePinPress = (value) => {
     if (passwordInput.length >= 6) return;
-    const next = `${passwordInput}${value}`;
-    setPasswordInput(next);
+    setPasswordInput((current) => `${current}${value}`);
     if (passwordError) setPasswordError("");
   };
 
@@ -228,18 +270,6 @@ export default function KaylenCareMonitorDashboard() {
     } else {
       setPasswordError("Incorrect PIN");
     }
-  };
-
-  const addLogEntry = (entry) => {
-    setSharedLog((current) => [
-      {
-        id: makeId(),
-        createdAt: new Date().toISOString(),
-        ...entry,
-      },
-      ...current,
-    ]);
-    closeSection();
   };
 
   const resetFoodForm = () => {
@@ -300,13 +330,19 @@ export default function KaylenCareMonitorDashboard() {
   const resetSleepForm = () => {
     setSleepForm({
       date: todayValue(),
-      quality: "",
+      quality: "Good",
       bedtime: nowTimeValue(),
       wakeTime: "",
       nightWakings: "",
-      nap: "",
+      nap: "No",
       notes: "",
     });
+  };
+
+  const parseNotesValue = (text, label) => {
+    const parts = (text || "").split(" | ");
+    const found = parts.find((part) => part.startsWith(`${label}: `));
+    return found ? found.replace(`${label}: `, "") : "";
   };
 
   const loadEntriesFromSupabase = async () => {
@@ -347,182 +383,106 @@ export default function KaylenCareMonitorDashboard() {
     if (sleepError) console.error("Error loading sleep entries:", sleepError);
     if (healthError) console.error("Error loading health entries:", healthError);
 
-    const mappedMilkEntries = (milkData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
+    const mappedMilkEntries = (milkData || []).map((row) => ({
+      id: `milk-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Food Diary",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: parseNotesValue(row.notes, "Time") || "",
+      summary: `${parseNotesValue(row.notes, "Item") || "Milk"} · ${
+        row.amount || 0
+      }oz`,
+      details: [
+        `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
+    const mappedFoodEntries = (foodData || []).map((row) => ({
+      id: `food-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Food Diary",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: parseNotesValue(row.notes, "Time") || "",
+      summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
+      details: [
+        `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
-      const item = getValue("Item") || "Milk";
-      const location = getValue("Location") || "Not set";
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const extraNotes = getValue("Notes");
+    const mappedMedicationEntries = (medicationData || []).map((row) => ({
+      id: `medication-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Medication",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: parseNotesValue(row.notes, "Time") || "",
+      summary: `${row.medicine || "Medication"} · ${row.dose || "No dose"}`,
+      details: [
+        `Given by: ${parseNotesValue(row.notes, "Given by") || "Not set"}`,
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
-      return {
-        id: `milk-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Food Diary",
-        date,
-        time: timeText,
-        summary: `${item} · ${row.amount || 0}oz`,
-        details: [
-          `Location: ${location}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
-        ].filter(Boolean),
-      };
-    });
+    const mappedToiletingEntries = (toiletingData || []).map((row) => ({
+      id: `toileting-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Toileting",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: parseNotesValue(row.notes, "Time") || "",
+      summary: row.entry || "Toileting entry",
+      details: [
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
-    const mappedFoodEntries = (foodData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
+    const mappedSleepEntries = (sleepData || []).map((row) => ({
+      id: `sleep-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Sleep",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: row.bedtime || "",
+      summary: `${row.quality || "Sleep"} · wake ${
+        row.wake_time || "Not set"
+      }`,
+      details: [
+        `Night wakings: ${row.night_wakings || "0"}`,
+        `Daytime nap: ${row.nap || "Not set"}`,
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const location = getValue("Location") || "Not set";
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const extraNotes = getValue("Notes");
-
-      return {
-        id: `food-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Food Diary",
-        date,
-        time: timeText,
-        summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
-        details: [
-          `Location: ${location}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
-        ].filter(Boolean),
-      };
-    });
-
-    const mappedMedicationEntries = (medicationData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
-
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const givenBy = getValue("Given by") || "Not set";
-      const extraNotes = getValue("Notes");
-
-      return {
-        id: `medication-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Medication",
-        date,
-        time: timeText,
-        summary: `${row.medicine || "Medication"} · ${row.dose || "No dose"}`,
-        details: [
-          `Given by: ${givenBy}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
-        ].filter(Boolean),
-      };
-    });
-
-    const mappedToiletingEntries = (toiletingData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
-
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const date = getValue("Date") || todayValue();
-      const timeText = getValue("Time") || "";
-      const extraNotes = getValue("Notes");
-
-      return {
-        id: `toileting-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Toileting",
-        date,
-        time: timeText,
-        summary: row.entry || "Toileting entry",
-        details: [extraNotes ? `Notes: ${extraNotes}` : null].filter(Boolean),
-      };
-    });
-
-    const mappedSleepEntries = (sleepData || []).map((row) => {
-      const notesText = row.notes || "";
-      const parts = notesText.split(" | ");
-
-      const getValue = (label) => {
-        const found = parts.find((part) => part.startsWith(`${label}: `));
-        return found ? found.replace(`${label}: `, "") : "";
-      };
-
-      const date = getValue("Date") || todayValue();
-      const extraNotes = getValue("Notes");
-
-      return {
-        id: `sleep-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Sleep",
-        date,
-        time: row.bedtime || "",
-        summary: `${row.quality || "Sleep"} · wake ${
-          row.wake_time || "Not set"
-        }`,
-        details: [
-          `Night wakings: ${row.night_wakings || "0"}`,
-          `Daytime nap: ${row.nap || "Not set"}`,
-          extraNotes ? `Notes: ${extraNotes}` : null,
-        ].filter(Boolean),
-      };
-    });
-
-    const mappedHealthEntries = (healthData || []).map((row) => {
-      return {
-        id: `health-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
-        section: "Health",
-        date: row.notes?.includes("Date: ")
-          ? row.notes
-              .split(" | ")
-              .find((part) => part.startsWith("Date: "))
-              ?.replace("Date: ", "") || todayValue()
-          : todayValue(),
-        time: row.notes?.includes("Time: ")
-          ? row.notes
-              .split(" | ")
-              .find((part) => part.startsWith("Time: "))
-              ?.replace("Time: ", "") || ""
-          : "",
-        summary: `${row.event || "Health"} · ${row.duration || "No duration"}`,
-        details: [
-          row.happened ? `What happened: ${row.happened}` : null,
-          row.action ? `Action taken: ${row.action}` : null,
-          row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
-          row.weight_lb ? `Weight (lb): ${row.weight_lb}` : null,
-          row.height_cm ? `Height (cm): ${row.height_cm}` : null,
-          row.height_ft || row.height_in
-            ? `Height (ft/in): ${row.height_ft || 0}ft ${row.height_in || 0}in`
-            : null,
-          row.notes?.includes("Notes: ")
-            ? `Notes: ${
-                row.notes
-                  .split(" | ")
-                  .find((part) => part.startsWith("Notes: "))
-                  ?.replace("Notes: ", "") || ""
-              }`
-            : null,
-        ].filter(Boolean),
-      };
-    });
+    const mappedHealthEntries = (healthData || []).map((row) => ({
+      id: `health-${row.id}`,
+      createdAt: row.time || new Date().toISOString(),
+      section: "Health",
+      date: parseNotesValue(row.notes, "Date") || todayValue(),
+      time: parseNotesValue(row.notes, "Time") || "",
+      summary: `${row.event || "Health"} · ${row.duration || "No duration"}`,
+      details: [
+        row.happened ? `What happened: ${row.happened}` : null,
+        row.action ? `Action taken: ${row.action}` : null,
+        row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
+        row.weight_lb ? `Weight (lb): ${row.weight_lb}` : null,
+        row.height_cm ? `Height (cm): ${row.height_cm}` : null,
+        row.height_ft || row.height_in
+          ? `Height (ft/in): ${row.height_ft || 0}ft ${row.height_in || 0}in`
+          : null,
+        parseNotesValue(row.notes, "Notes")
+          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+          : null,
+      ].filter(Boolean),
+    }));
 
     const combined = [
       ...mappedMilkEntries,
@@ -557,7 +517,7 @@ export default function KaylenCareMonitorDashboard() {
       case "Sleep":
         return "Track bedtime, wake time, and sleep quality.";
       case "Reports":
-        return "View recent entries and share the report.";
+        return "View recent entries and share or export the report.";
       default:
         return "Form preview";
     }
@@ -571,46 +531,46 @@ export default function KaylenCareMonitorDashboard() {
 
     return sharedLog.filter((entry) => {
       if (!entry.date) return false;
-
       const [day, month, year] = entry.date.split("/");
       const entryDate = new Date(`${year}-${month}-${day}T00:00:00`);
-
       return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
     });
   }, [reportDays, sharedLog]);
 
-  const latestBySection = useMemo(() => {
-    const findLatest = (sectionTitle) =>
-      sharedLog.find((entry) => entry.section === sectionTitle) || null;
+  const latestTwoBySection = useMemo(() => {
+    const findLatestTwo = (sectionTitle) =>
+      sharedLog.filter((entry) => entry.section === sectionTitle).slice(0, 2);
 
     return {
-      food: findLatest("Food Diary"),
-      medication: findLatest("Medication"),
-      toileting: findLatest("Toileting"),
-      health: findLatest("Health"),
-      sleep: findLatest("Sleep"),
+      food: findLatestTwo("Food Diary"),
+      medication: findLatestTwo("Medication"),
+      toileting: findLatestTwo("Toileting"),
+      health: findLatestTwo("Health"),
+      sleep: findLatestTwo("Sleep"),
     };
   }, [sharedLog]);
 
   const tileStatusText = (sectionTitle) => {
-    const formatLatest = (entry) => {
-      if (!entry) return "Nothing logged yet";
-      return `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`;
+    const formatList = (entries) => {
+      if (!entries.length) return ["Nothing logged yet"];
+      return entries.map(
+        (entry) => `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
+      );
     };
 
     switch (sectionTitle) {
       case "Food Diary":
-        return formatLatest(latestBySection.food);
+        return formatList(latestTwoBySection.food);
       case "Medication":
-        return formatLatest(latestBySection.medication);
+        return formatList(latestTwoBySection.medication);
       case "Toileting":
-        return formatLatest(latestBySection.toileting);
+        return formatList(latestTwoBySection.toileting);
       case "Health":
-        return formatLatest(latestBySection.health);
+        return formatList(latestTwoBySection.health);
       case "Sleep":
-        return formatLatest(latestBySection.sleep);
+        return formatList(latestTwoBySection.sleep);
       default:
-        return "";
+        return [""];
     }
   };
 
@@ -784,6 +744,51 @@ export default function KaylenCareMonitorDashboard() {
     return true;
   };
 
+  const groupedReportEntries = useMemo(() => {
+    const groups = {
+      "Food Diary": [],
+      Medication: [],
+      Toileting: [],
+      Health: [],
+      Sleep: [],
+    };
+
+    recentEntries.forEach((entry) => {
+      if (groups[entry.section]) {
+        groups[entry.section].push(entry);
+      }
+    });
+
+    return groups;
+  }, [recentEntries]);
+
+  const reportText = useMemo(() => {
+    const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
+
+    return [
+      `Kaylen's Diary Report - Last ${reportDays} days`,
+      "",
+      ...order.flatMap((section) => {
+        const entries = groupedReportEntries[section] || [];
+        if (!entries.length) return [];
+        return [
+          section.toUpperCase(),
+          ...entries.flatMap((entry) => [
+            `${entry.date}${entry.time ? ` ${entry.time}` : ""}`,
+            entry.summary,
+            ...(entry.details?.length ? entry.details : []),
+            "",
+          ]),
+        ];
+      }),
+      ...(recentEntries.length ? [] : ["No entries found for this date range."]),
+    ].join("\n");
+  }, [groupedReportEntries, recentEntries.length, reportDays]);
+
+  const handleExportPdf = () => {
+    window.print();
+  };
+
   const renderFoodForm = () => {
     const showOtherFood = foodValue === "Other";
     const showOtherLocation = foodForm.location === "Other";
@@ -797,7 +802,7 @@ export default function KaylenCareMonitorDashboard() {
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
             type="text"
@@ -809,7 +814,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Time</label>
           <input
             type="text"
@@ -817,11 +822,13 @@ export default function KaylenCareMonitorDashboard() {
             placeholder="HH:MM"
             className={dateTimeInputClass}
             value={foodForm.time}
-            onChange={(e) => setFoodForm({ ...foodForm, time: e.target.value })}
+            onChange={(e) =>
+              setFoodForm({ ...foodForm, time: formatTimeInput(e.target.value) })
+            }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Location
           </label>
@@ -846,7 +853,7 @@ export default function KaylenCareMonitorDashboard() {
         </div>
 
         {showOtherLocation ? (
-          <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+          <div className={`${cardClassName} md:col-span-2`}>
             <label className="text-sm font-semibold text-slate-700">
               Other location
             </label>
@@ -862,7 +869,7 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         ) : null}
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Food or drink
           </label>
@@ -890,7 +897,7 @@ export default function KaylenCareMonitorDashboard() {
 
         {showOtherFood ? (
           <>
-            <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+            <div className={`${cardClassName} md:col-span-2`}>
               <label className="text-sm font-semibold text-slate-700">
                 Other food or drink
               </label>
@@ -904,7 +911,7 @@ export default function KaylenCareMonitorDashboard() {
                 }
               />
             </div>
-            <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+            <div className={`${cardClassName} md:col-span-2`}>
               <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                 <input
                   type="checkbox"
@@ -918,7 +925,7 @@ export default function KaylenCareMonitorDashboard() {
           </>
         ) : null}
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             {isMilk ? "Amount (oz)" : "Amount"}
           </label>
@@ -954,7 +961,7 @@ export default function KaylenCareMonitorDashboard() {
           )}
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Notes</label>
           <textarea
             rows={5}
@@ -999,10 +1006,14 @@ export default function KaylenCareMonitorDashboard() {
 
   const renderMedicationForm = () => {
     const showOtherMedication = medicationValue === "Other";
+    const selectedMedicine = showOtherMedication
+      ? medicationForm.otherMedicine || "Other medicine"
+      : medicationForm.medicine || "Medication";
+    const isMelatonin = selectedMedicine === "Melatonin";
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Medicine
           </label>
@@ -1010,12 +1021,16 @@ export default function KaylenCareMonitorDashboard() {
             value={medicationValue}
             onChange={(e) => {
               const value = e.target.value;
+              const defaultDose =
+                value === "Other" ? "" : getDefaultDoseForMedicine(value);
+
               setMedicationValue(value);
               setMedicationForm({
                 ...medicationForm,
-                medicine: value,
+                medicine: value === "Other" ? "" : value,
                 otherMedicine:
                   value === "Other" ? medicationForm.otherMedicine : "",
+                dose: defaultDose || medicationForm.dose,
               });
             }}
             className={`${inputClassName} min-h-[48px]`}
@@ -1031,7 +1046,7 @@ export default function KaylenCareMonitorDashboard() {
 
         {showOtherMedication ? (
           <>
-            <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+            <div className={`${cardClassName} md:col-span-2`}>
               <label className="text-sm font-semibold text-slate-700">
                 Other medicine
               </label>
@@ -1040,15 +1055,19 @@ export default function KaylenCareMonitorDashboard() {
                 placeholder="Type medicine name if not in dropdown"
                 className={`${inputClassName} min-h-[48px] border-dashed`}
                 value={medicationForm.otherMedicine}
-                onChange={(e) =>
+                onChange={(e) => {
+                  const value = e.target.value;
+                  const defaultDose = getDefaultDoseForMedicine(value);
+
                   setMedicationForm({
                     ...medicationForm,
-                    otherMedicine: e.target.value,
-                  })
-                }
+                    otherMedicine: value,
+                    dose: defaultDose || medicationForm.dose,
+                  });
+                }}
               />
             </div>
-            <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+            <div className={`${cardClassName} md:col-span-2`}>
               <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                 <input
                   type="checkbox"
@@ -1062,7 +1081,7 @@ export default function KaylenCareMonitorDashboard() {
           </>
         ) : null}
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Dose</label>
           <input
             type="text"
@@ -1075,7 +1094,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Time</label>
           <input
             type="text"
@@ -1084,12 +1103,15 @@ export default function KaylenCareMonitorDashboard() {
             className={dateTimeInputClass}
             value={medicationForm.time}
             onChange={(e) =>
-              setMedicationForm({ ...medicationForm, time: e.target.value })
+              setMedicationForm({
+                ...medicationForm,
+                time: formatTimeInput(e.target.value),
+              })
             }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Given by
           </label>
@@ -1104,7 +1126,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
             type="text"
@@ -1118,10 +1140,14 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">Notes</label>
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Notes{isMelatonin ? " *" : ""}
+          </label>
           <textarea
-            placeholder="Optional notes"
+            placeholder={
+              isMelatonin ? "Notes required for Melatonin" : "Optional notes"
+            }
             rows={5}
             className={`${inputClassName} min-h-[48px]`}
             value={medicationForm.notes}
@@ -1135,9 +1161,10 @@ export default function KaylenCareMonitorDashboard() {
           <button
             type="button"
             onClick={async () => {
-              const selectedMedicine = showOtherMedication
-                ? medicationForm.otherMedicine || "Other medicine"
-                : medicationForm.medicine || "Medication";
+              if (selectedMedicine === "Melatonin" && !medicationForm.notes.trim()) {
+                alert("Notes are required for Melatonin");
+                return;
+              }
 
               const saved = await saveMedicationEntryToSupabase({
                 selectedMedicine,
@@ -1168,7 +1195,7 @@ export default function KaylenCareMonitorDashboard() {
   const renderToiletingForm = () => {
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
             type="text"
@@ -1182,7 +1209,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Time</label>
           <input
             type="text"
@@ -1191,12 +1218,15 @@ export default function KaylenCareMonitorDashboard() {
             className={dateTimeInputClass}
             value={toiletingForm.time}
             onChange={(e) =>
-              setToiletingForm({ ...toiletingForm, time: e.target.value })
+              setToiletingForm({
+                ...toiletingForm,
+                time: formatTimeInput(e.target.value),
+              })
             }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Toileting entry
           </label>
@@ -1218,7 +1248,7 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Notes</label>
           <textarea
             rows={5}
@@ -1255,7 +1285,7 @@ export default function KaylenCareMonitorDashboard() {
   const renderHealthForm = () => {
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
             type="text"
@@ -1269,7 +1299,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Time</label>
           <input
             type="text"
@@ -1278,12 +1308,15 @@ export default function KaylenCareMonitorDashboard() {
             className={dateTimeInputClass}
             value={healthForm.time}
             onChange={(e) =>
-              setHealthForm({ ...healthForm, time: e.target.value })
+              setHealthForm({
+                ...healthForm,
+                time: formatTimeInput(e.target.value),
+              })
             }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Health event
           </label>
@@ -1303,7 +1336,7 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Duration
           </label>
@@ -1318,7 +1351,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             What happened
           </label>
@@ -1333,7 +1366,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Action taken
           </label>
@@ -1348,7 +1381,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Notes</label>
           <textarea
             rows={4}
@@ -1361,10 +1394,10 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Weight</label>
           <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="min-w-0">
+            <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Metric (kg)
               </label>
@@ -1373,14 +1406,14 @@ export default function KaylenCareMonitorDashboard() {
                 min="0"
                 step="0.1"
                 placeholder="e.g. 18.4"
-                className={`${inputClassName} min-h-[48px] mt-1`}
+                className={`${inputClassName} mt-1 min-h-[48px]`}
                 value={healthForm.weightKg}
                 onChange={(e) =>
                   setHealthForm({ ...healthForm, weightKg: e.target.value })
                 }
               />
             </div>
-            <div className="min-w-0">
+            <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Imperial (lb)
               </label>
@@ -1389,7 +1422,7 @@ export default function KaylenCareMonitorDashboard() {
                 min="0"
                 step="0.1"
                 placeholder="e.g. 40.6"
-                className={`${inputClassName} min-h-[48px] mt-1`}
+                className={`${inputClassName} mt-1 min-h-[48px]`}
                 value={healthForm.weightLb}
                 onChange={(e) =>
                   setHealthForm({ ...healthForm, weightLb: e.target.value })
@@ -1399,10 +1432,10 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Height</label>
           <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div className="min-w-0">
+            <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Metric (cm)
               </label>
@@ -1411,14 +1444,14 @@ export default function KaylenCareMonitorDashboard() {
                 min="0"
                 step="0.1"
                 placeholder="e.g. 105.5"
-                className={`${inputClassName} min-h-[48px] mt-1`}
+                className={`${inputClassName} mt-1 min-h-[48px]`}
                 value={healthForm.heightCm}
                 onChange={(e) =>
                   setHealthForm({ ...healthForm, heightCm: e.target.value })
                 }
               />
             </div>
-            <div className="min-w-0">
+            <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
                 Imperial (ft / in)
               </label>
@@ -1428,7 +1461,7 @@ export default function KaylenCareMonitorDashboard() {
                   min="0"
                   step="1"
                   placeholder="ft"
-                  className={`${inputClassName} min-h-[48px] mt-0`}
+                  className={`${inputClassName} mt-0 min-h-[48px]`}
                   value={healthForm.heightFt}
                   onChange={(e) =>
                     setHealthForm({ ...healthForm, heightFt: e.target.value })
@@ -1439,7 +1472,7 @@ export default function KaylenCareMonitorDashboard() {
                   min="0"
                   step="0.1"
                   placeholder="in"
-                  className={`${inputClassName} min-h-[48px] mt-0`}
+                  className={`${inputClassName} mt-0 min-h-[48px]`}
                   value={healthForm.heightIn}
                   onChange={(e) =>
                     setHealthForm({ ...healthForm, heightIn: e.target.value })
@@ -1474,7 +1507,7 @@ export default function KaylenCareMonitorDashboard() {
   const renderSleepForm = () => {
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
             type="text"
@@ -1482,11 +1515,13 @@ export default function KaylenCareMonitorDashboard() {
             placeholder="DD/MM/YYYY"
             className={dateTimeInputClass}
             value={sleepForm.date}
-            onChange={(e) => setSleepForm({ ...sleepForm, date: e.target.value })}
+            onChange={(e) =>
+              setSleepForm({ ...sleepForm, date: e.target.value })
+            }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Sleep quality
           </label>
@@ -1504,7 +1539,7 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Bedtime
           </label>
@@ -1515,12 +1550,15 @@ export default function KaylenCareMonitorDashboard() {
             className={dateTimeInputClass}
             value={sleepForm.bedtime}
             onChange={(e) =>
-              setSleepForm({ ...sleepForm, bedtime: e.target.value })
+              setSleepForm({
+                ...sleepForm,
+                bedtime: formatTimeInput(e.target.value),
+              })
             }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Wake time
           </label>
@@ -1531,12 +1569,15 @@ export default function KaylenCareMonitorDashboard() {
             className={dateTimeInputClass}
             value={sleepForm.wakeTime}
             onChange={(e) =>
-              setSleepForm({ ...sleepForm, wakeTime: e.target.value })
+              setSleepForm({
+                ...sleepForm,
+                wakeTime: formatTimeInput(e.target.value),
+              })
             }
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Night wakings
           </label>
@@ -1552,7 +1593,7 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Daytime nap
           </label>
@@ -1567,7 +1608,7 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
+        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">Notes</label>
           <textarea
             rows={5}
@@ -1600,22 +1641,13 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const renderReportsForm = () => {
-    const reportText = [
-      `Kaylen's Diary Report - Last ${reportDays} days`,
-      "",
-      ...(
-        recentEntries.length
-          ? recentEntries.flatMap((entry) => [
-              `${entry.section} | ${entry.date}${
-                entry.time ? ` ${entry.time}` : ""
-              }`,
-              entry.summary,
-              ...(entry.details?.length ? entry.details : []),
-              "",
-            ])
-          : ["No entries found for this date range."]
-      ),
-    ].join("\n");
+    const orderedSections = [
+      "Food Diary",
+      "Medication",
+      "Toileting",
+      "Health",
+      "Sleep",
+    ];
 
     const handleShareReport = async () => {
       try {
@@ -1649,7 +1681,7 @@ export default function KaylenCareMonitorDashboard() {
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Quick range
           </label>
@@ -1666,7 +1698,7 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={`${cardClassName} min-w-0`}>
+        <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Entries found
           </label>
@@ -1675,38 +1707,75 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div className={`${cardClassName} min-w-0 md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">
-            Shared log
-          </label>
-          <div className="mt-3 space-y-3">
+        <div id="report-print-area" className={`${cardClassName} md:col-span-2`}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <label className="text-sm font-semibold text-slate-700">
+                Report view
+              </label>
+              <p className="mt-1 text-sm text-slate-500">
+                Grouped by category with matching colours.
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+              Last {reportDays} days
+            </span>
+          </div>
+
+          <div className="mt-4 space-y-5">
             {recentEntries.length ? (
-              recentEntries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700"
-                >
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="font-bold text-slate-900">
-                      {entry.section}
-                    </span>
-                    <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                      {entry.date}
-                      {entry.time ? ` · ${entry.time}` : ""}
-                    </span>
-                  </div>
-                  <p className="mt-2 break-words font-medium text-slate-800">
-                    {entry.summary}
-                  </p>
-                  {entry.details?.length ? (
-                    <div className="mt-2 space-y-1 break-words text-slate-600">
-                      {entry.details.map((detail, index) => (
-                        <p key={index}>{detail}</p>
-                      ))}
+              orderedSections.map((section) => {
+                const entries = groupedReportEntries[section] || [];
+                if (!entries.length) return null;
+
+                const theme = sectionTheme[section] || {
+                  report: "border-slate-200 bg-slate-50",
+                  badge: "bg-slate-100 text-slate-700",
+                };
+
+                return (
+                  <div key={section} className="space-y-3">
+                    <div
+                      className={`rounded-2xl border px-4 py-3 ${theme.report}`}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-base font-bold text-slate-900">
+                          {section}
+                        </h4>
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${theme.badge}`}
+                        >
+                          {entries.length} item{entries.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
                     </div>
-                  ) : null}
-                </div>
-              ))
+
+                    {entries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className={`rounded-xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
+                      >
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <span className="font-bold text-slate-900">
+                            {entry.summary}
+                          </span>
+                          <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                            {entry.date}
+                            {entry.time ? ` · ${entry.time}` : ""}
+                          </span>
+                        </div>
+                        {entry.details?.length ? (
+                          <div className="mt-2 space-y-1 break-words text-slate-600">
+                            {entry.details.map((detail, index) => (
+                              <p key={index}>{detail}</p>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })
             ) : (
               <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
                 Nothing logged yet. Save entries from Food, Medication,
@@ -1716,7 +1785,7 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div className="md:col-span-2 grid gap-3 sm:grid-cols-2">
+        <div className="md:col-span-2 grid gap-3 sm:grid-cols-3">
           <button
             type="button"
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
@@ -1729,6 +1798,13 @@ export default function KaylenCareMonitorDashboard() {
             className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
           >
             {shareCopied ? "Report copied" : "Share report"}
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+          >
+            Export PDF
           </button>
         </div>
       </div>
@@ -1765,8 +1841,8 @@ export default function KaylenCareMonitorDashboard() {
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-400 to-purple-500 text-4xl text-white shadow-lg">
                 🔒
               </div>
-              <h1 className="mt-6 text-4xl font-bold tracking-tight text-slate-900">
-                Kaylen’s Diary
+              <h1 className="mt-6 text-3xl font-semibold tracking-tight text-slate-700">
+                Kaylen’s diary
               </h1>
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
                 Enter PIN to access the diary.
@@ -1850,6 +1926,25 @@ export default function KaylenCareMonitorDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
+      <style>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #report-print-area, #report-print-area * {
+            visibility: visible;
+          }
+          #report-print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            background: white;
+            padding: 24px;
+          }
+        }
+      `}</style>
+
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
         <header className="rounded-[2rem] border border-slate-300 bg-white p-10 shadow-md md:p-12">
           <div className="flex flex-col items-center gap-5 text-center">
@@ -1865,69 +1960,81 @@ export default function KaylenCareMonitorDashboard() {
             >
               Lock
             </button>
-            <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
-              Kaylen’s Diary
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-600 md:text-5xl">
+              Kaylen’s diary
             </h1>
-            <div className="rounded-full border border-slate-300 bg-slate-100 px-5 py-2 text-sm font-semibold text-slate-700">
-              12 month logs
-            </div>
           </div>
         </header>
 
         <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {sections.map((section) => (
-            <div
-              key={section.title}
-              className={`group flex min-h-[17rem] flex-col rounded-[2rem] border p-5 shadow-md transition duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-6 ${section.soft}`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div
-                  className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br text-4xl text-white shadow-lg ${section.color}`}
-                >
-                  {section.emoji}
-                </div>
-                <div className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-                  Log
-                </div>
-              </div>
+          {sections.map((section) => {
+            const latestLines =
+              section.title !== "Reports"
+                ? tileStatusText(section.title)
+                : sharedLog.length
+                  ? sharedLog
+                      .slice(0, 2)
+                      .map(
+                        (entry) =>
+                          `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
+                      )
+                  : ["Nothing logged yet"];
 
-              <div className="mt-6 flex-1">
-                <h2 className="text-[1.6rem] font-bold leading-tight tracking-tight sm:text-[1.9rem]">
-                  {section.title}
-                </h2>
-
-                {section.subtitle ? (
-                  <p className="mt-2 min-h-[2.5rem] text-sm font-medium leading-5 text-slate-600">
-                    {section.subtitle}
-                  </p>
-                ) : null}
-
-                <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                    Latest
-                  </p>
-                  <p className="mt-1 break-words text-sm font-semibold leading-5 text-slate-700">
-                    {section.title !== "Reports"
-                      ? tileStatusText(section.title)
-                      : sharedLog.length
-                        ? `${sharedLog[0].summary}${
-                            sharedLog[0].time ? ` · ${sharedLog[0].time}` : ""
-                          }`
-                        : "Nothing logged yet"}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => openSection(section)}
-                className={`mt-6 flex w-full items-center justify-between rounded-2xl bg-gradient-to-r px-5 py-3.5 text-base font-semibold text-white shadow-md transition hover:scale-[1.02] ${section.color}`}
+            return (
+              <div
+                key={section.title}
+                className={`group flex min-h-[17rem] flex-col rounded-[2rem] border p-5 shadow-md transition duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-6 ${section.soft}`}
               >
-                <span>{section.button}</span>
-                <span>→</span>
-              </button>
-            </div>
-          ))}
+                <div className="flex items-start justify-between gap-4">
+                  <div
+                    className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br text-4xl text-white shadow-lg ${section.color}`}
+                  >
+                    {section.emoji}
+                  </div>
+                  <div className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
+                    Log
+                  </div>
+                </div>
+
+                <div className="mt-6 flex-1">
+                  <h2 className="text-[1.6rem] font-bold leading-tight tracking-tight sm:text-[1.9rem]">
+                    {section.title}
+                  </h2>
+
+                  {section.subtitle ? (
+                    <p className="mt-2 min-h-[2.5rem] text-sm font-medium leading-5 text-slate-600">
+                      {section.subtitle}
+                    </p>
+                  ) : null}
+
+                  <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
+                      Latest
+                    </p>
+                    <div className="mt-1 space-y-1">
+                      {latestLines.map((line, index) => (
+                        <p
+                          key={`${section.title}-${index}`}
+                          className="break-words text-sm font-semibold leading-5 text-slate-700"
+                        >
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openSection(section)}
+                  className={`mt-6 flex w-full items-center justify-between rounded-2xl bg-gradient-to-r px-5 py-3.5 text-base font-semibold text-white shadow-md transition hover:scale-[1.02] ${section.color}`}
+                >
+                  <span>{section.button}</span>
+                  <span>→</span>
+                </button>
+              </div>
+            );
+          })}
         </section>
 
         <section className="mt-8 grid gap-5 sm:grid-cols-3">
@@ -1939,9 +2046,9 @@ export default function KaylenCareMonitorDashboard() {
           </div>
           <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Storage
+              Recent range
             </p>
-            <p className="mt-2 text-4xl font-bold">12m</p>
+            <p className="mt-2 text-4xl font-bold">{reportDays}d</p>
           </div>
           <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
