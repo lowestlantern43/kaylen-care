@@ -40,22 +40,27 @@ const sectionTheme = {
   "Food Diary": {
     report: "border-emerald-200 bg-emerald-50",
     badge: "bg-emerald-100 text-emerald-700",
+    solidHeader: "bg-emerald-600 text-white border-emerald-700",
   },
   Medication: {
     report: "border-rose-200 bg-rose-50",
     badge: "bg-rose-100 text-rose-700",
+    solidHeader: "bg-rose-600 text-white border-rose-700",
   },
   Toileting: {
     report: "border-sky-200 bg-sky-50",
     badge: "bg-sky-100 text-sky-700",
+    solidHeader: "bg-sky-600 text-white border-sky-700",
   },
   Health: {
     report: "border-emerald-200 bg-green-50",
     badge: "bg-green-100 text-green-700",
+    solidHeader: "bg-green-600 text-white border-green-700",
   },
   Sleep: {
     report: "border-indigo-200 bg-indigo-50",
     badge: "bg-indigo-100 text-indigo-700",
+    solidHeader: "bg-indigo-600 text-white border-indigo-700",
   },
 };
 
@@ -88,9 +93,11 @@ export default function KaylenCareMonitorDashboard() {
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
   const [savedMedicationOptions, setSavedMedicationOptions] = useState([]);
+  const [savedGivenByOptions, setSavedGivenByOptions] = useState([]);
   const [saveFoodForFuture, setSaveFoodForFuture] = useState(false);
   const [saveMedicationForFuture, setSaveMedicationForFuture] =
     useState(false);
+  const [saveGivenByForFuture, setSaveGivenByForFuture] = useState(false);
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -109,6 +116,7 @@ export default function KaylenCareMonitorDashboard() {
     dose: "",
     time: nowTimeValue(),
     givenBy: "",
+    otherGivenBy: "",
     date: todayValue(),
     notes: "",
   });
@@ -227,6 +235,14 @@ export default function KaylenCareMonitorDashboard() {
     "Other",
   ];
 
+  const defaultGivenByOptions = ["Martin", "Rachel", "Other"];
+
+  const givenByOptions = [
+    ...defaultGivenByOptions.slice(0, -1),
+    ...savedGivenByOptions,
+    "Other",
+  ];
+
   const inputClassName =
     "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
@@ -294,11 +310,13 @@ export default function KaylenCareMonitorDashboard() {
       dose: "",
       time: nowTimeValue(),
       givenBy: "",
+      otherGivenBy: "",
       date: todayValue(),
       notes: "",
     });
     setMedicationValue("");
     setSaveMedicationForFuture(false);
+    setSaveGivenByForFuture(false);
   };
 
   const resetToiletingForm = () => {
@@ -631,7 +649,10 @@ export default function KaylenCareMonitorDashboard() {
     return true;
   };
 
-  const saveMedicationEntryToSupabase = async ({ selectedMedicine }) => {
+  const saveMedicationEntryToSupabase = async ({
+    selectedMedicine,
+    selectedGivenBy,
+  }) => {
     const payload = {
       medicine: selectedMedicine || "Medication",
       dose: medicationForm.dose || "",
@@ -639,7 +660,7 @@ export default function KaylenCareMonitorDashboard() {
       notes: [
         `Date: ${medicationForm.date}`,
         `Time: ${medicationForm.time}`,
-        `Given by: ${medicationForm.givenBy || "Not set"}`,
+        `Given by: ${selectedGivenBy || "Not set"}`,
         medicationForm.notes ? `Notes: ${medicationForm.notes}` : null,
       ]
         .filter(Boolean)
@@ -1011,6 +1032,11 @@ export default function KaylenCareMonitorDashboard() {
       : medicationForm.medicine || "Medication";
     const isMelatonin = selectedMedicine === "Melatonin";
 
+    const showOtherGivenBy = medicationForm.givenBy === "Other";
+    const selectedGivenBy = showOtherGivenBy
+      ? medicationForm.otherGivenBy || "Other"
+      : medicationForm.givenBy || "";
+
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className={`${cardClassName} md:col-span-2`}>
@@ -1115,15 +1141,25 @@ export default function KaylenCareMonitorDashboard() {
           <label className="text-sm font-semibold text-slate-700">
             Given by
           </label>
-          <input
-            type="text"
-            placeholder="Name of person giving medication"
+          <select
             className={`${inputClassName} min-h-[48px]`}
             value={medicationForm.givenBy}
             onChange={(e) =>
-              setMedicationForm({ ...medicationForm, givenBy: e.target.value })
+              setMedicationForm({
+                ...medicationForm,
+                givenBy: e.target.value,
+                otherGivenBy:
+                  e.target.value === "Other" ? medicationForm.otherGivenBy : "",
+              })
             }
-          />
+          >
+            <option value="">Select name</option>
+            {givenByOptions.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className={cardClassName}>
@@ -1139,6 +1175,40 @@ export default function KaylenCareMonitorDashboard() {
             }
           />
         </div>
+
+        {showOtherGivenBy ? (
+          <>
+            <div className={`${cardClassName} md:col-span-2`}>
+              <label className="text-sm font-semibold text-slate-700">
+                Other name
+              </label>
+              <input
+                type="text"
+                placeholder="Type name"
+                className={`${inputClassName} min-h-[48px] border-dashed`}
+                value={medicationForm.otherGivenBy}
+                onChange={(e) =>
+                  setMedicationForm({
+                    ...medicationForm,
+                    otherGivenBy: e.target.value,
+                  })
+                }
+              />
+            </div>
+
+            <div className={`${cardClassName} md:col-span-2`}>
+              <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={saveGivenByForFuture}
+                  onChange={(e) => setSaveGivenByForFuture(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Save this name for future
+              </label>
+            </div>
+          </>
+        ) : null}
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1168,6 +1238,7 @@ export default function KaylenCareMonitorDashboard() {
 
               const saved = await saveMedicationEntryToSupabase({
                 selectedMedicine,
+                selectedGivenBy,
               });
 
               if (!saved) return;
@@ -1177,6 +1248,12 @@ export default function KaylenCareMonitorDashboard() {
               if (showOtherMedication && saveMedicationForFuture) {
                 setSavedMedicationOptions((current) =>
                   dedupeAppend(current, medicationForm.otherMedicine),
+                );
+              }
+
+              if (showOtherGivenBy && saveGivenByForFuture) {
+                setSavedGivenByOptions((current) =>
+                  dedupeAppend(current, medicationForm.otherGivenBy),
                 );
               }
 
@@ -1731,20 +1808,19 @@ export default function KaylenCareMonitorDashboard() {
                 const theme = sectionTheme[section] || {
                   report: "border-slate-200 bg-slate-50",
                   badge: "bg-slate-100 text-slate-700",
+                  solidHeader: "bg-slate-700 text-white border-slate-800",
                 };
 
                 return (
                   <div key={section} className="space-y-3">
                     <div
-                      className={`rounded-2xl border px-4 py-3 ${theme.report}`}
+                      className={`report-section-title rounded-2xl border px-4 py-3 ${theme.solidHeader}`}
                     >
                       <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-base font-bold text-slate-900">
+                        <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
                           {section}
                         </h4>
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] ${theme.badge}`}
-                        >
+                        <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
                           {entries.length} item{entries.length === 1 ? "" : "s"}
                         </span>
                       </div>
@@ -1841,9 +1917,11 @@ export default function KaylenCareMonitorDashboard() {
               <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-400 to-purple-500 text-4xl text-white shadow-lg">
                 🔒
               </div>
-              <h1 className="mt-6 text-3xl font-semibold tracking-tight text-slate-700">
-                Kaylen’s diary
-              </h1>
+              <div className="mt-6 inline-block rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-600 px-5 py-3 shadow-md">
+                <h1 className="text-2xl font-extrabold uppercase tracking-[0.22em] text-white md:text-3xl">
+                  Kaylen’s Diary
+                </h1>
+              </div>
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
                 Enter PIN to access the diary.
               </p>
@@ -1931,9 +2009,11 @@ export default function KaylenCareMonitorDashboard() {
           body * {
             visibility: hidden;
           }
+
           #report-print-area, #report-print-area * {
             visibility: visible;
           }
+
           #report-print-area {
             position: absolute;
             left: 0;
@@ -1941,6 +2021,16 @@ export default function KaylenCareMonitorDashboard() {
             width: 100%;
             background: white;
             padding: 24px;
+          }
+
+          #report-print-area,
+          #report-print-area * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .report-section-title {
+            border-width: 2px !important;
           }
         }
       `}</style>
@@ -1960,9 +2050,11 @@ export default function KaylenCareMonitorDashboard() {
             >
               Lock
             </button>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-600 md:text-5xl">
-              Kaylen’s diary
-            </h1>
+            <div className="inline-block rounded-3xl bg-gradient-to-r from-indigo-500 to-purple-600 px-6 py-4 shadow-lg">
+              <h1 className="text-2xl font-extrabold uppercase tracking-[0.24em] text-white md:text-4xl">
+                Kaylen’s Diary
+              </h1>
+            </div>
           </div>
         </header>
 
