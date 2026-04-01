@@ -1779,7 +1779,10 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div id="report-print-area" className={`${cardClassName} report-print-wrap md:col-span-2`}>
+        <div
+          id="report-print-area"
+          className="report-print-wrap md:col-span-2 rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm"
+        >
           <div className="report-screen-header flex flex-wrap items-center justify-between gap-3">
             <div>
               <label className="text-sm font-semibold text-slate-700">
@@ -2003,73 +2006,90 @@ export default function KaylenCareMonitorDashboard() {
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <style>{`
         @page {
-          margin: 10mm;
+          size: auto;
+          margin: 8mm;
         }
 
         @media print {
-          html, body {
+          html,
+          body {
             margin: 0 !important;
             padding: 0 !important;
             background: white !important;
+            height: auto !important;
+            overflow: visible !important;
           }
 
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
 
           #report-print-area,
           #report-print-area * {
-            visibility: visible;
+            visibility: visible !important;
           }
 
           #report-print-area {
-            position: static !important;
-            left: auto !important;
-            top: auto !important;
+            position: absolute !important;
+            inset: 0 auto auto 0 !important;
             width: 100% !important;
             max-width: none !important;
-            background: white !important;
-            padding: 0 !important;
             margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
             border: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
           }
 
-          .report-print-wrap,
-          .report-content,
-          .print-section-block {
-            margin-top: 0 !important;
-            padding-top: 0 !important;
+          .report-print-wrap {
+            margin: 0 !important;
+            padding: 0 !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            background: white !important;
           }
 
           .report-screen-header {
             display: none !important;
           }
 
-          #report-print-area,
-          #report-print-area * {
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
+          .report-content {
+            margin-top: 0 !important;
+            padding-top: 0 !important;
           }
 
-          .report-section-title {
-            border-width: 2px !important;
+          .print-section-block {
             margin-top: 0 !important;
             break-inside: avoid;
             page-break-inside: avoid;
           }
 
-          .print-section-block {
+          .report-section-title {
+            margin-top: 0 !important;
+            border-width: 2px !important;
             break-inside: avoid;
             page-break-inside: avoid;
+          }
+
+          #report-print-area,
+          #report-print-area * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
         }
       `}</style>
 
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
-        <header className="rounded-[2rem] border border-slate-300 bg-white p-10 shadow-md md:p-12">
-          <div className="flex flex-col items-center gap-5 text-center">
+        <header className="mb-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
+              <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
+                Kaylen’s Diary
+              </h1>
+            </div>
+
             <button
               type="button"
               onClick={() => {
@@ -2078,16 +2098,10 @@ export default function KaylenCareMonitorDashboard() {
                 setPasswordError("");
                 setActiveSection(null);
               }}
-              className="self-end rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.15em] text-slate-600 shadow-sm transition hover:bg-slate-50"
+              className="shrink-0 rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
               Lock
             </button>
-
-            <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
-              <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
-                Kaylen’s Diary
-              </h1>
-            </div>
           </div>
         </header>
 
