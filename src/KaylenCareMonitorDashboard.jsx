@@ -170,6 +170,9 @@ export default function KaylenCareMonitorDashboard() {
     nap: "No",
     notes: "",
   });
+  const [sleepEntryId, setSleepEntryId] = useState(null);
+  const [sleepBanner, setSleepBanner] = useState("");
+  const [isLoadingSleepDraft, setIsLoadingSleepDraft] = useState(false);
 
   const sections = [
     {
@@ -206,7 +209,7 @@ export default function KaylenCareMonitorDashboard() {
     },
     {
       title: "Sleep",
-      subtitle: "Night sleep and nap tracking",
+      subtitle: "Night sleep and wake-up tracking",
       button: "Open Log",
       emoji: "🌙",
       color: "from-indigo-400 to-purple-500",
@@ -271,6 +274,58 @@ export default function KaylenCareMonitorDashboard() {
     reportDays === "custom"
       ? Math.max(1, Number(customReportDays) || 7)
       : Math.max(1, Number(reportDays) || 7);
+
+  const parseNotesValue = (text, label) => {
+    const parts = (text || "").split(" | ");
+    const found = parts.find((part) => part.startsWith(`${label}: `));
+    return found ? found.replace(`${label}: `, "") : "";
+  };
+
+  const parseDateToIso = (value) => {
+    if (!value || !value.includes("/")) return null;
+    const [day, month, year] = value.split("/");
+    if (!day || !month || !year) return null;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
+  const getSleepDurationMinutes = (
+    sleepDateValue,
+    bedtime,
+    wakeDateValue,
+    wakeTime,
+  ) => {
+    const sleepDateIso = parseDateToIso(sleepDateValue);
+    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
+
+    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
+
+    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
+    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
+
+    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
+      return null;
+    }
+
+    if (wakeDate <= bedtimeDate) {
+      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
+    return Math.round(diffMs / 60000);
+  };
+
+  const formatSleepDuration = (minutes) => {
+    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
+      return "";
+    }
+
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    if (hrs && mins) return `${hrs}h ${mins}m`;
+    if (hrs) return `${hrs}h`;
+    return `${mins}m`;
+  };
 
   const openSection = (section) => {
     setActiveSection(section);
@@ -382,12 +437,55 @@ export default function KaylenCareMonitorDashboard() {
       nap: "No",
       notes: "",
     });
+    setSleepEntryId(null);
+    setSleepBanner("");
   };
 
-  const parseNotesValue = (text, label) => {
-    const parts = (text || "").split(" | ");
-    const found = parts.find((part) => part.startsWith(`${label}: `));
-    return found ? found.replace(`${label}: `, "") : "";
+  const loadLatestIncompleteSleepEntry = async () => {
+    try {
+      setIsLoadingSleepDraft(true);
+
+      const { data, error } = await supabase
+        .from("sleep_logs")
+        .select("*")
+        .is("wake_time", null)
+        .order("time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error loading incomplete sleep entry:", error);
+        return;
+      }
+
+      if (!data) {
+        setSleepEntryId(null);
+        setSleepBanner("");
+        return;
+      }
+
+      const savedDate = parseNotesValue(data.notes, "Date") || todayValue();
+
+      setSleepEntryId(data.id);
+      setSleepBanner(
+        `Continuing previous sleep from ${savedDate} at ${
+          data.bedtime || "time not set"
+        }`,
+      );
+      setSleepForm({
+        date: savedDate,
+        quality: data.quality || "Good",
+        bedtime: data.bedtime || "",
+        wakeTime: "",
+        nightWakings: data.night_wakings || "",
+        nap: data.nap || "No",
+        notes: parseNotesValue(data.notes, "Notes") || "",
+      });
+    } catch (error) {
+      console.error("Error preparing sleep form:", error);
+    } finally {
+      setIsLoadingSleepDraft(false);
+    }
   };
 
   const loadEntriesFromSupabase = async () => {
@@ -489,23 +587,42 @@ export default function KaylenCareMonitorDashboard() {
       ].filter(Boolean),
     }));
 
-    const mappedSleepEntries = (sleepData || []).map((row) => ({
-      id: `sleep-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Sleep",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: row.bedtime || "",
-      summary: `${row.quality || "Sleep"} · wake ${
-        row.wake_time || "Not set"
-      }`,
-      details: [
-        `Night wakings: ${row.night_wakings || "0"}`,
-        `Daytime nap: ${row.nap || "Not set"}`,
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+    const mappedSleepEntries = (sleepData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const wakeDate = parseNotesValue(row.notes, "Wake Date") || entryDate;
+      const durationMinutes = getSleepDurationMinutes(
+        entryDate,
+        row.bedtime,
+        wakeDate,
+        row.wake_time,
+      );
+      const durationText = formatSleepDuration(durationMinutes);
+
+      return {
+        id: `sleep-${row.id}`,
+        createdAt: row.time || new Date().toISOString(),
+        section: "Sleep",
+        date: entryDate,
+        time: row.bedtime || "",
+        summary: row.wake_time
+          ? `Sleep · ${row.bedtime || "No bedtime"} to ${row.wake_time}${
+              durationText ? ` · ${durationText}` : ""
+            }`
+          : `Sleep started · ${row.bedtime || "No bedtime"}`,
+        details: [
+          row.quality ? `Sleep quality: ${row.quality}` : null,
+          row.wake_time
+            ? `Wake-up: ${wakeDate} ${row.wake_time}`
+            : "Wake-up: Not logged yet",
+          `Night wakings: ${row.night_wakings || "0"}`,
+          `Daytime nap: ${row.nap || "Not set"}`,
+          durationText ? `Sleep duration: ${durationText}` : null,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
 
     const mappedHealthEntries = (healthData || []).map((row) => ({
       id: `health-${row.id}`,
@@ -547,6 +664,11 @@ export default function KaylenCareMonitorDashboard() {
     }
   }, [isUnlocked]);
 
+  useEffect(() => {
+    if (!isUnlocked || activeSection?.title !== "Sleep") return;
+    loadLatestIncompleteSleepEntry();
+  }, [isUnlocked, activeSection]);
+
   const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
 
@@ -560,7 +682,7 @@ export default function KaylenCareMonitorDashboard() {
       case "Health":
         return "Record seizures, symptoms, actions, weight, and height.";
       case "Sleep":
-        return "Track bedtime, wake time, and sleep quality.";
+        return "Log bedtime first, then complete wake-up the next morning.";
       case "Reports":
         return "View recent entries and export a proper PDF.";
       default:
@@ -580,7 +702,10 @@ export default function KaylenCareMonitorDashboard() {
 
       if (Number.isNaN(entryDate.getTime()) || entryDate < cutoff) return false;
 
-      if (reportCategoryFilter !== "All" && entry.section !== reportCategoryFilter) {
+      if (
+        reportCategoryFilter !== "All" &&
+        entry.section !== reportCategoryFilter
+      ) {
         return false;
       }
 
@@ -666,7 +791,9 @@ export default function KaylenCareMonitorDashboard() {
     if (reportLayout === "timeline") {
       return [
         `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-        `Timeline view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
+        `Timeline view${
+          reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
+        }`,
         "",
         ...recentEntries.flatMap((entry) => [
           `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
@@ -682,7 +809,9 @@ export default function KaylenCareMonitorDashboard() {
 
     return [
       `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-      `Category view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
+      `Category view${
+        reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
+      }`,
       "",
       ...order.flatMap((section) => {
         const entries = groupedReportEntries[section] || [];
@@ -821,31 +950,118 @@ export default function KaylenCareMonitorDashboard() {
     return true;
   };
 
-  const saveSleepEntryToSupabase = async () => {
-    const payload = {
-      quality: sleepForm.quality || "",
-      bedtime: sleepForm.bedtime || "",
-      wake_time: sleepForm.wakeTime || "",
-      night_wakings: sleepForm.nightWakings || "0",
-      nap: sleepForm.nap || "",
-      time: new Date().toISOString(),
-      notes: [
-        `Date: ${sleepForm.date}`,
-        sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
-      ]
-        .filter(Boolean)
-        .join(" | "),
-    };
+  const saveSleepEntryToSupabase = async ({ mode }) => {
+    if (mode === "sleep") {
+      if (!sleepForm.date.trim() || !sleepForm.bedtime.trim()) {
+        alert("Sleep date and bedtime are required");
+        return false;
+      }
 
-    const { error } = await supabase.from("sleep_logs").insert([payload]);
+      if (sleepEntryId) {
+        alert("There is already an unfinished sleep entry waiting for wake-up");
+        return false;
+      }
 
-    if (error) {
-      console.error("Supabase sleep save failed:", error);
-      alert("Sleep save failed - check console");
-      return false;
+      const duplicateNotes = `Date: ${sleepForm.date}`;
+
+      const { data: existingDuplicate, error: duplicateError } = await supabase
+        .from("sleep_logs")
+        .select("id")
+        .eq("bedtime", sleepForm.bedtime)
+        .ilike("notes", `%${duplicateNotes}%`)
+        .is("wake_time", null)
+        .limit(1);
+
+      if (duplicateError) {
+        console.error("Sleep duplicate check failed:", duplicateError);
+        alert("Sleep save failed - check console");
+        return false;
+      }
+
+      if (existingDuplicate?.length) {
+        alert("This sleep entry already exists");
+        return false;
+      }
+
+      const payload = {
+        quality: null,
+        bedtime: sleepForm.bedtime || "",
+        wake_time: null,
+        night_wakings: null,
+        nap: null,
+        time: new Date().toISOString(),
+        notes: [`Date: ${sleepForm.date}`].join(" | "),
+      };
+
+      const { data, error } = await supabase
+        .from("sleep_logs")
+        .insert([payload])
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Supabase sleep save failed:", error);
+        alert("Sleep save failed - check console");
+        return false;
+      }
+
+      setSleepEntryId(data.id);
+      setSleepBanner(
+        `Continuing previous sleep from ${sleepForm.date} at ${sleepForm.bedtime}`,
+      );
+
+      return true;
     }
 
-    return true;
+    if (mode === "wake") {
+      if (!sleepEntryId) {
+        alert("No bedtime entry found to complete");
+        return false;
+      }
+
+      if (
+        !sleepForm.date.trim() ||
+        !sleepForm.bedtime.trim() ||
+        !sleepForm.wakeTime.trim() ||
+        !sleepForm.quality.trim()
+      ) {
+        alert(
+          "Wake-up date, wake-up time, sleep quality, sleep date and bedtime are required",
+        );
+        return false;
+      }
+
+      const payload = {
+        quality: sleepForm.quality || "",
+        bedtime: sleepForm.bedtime || "",
+        wake_time: sleepForm.wakeTime || "",
+        night_wakings: sleepForm.nightWakings || "0",
+        nap: sleepForm.nap || "No",
+        time: new Date().toISOString(),
+        notes: [
+          `Date: ${sleepForm.date}`,
+          `Wake Date: ${todayValue()}`,
+          sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      };
+
+      const { error } = await supabase
+        .from("sleep_logs")
+        .update(payload)
+        .eq("id", sleepEntryId);
+
+      if (error) {
+        console.error("Supabase wake-up update failed:", error);
+        alert("Wake-up save failed - check console");
+        return false;
+      }
+
+      return true;
+    }
+
+    return false;
   };
 
   const saveHealthEntryToSupabase = async () => {
@@ -897,14 +1113,14 @@ export default function KaylenCareMonitorDashboard() {
         useCORS: true,
         backgroundColor: "#ffffff",
         logging: false,
-        windowWidth: 794,
+        windowWidth: 1123,
       });
 
       const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
+      const pdf = new jsPDF("l", "mm", "a4");
 
-      const pdfWidth = 210;
-      const pdfHeight = 297;
+      const pdfWidth = 297;
+      const pdfHeight = 210;
       const margin = 8;
       const usableWidth = pdfWidth - margin * 2;
       const usableHeight = pdfHeight - margin * 2;
@@ -942,6 +1158,7 @@ export default function KaylenCareMonitorDashboard() {
     onChange,
     onNow,
     placeholder = "HH:MM",
+    disabled = false,
   }) => (
     <div className={cardClassName}>
       <label className="text-sm font-semibold text-slate-700">{label}</label>
@@ -950,11 +1167,19 @@ export default function KaylenCareMonitorDashboard() {
           type="text"
           inputMode="numeric"
           placeholder={placeholder}
-          className={`${dateTimeInputClass} mt-2 flex-1`}
+          className={`${dateTimeInputClass} mt-2 flex-1 ${
+            disabled ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""
+          }`}
           value={value}
           onChange={(e) => onChange(formatTimeInput(e.target.value))}
+          disabled={disabled}
         />
-        <button type="button" onClick={onNow} className={smallActionButtonClass}>
+        <button
+          type="button"
+          onClick={onNow}
+          className={smallActionButtonClass}
+          disabled={disabled}
+        >
           Now
         </button>
       </div>
@@ -1425,7 +1650,8 @@ export default function KaylenCareMonitorDashboard() {
           label: "Time",
           value: toiletingForm.time,
           onChange: (time) => setToiletingForm({ ...toiletingForm, time }),
-          onNow: () => setToiletingForm({ ...toiletingForm, time: nowTimeValue() }),
+          onNow: () =>
+            setToiletingForm({ ...toiletingForm, time: nowTimeValue() }),
         })}
 
         <div className={`${cardClassName} md:col-span-2`}>
@@ -1697,112 +1923,263 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const renderSleepForm = () => {
+    const wakeDate = todayValue();
+    const durationPreview = formatSleepDuration(
+      getSleepDurationMinutes(
+        sleepForm.date,
+        sleepForm.bedtime,
+        wakeDate,
+        sleepForm.wakeTime,
+      ),
+    );
+
+    const canSaveSleep =
+      !!sleepForm.date.trim() &&
+      !!sleepForm.bedtime.trim() &&
+      !sleepEntryId &&
+      !isLoadingSleepDraft;
+
+    const canSaveWake =
+      !!sleepEntryId &&
+      !!sleepForm.date.trim() &&
+      !!sleepForm.bedtime.trim() &&
+      !!sleepForm.wakeTime.trim() &&
+      !!sleepForm.quality.trim() &&
+      !isLoadingSleepDraft;
+
     return (
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">Date</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="DD/MM/YYYY"
-            className={dateTimeInputClass}
-            value={sleepForm.date}
-            onChange={(e) =>
-              setSleepForm({ ...sleepForm, date: e.target.value })
-            }
-          />
+      <div className="mt-6 space-y-4">
+        {sleepBanner ? (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700">
+            {sleepBanner}
+          </div>
+        ) : null}
+
+        {isLoadingSleepDraft ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium text-slate-600">
+            Checking for unfinished sleep entry...
+          </div>
+        ) : null}
+
+        <div className="rounded-3xl border border-indigo-200 bg-indigo-50/70 p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-bold text-slate-900">Sleep</h4>
+              <p className="text-sm font-medium text-slate-600">
+                Log bedtime at night
+              </p>
+            </div>
+            <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-indigo-700">
+              Step 1
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">Date</label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="DD/MM/YYYY"
+                className={`${dateTimeInputClass} ${
+                  sleepEntryId ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""
+                }`}
+                value={sleepForm.date}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, date: e.target.value })
+                }
+                disabled={!!sleepEntryId}
+              />
+            </div>
+
+            {renderTimeInput({
+              label: "Time",
+              value: sleepForm.bedtime,
+              onChange: (bedtime) => setSleepForm({ ...sleepForm, bedtime }),
+              onNow: () =>
+                setSleepForm({ ...sleepForm, bedtime: nowTimeValue() }),
+              disabled: !!sleepEntryId,
+            })}
+          </div>
+
+          <div className="mt-4">
+            <button
+              type="button"
+              disabled={!canSaveSleep}
+              onClick={async () => {
+                const saved = await saveSleepEntryToSupabase({ mode: "sleep" });
+                if (!saved) return;
+                await loadEntriesFromSupabase();
+              }}
+              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              Save sleep
+            </button>
+          </div>
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Sleep quality
-          </label>
-          <select
-            className={`${inputClassName} min-h-[48px]`}
-            value={sleepForm.quality}
-            onChange={(e) =>
-              setSleepForm({ ...sleepForm, quality: e.target.value })
-            }
-          >
-            <option value="">Select quality</option>
-            <option>Good</option>
-            <option>Broken</option>
-            <option>Poor</option>
-          </select>
-        </div>
+        <div className="rounded-3xl border border-indigo-200 bg-white p-4 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h4 className="text-lg font-bold text-slate-900">Wake-up</h4>
+              <p className="text-sm font-medium text-slate-600">
+                Complete the saved sleep in the morning
+              </p>
+            </div>
+            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold uppercase tracking-[0.14em] text-slate-700">
+              Step 2
+            </span>
+          </div>
 
-        {renderTimeInput({
-          label: "Bedtime",
-          value: sleepForm.bedtime,
-          onChange: (bedtime) => setSleepForm({ ...sleepForm, bedtime }),
-          onNow: () => setSleepForm({ ...sleepForm, bedtime: nowTimeValue() }),
-        })}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Sleep date
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                placeholder="DD/MM/YYYY"
+                className={`${dateTimeInputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+                value={sleepForm.date}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, date: e.target.value })
+                }
+                disabled
+              />
+            </div>
 
-        {renderTimeInput({
-          label: "Wake time",
-          value: sleepForm.wakeTime,
-          onChange: (wakeTime) => setSleepForm({ ...sleepForm, wakeTime }),
-          onNow: () => setSleepForm({ ...sleepForm, wakeTime: nowTimeValue() }),
-        })}
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Wake-up date
+              </label>
+              <input
+                type="text"
+                className={`${dateTimeInputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+                value={wakeDate}
+                readOnly
+              />
+            </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Night wakings
-          </label>
-          <input
-            type="number"
-            min="0"
-            placeholder="0"
-            className={`${inputClassName} min-h-[48px]`}
-            value={sleepForm.nightWakings}
-            onChange={(e) =>
-              setSleepForm({ ...sleepForm, nightWakings: e.target.value })
-            }
-          />
-        </div>
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Bedtime
+              </label>
+              <input
+                type="text"
+                className={`${dateTimeInputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
+                value={sleepForm.bedtime}
+                readOnly
+              />
+            </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Daytime nap
-          </label>
-          <select
-            className={`${inputClassName} min-h-[48px]`}
-            value={sleepForm.nap}
-            onChange={(e) => setSleepForm({ ...sleepForm, nap: e.target.value })}
-          >
-            <option value="">Select option</option>
-            <option>No</option>
-            <option>Yes</option>
-          </select>
-        </div>
+            {renderTimeInput({
+              label: "Wake-up time",
+              value: sleepForm.wakeTime,
+              onChange: (wakeTime) => setSleepForm({ ...sleepForm, wakeTime }),
+              onNow: () =>
+                setSleepForm({ ...sleepForm, wakeTime: nowTimeValue() }),
+            })}
 
-        <div className={`${cardClassName} md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">Notes</label>
-          <textarea
-            rows={5}
-            placeholder="Anything unusual about sleep"
-            className={`${inputClassName} min-h-[48px]`}
-            value={sleepForm.notes}
-            onChange={(e) => setSleepForm({ ...sleepForm, notes: e.target.value })}
-          />
-        </div>
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Sleep quality
+              </label>
+              <select
+                className={`${inputClassName} min-h-[48px]`}
+                value={sleepForm.quality}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, quality: e.target.value })
+                }
+              >
+                <option value="">Select quality</option>
+                <option>Good</option>
+                <option>Broken</option>
+                <option>Poor</option>
+              </select>
+            </div>
 
-        <div className="md:col-span-2">
-          <button
-            type="button"
-            onClick={async () => {
-              const saved = await saveSleepEntryToSupabase();
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Night wakings
+              </label>
+              <input
+                type="number"
+                min="0"
+                placeholder="0"
+                className={`${inputClassName} min-h-[48px]`}
+                value={sleepForm.nightWakings}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, nightWakings: e.target.value })
+                }
+              />
+            </div>
 
-              if (!saved) return;
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Daytime nap
+              </label>
+              <select
+                className={`${inputClassName} min-h-[48px]`}
+                value={sleepForm.nap}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, nap: e.target.value })
+                }
+              >
+                <option>No</option>
+                <option>Yes</option>
+              </select>
+            </div>
 
-              await loadEntriesFromSupabase();
-              resetSleepForm();
-              closeSection();
-            }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
-          >
-            Save sleep entry
-          </button>
+            <div className={cardClassName}>
+              <label className="text-sm font-semibold text-slate-700">
+                Sleep duration
+              </label>
+              <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                {durationPreview || "Will calculate when wake-up time is entered"}
+              </div>
+            </div>
+
+            <div className={`${cardClassName} md:col-span-2`}>
+              <label className="text-sm font-semibold text-slate-700">Notes</label>
+              <textarea
+                rows={5}
+                placeholder="Anything unusual about sleep"
+                className={`${inputClassName} min-h-[48px]`}
+                value={sleepForm.notes}
+                onChange={(e) =>
+                  setSleepForm({ ...sleepForm, notes: e.target.value })
+                }
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={!canSaveWake}
+              onClick={async () => {
+                const saved = await saveSleepEntryToSupabase({ mode: "wake" });
+
+                if (!saved) return;
+
+                await loadEntriesFromSupabase();
+                resetSleepForm();
+                closeSection();
+              }}
+              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+            >
+              Save wake-up
+            </button>
+
+            <button
+              type="button"
+              onClick={resetSleepForm}
+              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Clear sleep form
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1844,7 +2221,10 @@ export default function KaylenCareMonitorDashboard() {
           </div>
 
           {timelineGroups.map((group) => (
-            <div key={group.date} className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+            <div
+              key={group.date}
+              className={mode === "pdf" ? "space-y-3" : "space-y-2"}
+            >
               <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
                   {group.label}
@@ -1911,7 +2291,10 @@ export default function KaylenCareMonitorDashboard() {
           };
 
           return (
-            <div key={section} className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+            <div
+              key={section}
+              className={mode === "pdf" ? "space-y-3" : "space-y-2"}
+            >
               <div className={`${sectionHeaderClass} ${theme.solidHeader}`}>
                 <div className="flex items-center justify-between gap-3">
                   <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
@@ -1957,7 +2340,7 @@ export default function KaylenCareMonitorDashboard() {
     <div className="fixed left-[-99999px] top-0 z-[-1]">
       <div
         id="report-pdf-export"
-        className="w-[794px] bg-white p-8 text-slate-900"
+        className="w-[1123px] bg-white p-8 text-slate-900"
       >
         <div className="rounded-2xl bg-slate-800 px-6 py-4">
           <h1 className="text-center text-2xl font-bold uppercase tracking-[0.18em] text-white">
@@ -1977,13 +2360,19 @@ export default function KaylenCareMonitorDashboard() {
               </h2>
             </div>
             <div className="text-right text-sm font-semibold text-slate-600">
-              <p>Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}</p>
-              <p>{recentEntries.length} entr{recentEntries.length === 1 ? "y" : "ies"}</p>
+              <p>
+                Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
+              </p>
+              <p>
+                {recentEntries.length} entr{recentEntries.length === 1 ? "y" : "ies"}
+              </p>
             </div>
           </div>
         </div>
 
-        <div className="mt-4">{renderReportEntries({ mode: "pdf" })}</div>
+        <div className="mt-4 grid grid-cols-2 gap-4">
+          <div className="col-span-2">{renderReportEntries({ mode: "pdf" })}</div>
+        </div>
       </div>
     </div>
   );
