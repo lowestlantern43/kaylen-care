@@ -50,6 +50,62 @@ const formatReportDateLabel = (dateString) => {
   });
 };
 
+const calculateSleepDurationFromDates = (
+  sleepDate,
+  sleepTime,
+  wakeDate,
+  wakeTime,
+) => {
+  if (!sleepDate || !sleepTime || !wakeDate || !wakeTime) return "";
+
+  const [sleepDay, sleepMonth, sleepYear] = sleepDate.split("/").map(Number);
+  const [wakeDay, wakeMonth, wakeYear] = wakeDate.split("/").map(Number);
+  const [sleepHours, sleepMinutes] = sleepTime.split(":").map(Number);
+  const [wakeHours, wakeMinutes] = wakeTime.split(":").map(Number);
+
+  if (
+    [
+      sleepDay,
+      sleepMonth,
+      sleepYear,
+      wakeDay,
+      wakeMonth,
+      wakeYear,
+      sleepHours,
+      sleepMinutes,
+      wakeHours,
+      wakeMinutes,
+    ].some((value) => Number.isNaN(value))
+  ) {
+    return "";
+  }
+
+  const sleepDateTime = new Date(
+    sleepYear,
+    sleepMonth - 1,
+    sleepDay,
+    sleepHours,
+    sleepMinutes,
+  );
+  const wakeDateTime = new Date(
+    wakeYear,
+    wakeMonth - 1,
+    wakeDay,
+    wakeHours,
+    wakeMinutes,
+  );
+
+  const diffMs = wakeDateTime.getTime() - sleepDateTime.getTime();
+
+  if (Number.isNaN(diffMs) || diffMs <= 0) return "";
+
+  const totalMinutes = Math.floor(diffMs / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${hours}h ${minutes}m`;
+};
+
 const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
@@ -172,14 +228,15 @@ export default function KaylenCareMonitorDashboard() {
     heightIn: "",
   });
 
-  const [sleepLog, setSleepLog] = useState({
-    date: todayValue(),
-    bedtime: nowTimeValue(),
-  });
-
-  const [wakeLog, setWakeLog] = useState({
-    date: todayValue(),
+  const [sleepForm, setSleepForm] = useState({
+    sleepDate: todayValue(),
+    sleepTime: nowTimeValue(),
+    wakeDate: todayValue(),
     wakeTime: "",
+    quality: "Good",
+    nightWakings: "",
+    nap: "No",
+    notes: "",
   });
 
   const sections = [
@@ -217,7 +274,7 @@ export default function KaylenCareMonitorDashboard() {
     },
     {
       title: "Sleep",
-      subtitle: "Sleep log and wake log",
+      subtitle: "Sleep and wake-up with full overnight details",
       button: "Open Log",
       emoji: "🌙",
       color: "from-indigo-400 to-purple-500",
@@ -383,17 +440,16 @@ export default function KaylenCareMonitorDashboard() {
     });
   };
 
-  const resetSleepLog = () => {
-    setSleepLog({
-      date: todayValue(),
-      bedtime: nowTimeValue(),
-    });
-  };
-
-  const resetWakeLog = () => {
-    setWakeLog({
-      date: todayValue(),
+  const resetSleepForm = () => {
+    setSleepForm({
+      sleepDate: todayValue(),
+      sleepTime: nowTimeValue(),
+      wakeDate: todayValue(),
       wakeTime: "",
+      quality: "Good",
+      nightWakings: "",
+      nap: "No",
+      notes: "",
     });
   };
 
@@ -503,29 +559,35 @@ export default function KaylenCareMonitorDashboard() {
     }));
 
     const mappedSleepEntries = (sleepData || []).map((row) => {
-      const entryType = parseNotesValue(row.notes, "Entry type") || "Sleep log";
-      const date = parseNotesValue(row.notes, "Date") || todayValue();
+      const sleepDate = parseNotesValue(row.notes, "Sleep date") || todayValue();
+      const wakeDate = parseNotesValue(row.notes, "Wake date") || sleepDate;
 
-      if (entryType === "Wake log") {
-        return {
-          id: `sleep-${row.id}`,
-          createdAt: row.time || new Date().toISOString(),
-          section: "Sleep",
-          date,
-          time: row.wake_time || "",
-          summary: `Wake log · ${row.wake_time || "Time not set"}`,
-          details: [`Date: ${date}`],
-        };
-      }
+      const sleepDuration = calculateSleepDurationFromDates(
+        sleepDate,
+        row.bedtime || "",
+        wakeDate,
+        row.wake_time || "",
+      );
 
       return {
         id: `sleep-${row.id}`,
         createdAt: row.time || new Date().toISOString(),
         section: "Sleep",
-        date,
+        date: sleepDate,
         time: row.bedtime || "",
-        summary: `Sleep log · ${row.bedtime || "Time not set"}`,
-        details: [`Date: ${date}`],
+        summary: `${row.quality || "Sleep"}${
+          sleepDuration ? ` · ${sleepDuration}` : ""
+        }`,
+        details: [
+          `Sleep: ${sleepDate}${row.bedtime ? ` · ${row.bedtime}` : ""}`,
+          `Wake-up: ${wakeDate}${row.wake_time ? ` · ${row.wake_time}` : ""}`,
+          `Night wakings: ${row.night_wakings || "0"}`,
+          `Daytime nap: ${row.nap || "Not set"}`,
+          sleepDuration ? `Sleep duration: ${sleepDuration}` : null,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
       };
     });
 
@@ -582,7 +644,7 @@ export default function KaylenCareMonitorDashboard() {
       case "Health":
         return "Record seizures, symptoms, actions, weight, and height.";
       case "Sleep":
-        return "Log bedtime and wake time separately.";
+        return "Log sleep time first, then complete the wake-up details later.";
       case "Reports":
         return "View recent entries and export a proper PDF.";
       default:
@@ -894,17 +956,19 @@ export default function KaylenCareMonitorDashboard() {
     return true;
   };
 
-  const saveSleepEntryToSupabase = async ({ entryType, date, timeValue }) => {
-    const isWakeLog = entryType === "Wake log";
-
+  const saveSleepEntryToSupabase = async () => {
     const payload = {
-      quality: "",
-      bedtime: isWakeLog ? "" : timeValue,
-      wake_time: isWakeLog ? timeValue : "",
-      night_wakings: "",
-      nap: "",
+      quality: sleepForm.quality || "",
+      bedtime: sleepForm.sleepTime || "",
+      wake_time: sleepForm.wakeTime || "",
+      night_wakings: sleepForm.nightWakings || "0",
+      nap: sleepForm.nap || "",
       time: new Date().toISOString(),
-      notes: [`Entry type: ${entryType}`, `Date: ${date}`]
+      notes: [
+        `Sleep date: ${sleepForm.sleepDate}`,
+        `Wake date: ${sleepForm.wakeDate}`,
+        sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
+      ]
         .filter(Boolean)
         .join(" | "),
     };
@@ -1828,98 +1892,160 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const renderSleepForm = () => {
+    const sleepDuration = calculateSleepDurationFromDates(
+      sleepForm.sleepDate,
+      sleepForm.sleepTime,
+      sleepForm.wakeDate,
+      sleepForm.wakeTime,
+    );
+
     return (
       <div className="mt-6 space-y-6">
-        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 space-y-4">
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-indigo-700">
-            Sleep log
+            Sleep
           </p>
-
-          {renderDateInput({
-            label: "Date",
-            value: sleepLog.date,
-            onChange: (date) => setSleepLog({ ...sleepLog, date }),
-          })}
-
-          {renderTimeInput({
-            label: "Bedtime",
-            value: sleepLog.bedtime,
-            onChange: (bedtime) => setSleepLog({ ...sleepLog, bedtime }),
-            onNow: () =>
-              setSleepLog({ ...sleepLog, bedtime: nowTimeValue() }),
-          })}
-
-          <button
-            type="button"
-            disabled={isSavingEntry}
-            onClick={async () => {
-              await withSaveProtection(
-                () => ({
-                  section: "Sleep",
-                  summary: `Sleep log · ${sleepLog.bedtime || "Time not set"}`,
-                  details: [`Date: ${sleepLog.date}`],
-                }),
-                () =>
-                  saveSleepEntryToSupabase({
-                    entryType: "Sleep log",
-                    date: sleepLog.date,
-                    timeValue: sleepLog.bedtime,
-                  }),
-                async () => {
-                  resetSleepLog();
-                },
-              );
-            }}
-            className={`w-full rounded-2xl px-5 py-3 font-semibold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-60 bg-gradient-to-r ${activeSection.color}`}
-          >
-            {isSavingEntry ? "Saving..." : "Save sleep log"}
-          </button>
         </div>
 
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 space-y-4">
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
-            Wake log
-          </p>
-
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {renderDateInput({
             label: "Date",
-            value: wakeLog.date,
-            onChange: (date) => setWakeLog({ ...wakeLog, date }),
+            value: sleepForm.sleepDate,
+            onChange: (sleepDate) => setSleepForm({ ...sleepForm, sleepDate }),
           })}
 
           {renderTimeInput({
-            label: "Wake time",
-            value: wakeLog.wakeTime,
-            onChange: (wakeTime) => setWakeLog({ ...wakeLog, wakeTime }),
+            label: "Time",
+            value: sleepForm.sleepTime,
+            onChange: (sleepTime) => setSleepForm({ ...sleepForm, sleepTime }),
             onNow: () =>
-              setWakeLog({ ...wakeLog, wakeTime: nowTimeValue() }),
+              setSleepForm({ ...sleepForm, sleepTime: nowTimeValue() }),
+          })}
+        </div>
+
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-700">
+            Wake-up
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {renderDateInput({
+            label: "Date",
+            value: sleepForm.wakeDate,
+            onChange: (wakeDate) => setSleepForm({ ...sleepForm, wakeDate }),
           })}
 
-          <button
-            type="button"
-            disabled={isSavingEntry || !wakeLog.wakeTime}
-            onClick={async () => {
-              await withSaveProtection(
-                () => ({
-                  section: "Sleep",
-                  summary: `Wake log · ${wakeLog.wakeTime || "Time not set"}`,
-                  details: [`Date: ${wakeLog.date}`],
-                }),
-                () =>
-                  saveSleepEntryToSupabase({
-                    entryType: "Wake log",
-                    date: wakeLog.date,
-                    timeValue: wakeLog.wakeTime,
+          {renderTimeInput({
+            label: "Time",
+            value: sleepForm.wakeTime,
+            onChange: (wakeTime) => setSleepForm({ ...sleepForm, wakeTime }),
+            onNow: () =>
+              setSleepForm({ ...sleepForm, wakeTime: nowTimeValue() }),
+          })}
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Sleep quality
+            </label>
+            <select
+              className={`${inputClassName} min-h-[48px]`}
+              value={sleepForm.quality}
+              onChange={(e) =>
+                setSleepForm({ ...sleepForm, quality: e.target.value })
+              }
+            >
+              <option value="">Select quality</option>
+              <option>Good</option>
+              <option>Broken</option>
+              <option>Poor</option>
+            </select>
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Night wakings
+            </label>
+            <input
+              type="number"
+              min="0"
+              placeholder="0"
+              className={`${inputClassName} min-h-[48px]`}
+              value={sleepForm.nightWakings}
+              onChange={(e) =>
+                setSleepForm({ ...sleepForm, nightWakings: e.target.value })
+              }
+            />
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Daytime nap
+            </label>
+            <select
+              className={`${inputClassName} min-h-[48px]`}
+              value={sleepForm.nap}
+              onChange={(e) => setSleepForm({ ...sleepForm, nap: e.target.value })}
+            >
+              <option value="">Select option</option>
+              <option>No</option>
+              <option>Yes</option>
+            </select>
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Sleep duration
+            </label>
+            <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+              {sleepDuration || "Will calculate once sleep and wake-up are entered"}
+            </div>
+          </div>
+
+          <div className={`${cardClassName} md:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">Notes</label>
+            <textarea
+              rows={5}
+              placeholder="Anything unusual about sleep"
+              className={`${inputClassName} min-h-[48px]`}
+              value={sleepForm.notes}
+              onChange={(e) => setSleepForm({ ...sleepForm, notes: e.target.value })}
+            />
+          </div>
+
+          <div className="md:col-span-2">
+            <button
+              type="button"
+              disabled={isSavingEntry}
+              onClick={async () => {
+                await withSaveProtection(
+                  () => ({
+                    section: "Sleep",
+                    summary: `Sleep · ${sleepDuration || "Incomplete"}`,
+                    details: [
+                      `Sleep date: ${sleepForm.sleepDate}`,
+                      `Sleep time: ${sleepForm.sleepTime || "Not set"}`,
+                      `Wake date: ${sleepForm.wakeDate}`,
+                      `Wake time: ${sleepForm.wakeTime || "Not set"}`,
+                      `Sleep quality: ${sleepForm.quality || "Not set"}`,
+                      `Night wakings: ${sleepForm.nightWakings || "0"}`,
+                      `Daytime nap: ${sleepForm.nap || "Not set"}`,
+                      sleepDuration ? `Sleep duration: ${sleepDuration}` : null,
+                      sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
+                    ].filter(Boolean),
                   }),
-                async () => {
-                  resetWakeLog();
-                },
-              );
-            }}
-            className={`w-full rounded-2xl px-5 py-3 font-semibold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-60 bg-gradient-to-r ${activeSection.color}`}
-          >
-            {isSavingEntry ? "Saving..." : "Save wake log"}
-          </button>
+                  saveSleepEntryToSupabase,
+                  async () => {
+                    resetSleepForm();
+                    closeSection();
+                  },
+                );
+              }}
+              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-60 ${activeSection.color}`}
+            >
+              {isSavingEntry ? "Saving..." : "Save sleep entry"}
+            </button>
+          </div>
         </div>
       </div>
     );
