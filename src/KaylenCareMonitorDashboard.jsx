@@ -477,7 +477,7 @@ export default function KaylenCareMonitorDashboard() {
 
       const savedDate = parseNotesValue(latest.notes, "Date") || todayValue();
 
-      setSleepEntryId(latest.id);
+      setSleepEntryId(String(latest.id));
       setSleepBanner(
         `Continuing previous sleep from ${savedDate} at ${
           latest.bedtime || "time not set"
@@ -972,34 +972,13 @@ export default function KaylenCareMonitorDashboard() {
         }
 
         if (sleepEntryId) {
-          alert("There is already an unfinished sleep entry waiting for wake-up");
-          return false;
-        }
-
-        const duplicateNotes = `Date: ${sleepForm.date}`;
-
-        const { data: existingDuplicate, error: duplicateError } = await supabase
-          .from("sleep_logs")
-          .select("id")
-          .eq("bedtime", sleepForm.bedtime)
-          .ilike("notes", `%${duplicateNotes}%`)
-          .is("wake_time", null)
-          .limit(1);
-
-        if (duplicateError) {
-          console.error("Sleep duplicate check failed:", duplicateError);
-          alert(`Sleep save failed: ${duplicateError.message}`);
-          return false;
-        }
-
-        if (existingDuplicate?.length) {
-          alert("This sleep entry already exists");
+          alert("There is already an unfinished sleep entry");
           return false;
         }
 
         const payload = {
           quality: "",
-          bedtime: sleepForm.bedtime || "",
+          bedtime: sleepForm.bedtime,
           wake_time: null,
           night_wakings: "0",
           nap: "No",
@@ -1007,13 +986,18 @@ export default function KaylenCareMonitorDashboard() {
           notes: `Date: ${sleepForm.date}`,
         };
 
-        const { error } = await supabase.from("sleep_logs").insert([payload]);
+        const { data, error } = await supabase
+          .from("sleep_logs")
+          .insert([payload])
+          .select("*");
 
         if (error) {
-          console.error("Supabase sleep save failed:", error);
+          console.error("Sleep insert failed:", error);
           alert(`Sleep save failed: ${error.message}`);
           return false;
         }
+
+        console.log("SLEEP CREATED:", data);
 
         await loadLatestIncompleteSleepEntry();
         await loadEntriesFromSupabase();
@@ -1022,7 +1006,7 @@ export default function KaylenCareMonitorDashboard() {
 
       if (mode === "wake") {
         if (!sleepEntryId) {
-          alert("No bedtime entry found to complete");
+          alert("No sleep entry found to complete");
           return false;
         }
 
@@ -1032,55 +1016,60 @@ export default function KaylenCareMonitorDashboard() {
           !sleepForm.wakeTime.trim() ||
           !sleepForm.quality.trim()
         ) {
-          alert(
-            "Wake-up date, wake-up time, sleep quality, sleep date and bedtime are required",
-          );
+          alert("Fill all required wake-up fields");
           return false;
         }
 
-        const wakeDate = todayValue();
-
         const payload = {
-          quality: sleepForm.quality || "Good",
-          bedtime: sleepForm.bedtime || "",
-          wake_time: sleepForm.wakeTime || "",
+          quality: sleepForm.quality,
+          bedtime: sleepForm.bedtime,
+          wake_time: sleepForm.wakeTime,
           night_wakings: sleepForm.nightWakings || "0",
           nap: sleepForm.nap || "No",
           time: new Date().toISOString(),
           notes: [
             `Date: ${sleepForm.date}`,
-            `Wake Date: ${wakeDate}`,
+            `Wake Date: ${todayValue()}`,
             sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
           ]
             .filter(Boolean)
             .join(" | "),
         };
 
-        console.log("WAKE DEBUG sleepEntryId:", sleepEntryId);
+        console.log("WAKE DEBUG ID:", sleepEntryId);
         console.log("WAKE DEBUG payload:", payload);
 
         const { data, error } = await supabase
           .from("sleep_logs")
           .update(payload)
-          .eq("id", sleepEntryId)
+          .match({ id: String(sleepEntryId) })
           .select("*");
 
-        console.log("WAKE DEBUG result data:", data);
-        console.log("WAKE DEBUG result error:", error);
+        console.log("WAKE RESULT:", data, error);
 
         if (error) {
-          console.error("Supabase wake-up update failed:", error);
-          alert(`Wake-up save failed: ${error.message}`);
+          console.error("Wake update failed:", error);
+          alert(`Wake save failed: ${error.message}`);
           return false;
         }
 
-        if (!data || !data.length) {
-          alert("Wake-up save ran, but no row was updated");
+        if (!data || data.length === 0) {
+          alert("Wake save ran but no row updated (ID mismatch)");
           return false;
         }
 
         setSleepEntryId(null);
         setSleepBanner("");
+        setSleepForm({
+          date: todayValue(),
+          quality: "Good",
+          bedtime: "",
+          wakeTime: "",
+          nightWakings: "0",
+          nap: "No",
+          notes: "",
+        });
+
         await loadEntriesFromSupabase();
         return true;
       }
