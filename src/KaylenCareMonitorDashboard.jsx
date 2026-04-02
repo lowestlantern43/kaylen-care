@@ -31,6 +31,9 @@ const formatTimeInput = (value) => {
 const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
+const smallActionButtonClass =
+  "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50";
+
 const sectionTheme = {
   "Food Diary": {
     report: "border-emerald-200 bg-emerald-50",
@@ -83,6 +86,8 @@ export default function KaylenCareMonitorDashboard() {
   const [medicationValue, setMedicationValue] = useState("");
   const [foodValue, setFoodValue] = useState("");
   const [reportDays, setReportDays] = useState("7");
+  const [customReportDays, setCustomReportDays] = useState("7");
+  const [reportLayout, setReportLayout] = useState("category");
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -243,6 +248,11 @@ export default function KaylenCareMonitorDashboard() {
 
   const cardClassName =
     "rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm";
+
+  const effectiveReportDays =
+    reportDays === "custom"
+      ? Math.max(1, Number(customReportDays) || 7)
+      : Math.max(1, Number(reportDays) || 7);
 
   const openSection = (section) => {
     setActiveSection(section);
@@ -537,10 +547,9 @@ export default function KaylenCareMonitorDashboard() {
   }, [activeSection]);
 
   const recentEntries = useMemo(() => {
-    const days = Number(reportDays) || 7;
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - (days - 1));
+    cutoff.setDate(cutoff.getDate() - (effectiveReportDays - 1));
 
     return sharedLog.filter((entry) => {
       if (!entry.date) return false;
@@ -548,7 +557,7 @@ export default function KaylenCareMonitorDashboard() {
       const entryDate = new Date(`${year}-${month}-${day}T00:00:00`);
       return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
     });
-  }, [reportDays, sharedLog]);
+  }, [effectiveReportDays, sharedLog]);
 
   const latestTwoBySection = useMemo(() => {
     const findLatestTwo = (sectionTitle) =>
@@ -779,10 +788,26 @@ export default function KaylenCareMonitorDashboard() {
   }, [recentEntries]);
 
   const reportText = useMemo(() => {
+    if (reportLayout === "timeline") {
+      return [
+        `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
+        "Timeline view",
+        "",
+        ...recentEntries.flatMap((entry) => [
+          `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
+          entry.summary,
+          ...(entry.details?.length ? entry.details : []),
+          "",
+        ]),
+        ...(recentEntries.length ? [] : ["No entries found for this date range."]),
+      ].join("\n");
+    }
+
     const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
 
     return [
-      `Kaylen's Diary Report - Last ${reportDays} days`,
+      `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
+      "Category view",
       "",
       ...order.flatMap((section) => {
         const entries = groupedReportEntries[section] || [];
@@ -799,11 +824,36 @@ export default function KaylenCareMonitorDashboard() {
       }),
       ...(recentEntries.length ? [] : ["No entries found for this date range."]),
     ].join("\n");
-  }, [groupedReportEntries, recentEntries.length, reportDays]);
+  }, [effectiveReportDays, groupedReportEntries, recentEntries, reportLayout]);
 
   const handleExportPdf = () => {
     window.print();
   };
+
+  const renderTimeInput = ({
+    label,
+    value,
+    onChange,
+    onNow,
+    placeholder = "HH:MM",
+  }) => (
+    <div className={cardClassName}>
+      <label className="text-sm font-semibold text-slate-700">{label}</label>
+      <div className="flex items-start gap-2">
+        <input
+          type="text"
+          inputMode="numeric"
+          placeholder={placeholder}
+          className={`${dateTimeInputClass} mt-2 flex-1`}
+          value={value}
+          onChange={(e) => onChange(formatTimeInput(e.target.value))}
+        />
+        <button type="button" onClick={onNow} className={smallActionButtonClass}>
+          Now
+        </button>
+      </div>
+    </div>
+  );
 
   const renderFoodForm = () => {
     const showOtherFood = foodValue === "Other";
@@ -830,19 +880,12 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">Time</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={foodForm.time}
-            onChange={(e) =>
-              setFoodForm({ ...foodForm, time: formatTimeInput(e.target.value) })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Time",
+          value: foodForm.time,
+          onChange: (time) => setFoodForm({ ...foodForm, time }),
+          onNow: () => setFoodForm({ ...foodForm, time: nowTimeValue() }),
+        })}
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1115,22 +1158,13 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">Time</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={medicationForm.time}
-            onChange={(e) =>
-              setMedicationForm({
-                ...medicationForm,
-                time: formatTimeInput(e.target.value),
-              })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Time",
+          value: medicationForm.time,
+          onChange: (time) => setMedicationForm({ ...medicationForm, time }),
+          onNow: () =>
+            setMedicationForm({ ...medicationForm, time: nowTimeValue() }),
+        })}
 
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1281,22 +1315,12 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">Time</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={toiletingForm.time}
-            onChange={(e) =>
-              setToiletingForm({
-                ...toiletingForm,
-                time: formatTimeInput(e.target.value),
-              })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Time",
+          value: toiletingForm.time,
+          onChange: (time) => setToiletingForm({ ...toiletingForm, time }),
+          onNow: () => setToiletingForm({ ...toiletingForm, time: nowTimeValue() }),
+        })}
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1371,22 +1395,12 @@ export default function KaylenCareMonitorDashboard() {
           />
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">Time</label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={healthForm.time}
-            onChange={(e) =>
-              setHealthForm({
-                ...healthForm,
-                time: formatTimeInput(e.target.value),
-              })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Time",
+          value: healthForm.time,
+          onChange: (time) => setHealthForm({ ...healthForm, time }),
+          onNow: () => setHealthForm({ ...healthForm, time: nowTimeValue() }),
+        })}
 
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1611,43 +1625,19 @@ export default function KaylenCareMonitorDashboard() {
           </select>
         </div>
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Bedtime
-          </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={sleepForm.bedtime}
-            onChange={(e) =>
-              setSleepForm({
-                ...sleepForm,
-                bedtime: formatTimeInput(e.target.value),
-              })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Bedtime",
+          value: sleepForm.bedtime,
+          onChange: (bedtime) => setSleepForm({ ...sleepForm, bedtime }),
+          onNow: () => setSleepForm({ ...sleepForm, bedtime: nowTimeValue() }),
+        })}
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Wake time
-          </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            placeholder="HH:MM"
-            className={dateTimeInputClass}
-            value={sleepForm.wakeTime}
-            onChange={(e) =>
-              setSleepForm({
-                ...sleepForm,
-                wakeTime: formatTimeInput(e.target.value),
-              })
-            }
-          />
-        </div>
+        {renderTimeInput({
+          label: "Wake time",
+          value: sleepForm.wakeTime,
+          onChange: (wakeTime) => setSleepForm({ ...sleepForm, wakeTime }),
+          onNow: () => setSleepForm({ ...sleepForm, wakeTime: nowTimeValue() }),
+        })}
 
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1725,7 +1715,7 @@ export default function KaylenCareMonitorDashboard() {
       try {
         if (typeof navigator !== "undefined" && navigator.share) {
           await navigator.share({
-            title: `Kaylen's Diary Report - Last ${reportDays} days`,
+            title: `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
             text: reportText,
           });
           return;
@@ -1767,8 +1757,40 @@ export default function KaylenCareMonitorDashboard() {
             <option value="30">30 days</option>
             <option value="60">60 days</option>
             <option value="90">90 days</option>
+            <option value="custom">Custom</option>
           </select>
         </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Report style
+          </label>
+          <select
+            className={`${inputClassName} min-h-[48px]`}
+            value={reportLayout}
+            onChange={(e) => setReportLayout(e.target.value)}
+          >
+            <option value="category">By category</option>
+            <option value="timeline">Timeline</option>
+          </select>
+        </div>
+
+        {reportDays === "custom" ? (
+          <div className={`${cardClassName} md:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">
+              Custom number of days
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Enter number of days"
+              className={`${inputClassName} min-h-[48px]`}
+              value={customReportDays}
+              onChange={(e) => setCustomReportDays(e.target.value)}
+            />
+          </div>
+        ) : null}
 
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
@@ -1776,6 +1798,15 @@ export default function KaylenCareMonitorDashboard() {
           </label>
           <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
             {recentEntries.length} entries in shared log
+          </div>
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Active range
+          </label>
+          <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+            Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
           </div>
         </div>
 
@@ -1789,55 +1820,58 @@ export default function KaylenCareMonitorDashboard() {
                 Report view
               </label>
               <p className="mt-1 text-sm text-slate-500">
-                Grouped by category with matching colours.
+                {reportLayout === "timeline"
+                  ? "Showing entries in time order."
+                  : "Grouped by category with matching colours."}
               </p>
             </div>
             <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Last {reportDays} days
+              Last {effectiveReportDays} days
             </span>
           </div>
 
           <div className="mt-4 space-y-5 report-content">
             {recentEntries.length ? (
-              orderedSections.map((section) => {
-                const entries = groupedReportEntries[section] || [];
-                if (!entries.length) return null;
-
-                const theme = sectionTheme[section] || {
-                  report: "border-slate-200 bg-slate-50",
-                  badge: "bg-slate-100 text-slate-700",
-                  solidHeader: "bg-slate-700 text-white border-slate-800",
-                };
-
-                return (
-                  <div key={section} className="space-y-3 print-section-block">
-                    <div
-                      className={`report-section-title rounded-2xl border px-4 py-3 ${theme.solidHeader}`}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
-                          {section}
-                        </h4>
-                        <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
-                          {entries.length} item{entries.length === 1 ? "" : "s"}
-                        </span>
-                      </div>
+              reportLayout === "timeline" ? (
+                <div className="space-y-3 print-section-block">
+                  <div className="report-section-title rounded-2xl border border-slate-800 bg-slate-800 px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
+                        Timeline
+                      </h4>
+                      <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                        {recentEntries.length} item
+                        {recentEntries.length === 1 ? "" : "s"}
+                      </span>
                     </div>
+                  </div>
 
-                    {entries.map((entry) => (
+                  {recentEntries.map((entry) => {
+                    const theme = sectionTheme[entry.section] || {
+                      report: "border-slate-200 bg-slate-50",
+                      badge: "bg-slate-100 text-slate-700",
+                    };
+
+                    return (
                       <div
                         key={entry.id}
                         className={`rounded-xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
                       >
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                          <span className="font-bold text-slate-900">
-                            {entry.summary}
-                          </span>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="mb-2 inline-flex rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                              {entry.section}
+                            </div>
+                            <p className="font-bold text-slate-900">
+                              {entry.summary}
+                            </p>
+                          </div>
                           <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
                             {entry.date}
                             {entry.time ? ` · ${entry.time}` : ""}
                           </span>
                         </div>
+
                         {entry.details?.length ? (
                           <div className="mt-2 space-y-1 break-words text-slate-600">
                             {entry.details.map((detail, index) => (
@@ -1846,10 +1880,62 @@ export default function KaylenCareMonitorDashboard() {
                           </div>
                         ) : null}
                       </div>
-                    ))}
-                  </div>
-                );
-              })
+                    );
+                  })}
+                </div>
+              ) : (
+                orderedSections.map((section) => {
+                  const entries = groupedReportEntries[section] || [];
+                  if (!entries.length) return null;
+
+                  const theme = sectionTheme[section] || {
+                    report: "border-slate-200 bg-slate-50",
+                    badge: "bg-slate-100 text-slate-700",
+                    solidHeader: "bg-slate-700 text-white border-slate-800",
+                  };
+
+                  return (
+                    <div key={section} className="space-y-3 print-section-block">
+                      <div
+                        className={`report-section-title rounded-2xl border px-4 py-3 ${theme.solidHeader}`}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
+                            {section}
+                          </h4>
+                          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                            {entries.length} item{entries.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                      </div>
+
+                      {entries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className={`rounded-xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
+                        >
+                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                            <span className="font-bold text-slate-900">
+                              {entry.summary}
+                            </span>
+                            <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                              {entry.date}
+                              {entry.time ? ` · ${entry.time}` : ""}
+                            </span>
+                          </div>
+                          {entry.details?.length ? (
+                            <div className="mt-2 space-y-1 break-words text-slate-600">
+                              {entry.details.map((detail, index) => (
+                                <p key={index}>{detail}</p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
+              )
             ) : (
               <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
                 Nothing logged yet. Save entries from Food, Medication,
@@ -1917,7 +2003,7 @@ export default function KaylenCareMonitorDashboard() {
               </div>
 
               <div className="mt-6 w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
-                <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
+                <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
                   Kaylen’s Diary
                 </h1>
               </div>
@@ -2083,25 +2169,29 @@ export default function KaylenCareMonitorDashboard() {
 
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
         <header className="mb-8">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+            <div className="hidden sm:block" />
+
             <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
-              <h1 className="text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
+              <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
                 Kaylen’s Diary
               </h1>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsUnlocked(false);
-                setPasswordInput("");
-                setPasswordError("");
-                setActiveSection(null);
-              }}
-              className="shrink-0 rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              Lock
-            </button>
+            <div className="flex justify-center sm:justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsUnlocked(false);
+                  setPasswordInput("");
+                  setPasswordError("");
+                  setActiveSection(null);
+                }}
+                className="shrink-0 rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Lock
+              </button>
+            </div>
           </div>
         </header>
 
@@ -2187,7 +2277,7 @@ export default function KaylenCareMonitorDashboard() {
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
               Recent range
             </p>
-            <p className="mt-2 text-4xl font-bold">{reportDays}d</p>
+            <p className="mt-2 text-4xl font-bold">{effectiveReportDays}d</p>
           </div>
           <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
