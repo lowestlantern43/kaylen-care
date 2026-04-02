@@ -87,7 +87,8 @@ export default function KaylenCareMonitorDashboard() {
   const [foodValue, setFoodValue] = useState("");
   const [reportDays, setReportDays] = useState("7");
   const [customReportDays, setCustomReportDays] = useState("7");
-  const [reportLayout, setReportLayout] = useState("category");
+  const [reportLayout, setReportLayout] = useState("timeline");
+  const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
 
@@ -555,9 +556,16 @@ export default function KaylenCareMonitorDashboard() {
       if (!entry.date) return false;
       const [day, month, year] = entry.date.split("/");
       const entryDate = new Date(`${year}-${month}-${day}T00:00:00`);
-      return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
+
+      if (Number.isNaN(entryDate.getTime()) || entryDate < cutoff) return false;
+
+      if (reportCategoryFilter !== "All" && entry.section !== reportCategoryFilter) {
+        return false;
+      }
+
+      return true;
     });
-  }, [effectiveReportDays, sharedLog]);
+  }, [effectiveReportDays, reportCategoryFilter, sharedLog]);
 
   const latestTwoBySection = useMemo(() => {
     const findLatestTwo = (sectionTitle) =>
@@ -791,7 +799,7 @@ export default function KaylenCareMonitorDashboard() {
     if (reportLayout === "timeline") {
       return [
         `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-        "Timeline view",
+        `Timeline view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
         "",
         ...recentEntries.flatMap((entry) => [
           `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
@@ -807,7 +815,7 @@ export default function KaylenCareMonitorDashboard() {
 
     return [
       `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-      "Category view",
+      `Category view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
       "",
       ...order.flatMap((section) => {
         const entries = groupedReportEntries[section] || [];
@@ -824,7 +832,13 @@ export default function KaylenCareMonitorDashboard() {
       }),
       ...(recentEntries.length ? [] : ["No entries found for this date range."]),
     ].join("\n");
-  }, [effectiveReportDays, groupedReportEntries, recentEntries, reportLayout]);
+  }, [
+    effectiveReportDays,
+    groupedReportEntries,
+    recentEntries,
+    reportCategoryFilter,
+    reportLayout,
+  ]);
 
   const handleExportPdf = () => {
     window.print();
@@ -1742,13 +1756,13 @@ export default function KaylenCareMonitorDashboard() {
     };
 
     return (
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-4">
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Quick range
           </label>
           <select
-            className={`${inputClassName} min-h-[48px]`}
+            className={`${inputClassName} min-h-[46px]`}
             value={reportDays}
             onChange={(e) => setReportDays(e.target.value)}
           >
@@ -1766,39 +1780,31 @@ export default function KaylenCareMonitorDashboard() {
             Report style
           </label>
           <select
-            className={`${inputClassName} min-h-[48px]`}
+            className={`${inputClassName} min-h-[46px]`}
             value={reportLayout}
             onChange={(e) => setReportLayout(e.target.value)}
           >
-            <option value="category">By category</option>
             <option value="timeline">Timeline</option>
+            <option value="category">By category</option>
           </select>
         </div>
 
-        {reportDays === "custom" ? (
-          <div className={`${cardClassName} md:col-span-2`}>
-            <label className="text-sm font-semibold text-slate-700">
-              Custom number of days
-            </label>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              placeholder="Enter number of days"
-              className={`${inputClassName} min-h-[48px]`}
-              value={customReportDays}
-              onChange={(e) => setCustomReportDays(e.target.value)}
-            />
-          </div>
-        ) : null}
-
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
-            Entries found
+            Category filter
           </label>
-          <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-            {recentEntries.length} entries in shared log
-          </div>
+          <select
+            className={`${inputClassName} min-h-[46px]`}
+            value={reportCategoryFilter}
+            onChange={(e) => setReportCategoryFilter(e.target.value)}
+          >
+            <option value="All">All categories</option>
+            <option value="Food Diary">Food Diary</option>
+            <option value="Medication">Medication</option>
+            <option value="Toileting">Toileting</option>
+            <option value="Health">Health</option>
+            <option value="Sleep">Sleep</option>
+          </select>
         </div>
 
         <div className={cardClassName}>
@@ -1810,9 +1816,35 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
+        {reportDays === "custom" ? (
+          <div className={`${cardClassName} lg:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">
+              Custom number of days
+            </label>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              placeholder="Enter number of days"
+              className={`${inputClassName} min-h-[46px]`}
+              value={customReportDays}
+              onChange={(e) => setCustomReportDays(e.target.value)}
+            />
+          </div>
+        ) : null}
+
+        <div className={reportDays === "custom" ? cardClassName : `${cardClassName} lg:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Entries found
+          </label>
+          <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+            {recentEntries.length} entries in shared log
+          </div>
+        </div>
+
         <div
           id="report-print-area"
-          className="report-print-wrap md:col-span-2 rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm"
+          className="report-print-wrap lg:col-span-4 rounded-2xl border border-slate-300 bg-slate-50/80 p-3 shadow-sm md:p-4"
         >
           <div className="report-screen-header flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -1830,16 +1862,16 @@ export default function KaylenCareMonitorDashboard() {
             </span>
           </div>
 
-          <div className="mt-4 space-y-5 report-content">
+          <div className="mt-3 space-y-3 report-content">
             {recentEntries.length ? (
               reportLayout === "timeline" ? (
-                <div className="space-y-3 print-section-block">
-                  <div className="report-section-title rounded-2xl border border-slate-800 bg-slate-800 px-4 py-3">
+                <div className="space-y-2 print-section-block">
+                  <div className="report-section-title rounded-2xl border border-slate-800 bg-slate-800 px-4 py-2.5">
                     <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
+                      <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
                         Timeline
                       </h4>
-                      <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                      <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
                         {recentEntries.length} item
                         {recentEntries.length === 1 ? "" : "s"}
                       </span>
@@ -1849,31 +1881,30 @@ export default function KaylenCareMonitorDashboard() {
                   {recentEntries.map((entry) => {
                     const theme = sectionTheme[entry.section] || {
                       report: "border-slate-200 bg-slate-50",
-                      badge: "bg-slate-100 text-slate-700",
                     };
 
                     return (
                       <div
                         key={entry.id}
-                        className={`rounded-xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
+                        className={`rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3 ${theme.report}`}
                       >
-                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
                           <div className="min-w-0">
-                            <div className="mb-2 inline-flex rounded-full bg-white/80 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                            <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
                               {entry.section}
                             </div>
-                            <p className="font-bold text-slate-900">
+                            <p className="font-bold leading-5 text-slate-900">
                               {entry.summary}
                             </p>
                           </div>
-                          <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                          <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
                             {entry.date}
                             {entry.time ? ` · ${entry.time}` : ""}
                           </span>
                         </div>
 
                         {entry.details?.length ? (
-                          <div className="mt-2 space-y-1 break-words text-slate-600">
+                          <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
                             {entry.details.map((detail, index) => (
                               <p key={index}>{detail}</p>
                             ))}
@@ -1890,20 +1921,19 @@ export default function KaylenCareMonitorDashboard() {
 
                   const theme = sectionTheme[section] || {
                     report: "border-slate-200 bg-slate-50",
-                    badge: "bg-slate-100 text-slate-700",
                     solidHeader: "bg-slate-700 text-white border-slate-800",
                   };
 
                   return (
-                    <div key={section} className="space-y-3 print-section-block">
+                    <div key={section} className="space-y-2 print-section-block">
                       <div
-                        className={`report-section-title rounded-2xl border px-4 py-3 ${theme.solidHeader}`}
+                        className={`report-section-title rounded-2xl border px-4 py-2.5 ${theme.solidHeader}`}
                       >
                         <div className="flex items-center justify-between gap-3">
-                          <h4 className="text-base font-bold uppercase tracking-[0.16em] text-white">
+                          <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
                             {section}
                           </h4>
-                          <span className="rounded-full bg-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-white">
+                          <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
                             {entries.length} item{entries.length === 1 ? "" : "s"}
                           </span>
                         </div>
@@ -1912,19 +1942,19 @@ export default function KaylenCareMonitorDashboard() {
                       {entries.map((entry) => (
                         <div
                           key={entry.id}
-                          className={`rounded-xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
+                          className={`rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3 ${theme.report}`}
                         >
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <span className="font-bold text-slate-900">
+                            <span className="font-bold leading-5 text-slate-900">
                               {entry.summary}
                             </span>
-                            <span className="break-words text-xs font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                            <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
                               {entry.date}
                               {entry.time ? ` · ${entry.time}` : ""}
                             </span>
                           </div>
                           {entry.details?.length ? (
-                            <div className="mt-2 space-y-1 break-words text-slate-600">
+                            <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
                               {entry.details.map((detail, index) => (
                                 <p key={index}>{detail}</p>
                               ))}
@@ -1938,14 +1968,13 @@ export default function KaylenCareMonitorDashboard() {
               )
             ) : (
               <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
-                Nothing logged yet. Save entries from Food, Medication,
-                Toileting, Health, or Sleep.
+                Nothing logged yet for these filters.
               </div>
             )}
           </div>
         </div>
 
-        <div className="md:col-span-2 grid gap-3 sm:grid-cols-3">
+        <div className="lg:col-span-4 grid gap-3 sm:grid-cols-3">
           <button
             type="button"
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
@@ -2087,6 +2116,8 @@ export default function KaylenCareMonitorDashboard() {
       </div>
     );
   }
+
+  const isReportsOpen = activeSection?.title === "Reports";
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
@@ -2291,7 +2322,11 @@ export default function KaylenCareMonitorDashboard() {
       {activeSection ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 backdrop-blur-sm md:p-4">
           <div className="flex min-h-full items-start justify-center py-2 md:items-center md:py-4">
-            <div className="relative my-auto w-full max-w-2xl rounded-[2rem] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-8">
+            <div
+              className={`relative my-auto w-full rounded-[2rem] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-8 ${
+                isReportsOpen ? "max-w-5xl" : "max-w-2xl"
+              }`}
+            >
               <button
                 type="button"
                 onClick={closeSection}
