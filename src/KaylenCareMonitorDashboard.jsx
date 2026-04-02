@@ -173,6 +173,7 @@ export default function KaylenCareMonitorDashboard() {
   const [sleepEntryId, setSleepEntryId] = useState(null);
   const [sleepBanner, setSleepBanner] = useState("");
   const [isLoadingSleepDraft, setIsLoadingSleepDraft] = useState(false);
+  const [isSavingSleep, setIsSavingSleep] = useState(false);
 
   const sections = [
     {
@@ -448,7 +449,7 @@ export default function KaylenCareMonitorDashboard() {
       const { data, error } = await supabase
         .from("sleep_logs")
         .select("*")
-        .or("wake_time.is.null,wake_time.eq.")
+        .is("wake_time", null)
         .order("time", { ascending: false })
         .limit(1);
 
@@ -462,6 +463,15 @@ export default function KaylenCareMonitorDashboard() {
       if (!latest) {
         setSleepEntryId(null);
         setSleepBanner("");
+        setSleepForm({
+          date: todayValue(),
+          quality: "Good",
+          bedtime: nowTimeValue(),
+          wakeTime: "",
+          nightWakings: "",
+          nap: "No",
+          notes: "",
+        });
         return;
       }
 
@@ -952,109 +962,133 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const saveSleepEntryToSupabase = async ({ mode }) => {
-    if (mode === "sleep") {
-      if (!sleepForm.date.trim() || !sleepForm.bedtime.trim()) {
-        alert("Sleep date and bedtime are required");
-        return false;
+    try {
+      setIsSavingSleep(true);
+
+      if (mode === "sleep") {
+        if (!sleepForm.date.trim() || !sleepForm.bedtime.trim()) {
+          alert("Sleep date and bedtime are required");
+          return false;
+        }
+
+        if (sleepEntryId) {
+          alert("There is already an unfinished sleep entry waiting for wake-up");
+          return false;
+        }
+
+        const duplicateNotes = `Date: ${sleepForm.date}`;
+
+        const { data: existingDuplicate, error: duplicateError } = await supabase
+          .from("sleep_logs")
+          .select("id")
+          .eq("bedtime", sleepForm.bedtime)
+          .ilike("notes", `%${duplicateNotes}%`)
+          .is("wake_time", null)
+          .limit(1);
+
+        if (duplicateError) {
+          console.error("Sleep duplicate check failed:", duplicateError);
+          alert(`Sleep save failed: ${duplicateError.message}`);
+          return false;
+        }
+
+        if (existingDuplicate?.length) {
+          alert("This sleep entry already exists");
+          return false;
+        }
+
+        const payload = {
+          quality: "",
+          bedtime: sleepForm.bedtime || "",
+          wake_time: null,
+          night_wakings: "0",
+          nap: "No",
+          time: new Date().toISOString(),
+          notes: `Date: ${sleepForm.date}`,
+        };
+
+        const { error } = await supabase.from("sleep_logs").insert([payload]);
+
+        if (error) {
+          console.error("Supabase sleep save failed:", error);
+          alert(`Sleep save failed: ${error.message}`);
+          return false;
+        }
+
+        await loadLatestIncompleteSleepEntry();
+        await loadEntriesFromSupabase();
+        return true;
       }
 
-      if (sleepEntryId) {
-        alert("There is already an unfinished sleep entry waiting for wake-up");
-        return false;
+      if (mode === "wake") {
+        if (!sleepEntryId) {
+          alert("No bedtime entry found to complete");
+          return false;
+        }
+
+        if (
+          !sleepForm.date.trim() ||
+          !sleepForm.bedtime.trim() ||
+          !sleepForm.wakeTime.trim() ||
+          !sleepForm.quality.trim()
+        ) {
+          alert(
+            "Wake-up date, wake-up time, sleep quality, sleep date and bedtime are required",
+          );
+          return false;
+        }
+
+        const wakeDate = todayValue();
+
+        const payload = {
+          quality: sleepForm.quality || "Good",
+          bedtime: sleepForm.bedtime || "",
+          wake_time: sleepForm.wakeTime || "",
+          night_wakings: sleepForm.nightWakings || "0",
+          nap: sleepForm.nap || "No",
+          time: new Date().toISOString(),
+          notes: [
+            `Date: ${sleepForm.date}`,
+            `Wake Date: ${wakeDate}`,
+            sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+        };
+
+        const { data, error } = await supabase
+          .from("sleep_logs")
+          .update(payload)
+          .eq("id", sleepEntryId)
+          .is("wake_time", null)
+          .select("id, bedtime, wake_time");
+
+        if (error) {
+          console.error("Supabase wake-up update failed:", error);
+          alert(`Wake-up save failed: ${error.message}`);
+          return false;
+        }
+
+        if (!data || !data.length) {
+          alert("Wake-up could not be completed for that sleep entry");
+          return false;
+        }
+
+        setSleepEntryId(null);
+        setSleepBanner("");
+        await loadEntriesFromSupabase();
+
+        return true;
       }
 
-      const duplicateNotes = `Date: ${sleepForm.date}`;
-
-      const { data: existingDuplicate, error: duplicateError } = await supabase
-        .from("sleep_logs")
-        .select("id")
-        .eq("bedtime", sleepForm.bedtime)
-        .ilike("notes", `%${duplicateNotes}%`)
-        .or("wake_time.is.null,wake_time.eq.")
-        .limit(1);
-
-      if (duplicateError) {
-        console.error("Sleep duplicate check failed:", duplicateError);
-        alert("Sleep save failed - check console");
-        return false;
-      }
-
-      if (existingDuplicate?.length) {
-        alert("This sleep entry already exists");
-        return false;
-      }
-
-      const payload = {
-        quality: "",
-        bedtime: sleepForm.bedtime || "",
-        wake_time: null,
-        night_wakings: "0",
-        nap: "No",
-        time: new Date().toISOString(),
-        notes: `Date: ${sleepForm.date}`,
-      };
-
-      const { error } = await supabase.from("sleep_logs").insert([payload]);
-
-      if (error) {
-        console.error("Supabase sleep save failed:", error);
-        alert(`Sleep save failed: ${error.message}`);
-        return false;
-      }
-
-      await loadLatestIncompleteSleepEntry();
-      return true;
+      return false;
+    } catch (error) {
+      console.error("Sleep save unexpected error:", error);
+      alert(`Sleep save failed: ${error.message || "Unexpected error"}`);
+      return false;
+    } finally {
+      setIsSavingSleep(false);
     }
-
-    if (mode === "wake") {
-      if (!sleepEntryId) {
-        alert("No bedtime entry found to complete");
-        return false;
-      }
-
-      if (
-        !sleepForm.date.trim() ||
-        !sleepForm.bedtime.trim() ||
-        !sleepForm.wakeTime.trim() ||
-        !sleepForm.quality.trim()
-      ) {
-        alert(
-          "Wake-up date, wake-up time, sleep quality, sleep date and bedtime are required",
-        );
-        return false;
-      }
-
-      const payload = {
-        quality: sleepForm.quality || "Good",
-        bedtime: sleepForm.bedtime || "",
-        wake_time: sleepForm.wakeTime || "",
-        night_wakings: sleepForm.nightWakings || "0",
-        nap: sleepForm.nap || "No",
-        time: new Date().toISOString(),
-        notes: [
-          `Date: ${sleepForm.date}`,
-          `Wake Date: ${todayValue()}`,
-          sleepForm.notes ? `Notes: ${sleepForm.notes}` : null,
-        ]
-          .filter(Boolean)
-          .join(" | "),
-      };
-
-      const { error } = await supabase
-        .from("sleep_logs")
-        .update(payload)
-        .eq("id", sleepEntryId);
-
-      if (error) {
-        console.error("Supabase wake-up update failed:", error);
-        alert(`Wake-up save failed: ${error.message}`);
-        return false;
-      }
-
-      return true;
-    }
-
-    return false;
   };
 
   const saveHealthEntryToSupabase = async () => {
@@ -1930,7 +1964,8 @@ export default function KaylenCareMonitorDashboard() {
       !!sleepForm.date.trim() &&
       !!sleepForm.bedtime.trim() &&
       !sleepEntryId &&
-      !isLoadingSleepDraft;
+      !isLoadingSleepDraft &&
+      !isSavingSleep;
 
     const canSaveWake =
       !!sleepEntryId &&
@@ -1938,7 +1973,8 @@ export default function KaylenCareMonitorDashboard() {
       !!sleepForm.bedtime.trim() &&
       !!sleepForm.wakeTime.trim() &&
       !!sleepForm.quality.trim() &&
-      !isLoadingSleepDraft;
+      !isLoadingSleepDraft &&
+      !isSavingSleep;
 
     return (
       <div className="mt-6 space-y-4">
@@ -2000,13 +2036,11 @@ export default function KaylenCareMonitorDashboard() {
               type="button"
               disabled={!canSaveSleep}
               onClick={async () => {
-                const saved = await saveSleepEntryToSupabase({ mode: "sleep" });
-                if (!saved) return;
-                await loadEntriesFromSupabase();
+                await saveSleepEntryToSupabase({ mode: "sleep" });
               }}
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              Save sleep
+              {isSavingSleep ? "Saving..." : "Save sleep"}
             </button>
           </div>
         </div>
@@ -2031,8 +2065,6 @@ export default function KaylenCareMonitorDashboard() {
               </label>
               <input
                 type="text"
-                inputMode="numeric"
-                placeholder="DD/MM/YYYY"
                 className={`${dateTimeInputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
                 value={sleepForm.date}
                 disabled
@@ -2153,19 +2185,19 @@ export default function KaylenCareMonitorDashboard() {
 
                 if (!saved) return;
 
-                await loadEntriesFromSupabase();
                 resetSleepForm();
                 closeSection();
               }}
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              Save wake-up
+              {isSavingSleep ? "Saving..." : "Save wake-up"}
             </button>
 
             <button
               type="button"
               onClick={resetSleepForm}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              disabled={isSavingSleep}
+              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Clear sleep form
             </button>
