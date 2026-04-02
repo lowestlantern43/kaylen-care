@@ -47,7 +47,7 @@ const dateTimeInputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const smallActionButtonClass =
-  "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50";
+  "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 const sectionTheme = {
   "Food Diary": {
@@ -275,58 +275,6 @@ export default function KaylenCareMonitorDashboard() {
       ? Math.max(1, Number(customReportDays) || 7)
       : Math.max(1, Number(reportDays) || 7);
 
-  const parseNotesValue = (text, label) => {
-    const parts = (text || "").split(" | ");
-    const found = parts.find((part) => part.startsWith(`${label}: `));
-    return found ? found.replace(`${label}: `, "") : "";
-  };
-
-  const parseDateToIso = (value) => {
-    if (!value || !value.includes("/")) return null;
-    const [day, month, year] = value.split("/");
-    if (!day || !month || !year) return null;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  };
-
-  const getSleepDurationMinutes = (
-    sleepDateValue,
-    bedtime,
-    wakeDateValue,
-    wakeTime,
-  ) => {
-    const sleepDateIso = parseDateToIso(sleepDateValue);
-    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
-
-    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
-
-    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
-    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
-
-    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
-      return null;
-    }
-
-    if (wakeDate <= bedtimeDate) {
-      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
-    }
-
-    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
-    return Math.round(diffMs / 60000);
-  };
-
-  const formatSleepDuration = (minutes) => {
-    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
-      return "";
-    }
-
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-
-    if (hrs && mins) return `${hrs}h ${mins}m`;
-    if (hrs) return `${hrs}h`;
-    return `${mins}m`;
-  };
-
   const openSection = (section) => {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
@@ -441,6 +389,58 @@ export default function KaylenCareMonitorDashboard() {
     setSleepBanner("");
   };
 
+  const parseNotesValue = (text, label) => {
+    const parts = (text || "").split(" | ");
+    const found = parts.find((part) => part.startsWith(`${label}: `));
+    return found ? found.replace(`${label}: `, "") : "";
+  };
+
+  const parseDateToIso = (value) => {
+    if (!value || !value.includes("/")) return null;
+    const [day, month, year] = value.split("/");
+    if (!day || !month || !year) return null;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
+  const getSleepDurationMinutes = (
+    sleepDateValue,
+    bedtime,
+    wakeDateValue,
+    wakeTime,
+  ) => {
+    const sleepDateIso = parseDateToIso(sleepDateValue);
+    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
+
+    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
+
+    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
+    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
+
+    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
+      return null;
+    }
+
+    if (wakeDate <= bedtimeDate) {
+      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
+    return Math.round(diffMs / 60000);
+  };
+
+  const formatSleepDuration = (minutes) => {
+    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
+      return "";
+    }
+
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    if (hrs && mins) return `${hrs}h ${mins}m`;
+    if (hrs) return `${hrs}h`;
+    return `${mins}m`;
+  };
+
   const loadLatestIncompleteSleepEntry = async () => {
     try {
       setIsLoadingSleepDraft(true);
@@ -448,38 +448,39 @@ export default function KaylenCareMonitorDashboard() {
       const { data, error } = await supabase
         .from("sleep_logs")
         .select("*")
-        .is("wake_time", null)
+        .or("wake_time.is.null,wake_time.eq.")
         .order("time", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(1);
 
       if (error) {
         console.error("Error loading incomplete sleep entry:", error);
         return;
       }
 
-      if (!data) {
+      const latest = data?.[0];
+
+      if (!latest) {
         setSleepEntryId(null);
         setSleepBanner("");
         return;
       }
 
-      const savedDate = parseNotesValue(data.notes, "Date") || todayValue();
+      const savedDate = parseNotesValue(latest.notes, "Date") || todayValue();
 
-      setSleepEntryId(data.id);
+      setSleepEntryId(latest.id);
       setSleepBanner(
         `Continuing previous sleep from ${savedDate} at ${
-          data.bedtime || "time not set"
+          latest.bedtime || "time not set"
         }`,
       );
       setSleepForm({
         date: savedDate,
-        quality: data.quality || "Good",
-        bedtime: data.bedtime || "",
+        quality: latest.quality || "Good",
+        bedtime: latest.bedtime || "",
         wakeTime: "",
-        nightWakings: data.night_wakings || "",
-        nap: data.nap || "No",
-        notes: parseNotesValue(data.notes, "Notes") || "",
+        nightWakings: latest.night_wakings || "0",
+        nap: latest.nap || "No",
+        notes: parseNotesValue(latest.notes, "Notes") || "",
       });
     } catch (error) {
       console.error("Error preparing sleep form:", error);
@@ -969,7 +970,7 @@ export default function KaylenCareMonitorDashboard() {
         .select("id")
         .eq("bedtime", sleepForm.bedtime)
         .ilike("notes", `%${duplicateNotes}%`)
-        .is("wake_time", null)
+        .or("wake_time.is.null,wake_time.eq.")
         .limit(1);
 
       if (duplicateError) {
@@ -984,32 +985,24 @@ export default function KaylenCareMonitorDashboard() {
       }
 
       const payload = {
-        quality: null,
+        quality: "",
         bedtime: sleepForm.bedtime || "",
         wake_time: null,
-        night_wakings: null,
-        nap: null,
+        night_wakings: "0",
+        nap: "No",
         time: new Date().toISOString(),
-        notes: [`Date: ${sleepForm.date}`].join(" | "),
+        notes: `Date: ${sleepForm.date}`,
       };
 
-      const { data, error } = await supabase
-        .from("sleep_logs")
-        .insert([payload])
-        .select()
-        .single();
+      const { error } = await supabase.from("sleep_logs").insert([payload]);
 
       if (error) {
         console.error("Supabase sleep save failed:", error);
-        alert("Sleep save failed - check console");
+        alert(`Sleep save failed: ${error.message}`);
         return false;
       }
 
-      setSleepEntryId(data.id);
-      setSleepBanner(
-        `Continuing previous sleep from ${sleepForm.date} at ${sleepForm.bedtime}`,
-      );
-
+      await loadLatestIncompleteSleepEntry();
       return true;
     }
 
@@ -1032,7 +1025,7 @@ export default function KaylenCareMonitorDashboard() {
       }
 
       const payload = {
-        quality: sleepForm.quality || "",
+        quality: sleepForm.quality || "Good",
         bedtime: sleepForm.bedtime || "",
         wake_time: sleepForm.wakeTime || "",
         night_wakings: sleepForm.nightWakings || "0",
@@ -1054,7 +1047,7 @@ export default function KaylenCareMonitorDashboard() {
 
       if (error) {
         console.error("Supabase wake-up update failed:", error);
-        alert("Wake-up save failed - check console");
+        alert(`Wake-up save failed: ${error.message}`);
         return false;
       }
 
@@ -2042,9 +2035,6 @@ export default function KaylenCareMonitorDashboard() {
                 placeholder="DD/MM/YYYY"
                 className={`${dateTimeInputClass} cursor-not-allowed bg-slate-100 text-slate-500`}
                 value={sleepForm.date}
-                onChange={(e) =>
-                  setSleepForm({ ...sleepForm, date: e.target.value })
-                }
                 disabled
               />
             </div>
