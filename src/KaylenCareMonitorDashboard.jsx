@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 import { supabase } from "./Supabase";
 
 const todayValue = () => {
@@ -26,6 +28,19 @@ const formatTimeInput = (value) => {
   const digits = (value || "").replace(/\D/g, "").slice(0, 4);
   if (digits.length <= 2) return digits;
   return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+};
+
+const formatReportDateLabel = (dateString) => {
+  if (!dateString) return "";
+  const [day, month, year] = dateString.split("/");
+  const date = new Date(`${year}-${month}-${day}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleDateString("en-GB", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
 };
 
 const dateTimeInputClass =
@@ -89,8 +104,10 @@ export default function KaylenCareMonitorDashboard() {
   const [customReportDays, setCustomReportDays] = useState("7");
   const [reportLayout, setReportLayout] = useState("timeline");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
+  const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
   const [savedMedicationOptions, setSavedMedicationOptions] = useState([]);
@@ -259,6 +276,9 @@ export default function KaylenCareMonitorDashboard() {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
     if (section.title !== "Food Diary") setFoodValue("");
+    if (section.title !== "Reports") {
+      setReportFiltersOpen(false);
+    }
     setShareCopied(false);
   };
 
@@ -267,6 +287,7 @@ export default function KaylenCareMonitorDashboard() {
     setMedicationValue("");
     setFoodValue("");
     setShareCopied(false);
+    setReportFiltersOpen(false);
   };
 
   const handlePinPress = (value) => {
@@ -541,7 +562,7 @@ export default function KaylenCareMonitorDashboard() {
       case "Sleep":
         return "Track bedtime, wake time, and sleep quality.";
       case "Reports":
-        return "View recent entries and share or export the report.";
+        return "View recent entries and export a proper PDF.";
       default:
         return "Form preview";
     }
@@ -580,6 +601,43 @@ export default function KaylenCareMonitorDashboard() {
     };
   }, [sharedLog]);
 
+  const groupedReportEntries = useMemo(() => {
+    const groups = {
+      "Food Diary": [],
+      Medication: [],
+      Toileting: [],
+      Health: [],
+      Sleep: [],
+    };
+
+    recentEntries.forEach((entry) => {
+      if (groups[entry.section]) {
+        groups[entry.section].push(entry);
+      }
+    });
+
+    return groups;
+  }, [recentEntries]);
+
+  const timelineGroups = useMemo(() => {
+    const groups = [];
+
+    recentEntries.forEach((entry) => {
+      const lastGroup = groups[groups.length - 1];
+      if (!lastGroup || lastGroup.date !== entry.date) {
+        groups.push({
+          date: entry.date,
+          label: formatReportDateLabel(entry.date),
+          entries: [entry],
+        });
+      } else {
+        lastGroup.entries.push(entry);
+      }
+    });
+
+    return groups;
+  }, [recentEntries]);
+
   const tileStatusText = (sectionTitle) => {
     const formatList = (entries) => {
       if (!entries.length) return ["Nothing logged yet"];
@@ -603,6 +661,51 @@ export default function KaylenCareMonitorDashboard() {
         return [""];
     }
   };
+
+  const reportText = useMemo(() => {
+    if (reportLayout === "timeline") {
+      return [
+        `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
+        `Timeline view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
+        "",
+        ...recentEntries.flatMap((entry) => [
+          `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
+          entry.summary,
+          ...(entry.details?.length ? entry.details : []),
+          "",
+        ]),
+        ...(recentEntries.length ? [] : ["No entries found for this date range."]),
+      ].join("\n");
+    }
+
+    const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
+
+    return [
+      `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
+      `Category view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
+      "",
+      ...order.flatMap((section) => {
+        const entries = groupedReportEntries[section] || [];
+        if (!entries.length) return [];
+        return [
+          section.toUpperCase(),
+          ...entries.flatMap((entry) => [
+            `${entry.date}${entry.time ? ` ${entry.time}` : ""}`,
+            entry.summary,
+            ...(entry.details?.length ? entry.details : []),
+            "",
+          ]),
+        ];
+      }),
+      ...(recentEntries.length ? [] : ["No entries found for this date range."]),
+    ].join("\n");
+  }, [
+    effectiveReportDays,
+    groupedReportEntries,
+    recentEntries,
+    reportCategoryFilter,
+    reportLayout,
+  ]);
 
   const saveFoodEntryToSupabase = async ({
     selectedFood,
@@ -777,71 +880,60 @@ export default function KaylenCareMonitorDashboard() {
     return true;
   };
 
-  const groupedReportEntries = useMemo(() => {
-    const groups = {
-      "Food Diary": [],
-      Medication: [],
-      Toileting: [],
-      Health: [],
-      Sleep: [],
-    };
+  const handleExportPdf = async () => {
+    try {
+      setIsExportingPdf(true);
 
-    recentEntries.forEach((entry) => {
-      if (groups[entry.section]) {
-        groups[entry.section].push(entry);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const exportNode = document.getElementById("report-pdf-export");
+      if (!exportNode) {
+        alert("PDF export area not found");
+        return;
       }
-    });
 
-    return groups;
-  }, [recentEntries]);
+      const canvas = await html2canvas(exportNode, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+        windowWidth: 794,
+      });
 
-  const reportText = useMemo(() => {
-    if (reportLayout === "timeline") {
-      return [
-        `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-        `Timeline view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
-        "",
-        ...recentEntries.flatMap((entry) => [
-          `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
-          entry.summary,
-          ...(entry.details?.length ? entry.details : []),
-          "",
-        ]),
-        ...(recentEntries.length ? [] : ["No entries found for this date range."]),
-      ].join("\n");
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 8;
+      const usableWidth = pdfWidth - margin * 2;
+      const usableHeight = pdfHeight - margin * 2;
+
+      const imgWidth = usableWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+      heightLeft -= usableHeight;
+
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+        heightLeft -= usableHeight;
+      }
+
+      pdf.save(
+        `kaylens-diary-report-${effectiveReportDays}-days-${reportLayout.toLowerCase()}.pdf`,
+      );
+    } catch (error) {
+      console.error("PDF export failed", error);
+      alert("PDF export failed - check console");
+    } finally {
+      setIsExportingPdf(false);
     }
-
-    const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
-
-    return [
-      `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-      `Category view${reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""}`,
-      "",
-      ...order.flatMap((section) => {
-        const entries = groupedReportEntries[section] || [];
-        if (!entries.length) return [];
-        return [
-          section.toUpperCase(),
-          ...entries.flatMap((entry) => [
-            `${entry.date}${entry.time ? ` ${entry.time}` : ""}`,
-            entry.summary,
-            ...(entry.details?.length ? entry.details : []),
-            "",
-          ]),
-        ];
-      }),
-      ...(recentEntries.length ? [] : ["No entries found for this date range."]),
-    ].join("\n");
-  }, [
-    effectiveReportDays,
-    groupedReportEntries,
-    recentEntries,
-    reportCategoryFilter,
-    reportLayout,
-  ]);
-
-  const handleExportPdf = () => {
-    window.print();
   };
 
   const renderTimeInput = ({
@@ -1716,7 +1808,89 @@ export default function KaylenCareMonitorDashboard() {
     );
   };
 
-  const renderReportsForm = () => {
+  const renderReportEntries = ({ mode = "screen" }) => {
+    const compactCardClass =
+      mode === "pdf"
+        ? "rounded-xl border px-4 py-3 text-sm text-slate-700"
+        : "rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3";
+
+    const sectionHeaderClass =
+      mode === "pdf"
+        ? "report-section-title rounded-2xl border px-4 py-3"
+        : "report-section-title rounded-2xl border px-4 py-2.5";
+
+    if (!recentEntries.length) {
+      return (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
+          Nothing logged yet for these filters.
+        </div>
+      );
+    }
+
+    if (reportLayout === "timeline") {
+      return (
+        <div className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+          <div
+            className={`${sectionHeaderClass} border-slate-800 bg-slate-800`}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
+                Timeline
+              </h4>
+              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                {recentEntries.length} item{recentEntries.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          </div>
+
+          {timelineGroups.map((group) => (
+            <div key={group.date} className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+              <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+                  {group.label}
+                </p>
+              </div>
+
+              {group.entries.map((entry) => {
+                const theme = sectionTheme[entry.section] || {
+                  report: "border-slate-200 bg-slate-50",
+                };
+
+                return (
+                  <div
+                    key={entry.id}
+                    className={`${compactCardClass} ${theme.report}`}
+                  >
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                          {entry.section}
+                        </div>
+                        <p className="font-bold leading-5 text-slate-900">
+                          {entry.summary}
+                        </p>
+                      </div>
+                      <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                        {entry.time || "Time not set"}
+                      </span>
+                    </div>
+
+                    {entry.details?.length ? (
+                      <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
+                        {entry.details.map((detail, index) => (
+                          <p key={index}>{detail}</p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      );
+    }
+
     const orderedSections = [
       "Food Diary",
       "Medication",
@@ -1725,278 +1899,294 @@ export default function KaylenCareMonitorDashboard() {
       "Sleep",
     ];
 
-    const handleShareReport = async () => {
-      try {
-        if (typeof navigator !== "undefined" && navigator.share) {
-          await navigator.share({
-            title: `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-            text: reportText,
-          });
-          return;
-        }
-
-        if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
-          await navigator.clipboard.writeText(reportText);
-          setShareCopied(true);
-          setTimeout(() => setShareCopied(false), 2000);
-          return;
-        }
-
-        const textArea = document.createElement("textarea");
-        textArea.value = reportText;
-        document.body.appendChild(textArea);
-        textArea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textArea);
-        setShareCopied(true);
-        setTimeout(() => setShareCopied(false), 2000);
-      } catch (error) {
-        console.error("Share failed", error);
-      }
-    };
-
     return (
-      <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-4">
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Quick range
-          </label>
-          <select
-            className={`${inputClassName} min-h-[46px]`}
-            value={reportDays}
-            onChange={(e) => setReportDays(e.target.value)}
-          >
-            <option value="7">7 days</option>
-            <option value="14">14 days</option>
-            <option value="30">30 days</option>
-            <option value="60">60 days</option>
-            <option value="90">90 days</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
+      <div className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+        {orderedSections.map((section) => {
+          const entries = groupedReportEntries[section] || [];
+          if (!entries.length) return null;
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Report style
-          </label>
-          <select
-            className={`${inputClassName} min-h-[46px]`}
-            value={reportLayout}
-            onChange={(e) => setReportLayout(e.target.value)}
-          >
-            <option value="timeline">Timeline</option>
-            <option value="category">By category</option>
-          </select>
-        </div>
+          const theme = sectionTheme[section] || {
+            report: "border-slate-200 bg-slate-50",
+            solidHeader: "bg-slate-700 text-white border-slate-800",
+          };
 
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Category filter
-          </label>
-          <select
-            className={`${inputClassName} min-h-[46px]`}
-            value={reportCategoryFilter}
-            onChange={(e) => setReportCategoryFilter(e.target.value)}
-          >
-            <option value="All">All categories</option>
-            <option value="Food Diary">Food Diary</option>
-            <option value="Medication">Medication</option>
-            <option value="Toileting">Toileting</option>
-            <option value="Health">Health</option>
-            <option value="Sleep">Sleep</option>
-          </select>
-        </div>
-
-        <div className={cardClassName}>
-          <label className="text-sm font-semibold text-slate-700">
-            Active range
-          </label>
-          <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-            Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
-          </div>
-        </div>
-
-        {reportDays === "custom" ? (
-          <div className={`${cardClassName} lg:col-span-2`}>
-            <label className="text-sm font-semibold text-slate-700">
-              Custom number of days
-            </label>
-            <input
-              type="number"
-              min="1"
-              step="1"
-              placeholder="Enter number of days"
-              className={`${inputClassName} min-h-[46px]`}
-              value={customReportDays}
-              onChange={(e) => setCustomReportDays(e.target.value)}
-            />
-          </div>
-        ) : null}
-
-        <div className={reportDays === "custom" ? cardClassName : `${cardClassName} lg:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">
-            Entries found
-          </label>
-          <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-            {recentEntries.length} entries in shared log
-          </div>
-        </div>
-
-        <div
-          id="report-print-area"
-          className="report-print-wrap lg:col-span-4 rounded-2xl border border-slate-300 bg-slate-50/80 p-3 shadow-sm md:p-4"
-        >
-          <div className="report-screen-header flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <label className="text-sm font-semibold text-slate-700">
-                Report view
-              </label>
-              <p className="mt-1 text-sm text-slate-500">
-                {reportLayout === "timeline"
-                  ? "Showing entries in time order."
-                  : "Grouped by category with matching colours."}
-              </p>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Last {effectiveReportDays} days
-            </span>
-          </div>
-
-          <div className="mt-3 space-y-3 report-content">
-            {recentEntries.length ? (
-              reportLayout === "timeline" ? (
-                <div className="space-y-2 print-section-block">
-                  <div className="report-section-title rounded-2xl border border-slate-800 bg-slate-800 px-4 py-2.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
-                        Timeline
-                      </h4>
-                      <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                        {recentEntries.length} item
-                        {recentEntries.length === 1 ? "" : "s"}
-                      </span>
-                    </div>
-                  </div>
-
-                  {recentEntries.map((entry) => {
-                    const theme = sectionTheme[entry.section] || {
-                      report: "border-slate-200 bg-slate-50",
-                    };
-
-                    return (
-                      <div
-                        key={entry.id}
-                        className={`rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3 ${theme.report}`}
-                      >
-                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                              {entry.section}
-                            </div>
-                            <p className="font-bold leading-5 text-slate-900">
-                              {entry.summary}
-                            </p>
-                          </div>
-                          <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                            {entry.date}
-                            {entry.time ? ` · ${entry.time}` : ""}
-                          </span>
-                        </div>
-
-                        {entry.details?.length ? (
-                          <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                            {entry.details.map((detail, index) => (
-                              <p key={index}>{detail}</p>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+          return (
+            <div key={section} className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
+              <div className={`${sectionHeaderClass} ${theme.solidHeader}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
+                    {section}
+                  </h4>
+                  <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
+                    {entries.length} item{entries.length === 1 ? "" : "s"}
+                  </span>
                 </div>
-              ) : (
-                orderedSections.map((section) => {
-                  const entries = groupedReportEntries[section] || [];
-                  if (!entries.length) return null;
+              </div>
 
-                  const theme = sectionTheme[section] || {
-                    report: "border-slate-200 bg-slate-50",
-                    solidHeader: "bg-slate-700 text-white border-slate-800",
-                  };
-
-                  return (
-                    <div key={section} className="space-y-2 print-section-block">
-                      <div
-                        className={`report-section-title rounded-2xl border px-4 py-2.5 ${theme.solidHeader}`}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
-                            {section}
-                          </h4>
-                          <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                            {entries.length} item{entries.length === 1 ? "" : "s"}
-                          </span>
-                        </div>
-                      </div>
-
-                      {entries.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className={`rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3 ${theme.report}`}
-                        >
-                          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <span className="font-bold leading-5 text-slate-900">
-                              {entry.summary}
-                            </span>
-                            <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                              {entry.date}
-                              {entry.time ? ` · ${entry.time}` : ""}
-                            </span>
-                          </div>
-                          {entry.details?.length ? (
-                            <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                              {entry.details.map((detail, index) => (
-                                <p key={index}>{detail}</p>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
+              {entries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className={`${compactCardClass} ${theme.report}`}
+                >
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <span className="font-bold leading-5 text-slate-900">
+                      {entry.summary}
+                    </span>
+                    <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                      {entry.date}
+                      {entry.time ? ` · ${entry.time}` : ""}
+                    </span>
+                  </div>
+                  {entry.details?.length ? (
+                    <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
+                      {entry.details.map((detail, index) => (
+                        <p key={index}>{detail}</p>
                       ))}
                     </div>
-                  );
-                })
-              )
-            ) : (
-              <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
-                Nothing logged yet for these filters.
-              </div>
-            )}
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderPdfExportArea = () => (
+    <div className="fixed left-[-99999px] top-0 z-[-1]">
+      <div
+        id="report-pdf-export"
+        className="w-[794px] bg-white p-8 text-slate-900"
+      >
+        <div className="rounded-2xl bg-slate-800 px-6 py-4">
+          <h1 className="text-center text-2xl font-bold uppercase tracking-[0.18em] text-white">
+            Kaylen’s Diary
+          </h1>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-slate-300 bg-slate-50 p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                Report summary
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-900">
+                {reportLayout === "timeline" ? "Timeline" : "By category"}
+                {reportCategoryFilter !== "All" ? ` · ${reportCategoryFilter}` : ""}
+              </h2>
+            </div>
+            <div className="text-right text-sm font-semibold text-slate-600">
+              <p>Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}</p>
+              <p>{recentEntries.length} entr{recentEntries.length === 1 ? "y" : "ies"}</p>
+            </div>
           </div>
         </div>
 
-        <div className="lg:col-span-4 grid gap-3 sm:grid-cols-3">
-          <button
-            type="button"
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
-          >
-            Run report
-          </button>
-          <button
-            type="button"
-            onClick={handleShareReport}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            {shareCopied ? "Report copied" : "Share report"}
-          </button>
-          <button
-            type="button"
-            onClick={handleExportPdf}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-          >
-            Export PDF
-          </button>
-        </div>
+        <div className="mt-4">{renderReportEntries({ mode: "pdf" })}</div>
       </div>
+    </div>
+  );
+
+  const renderReportsForm = () => {
+    const filtersLabel =
+      reportCategoryFilter === "All"
+        ? "All categories"
+        : reportCategoryFilter;
+
+    const layoutLabel =
+      reportLayout === "timeline" ? "Timeline" : "By category";
+
+    return (
+      <>
+        {renderPdfExportArea()}
+
+        <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-4">
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Quick range
+            </label>
+            <select
+              className={`${inputClassName} min-h-[46px]`}
+              value={reportDays}
+              onChange={(e) => setReportDays(e.target.value)}
+            >
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30">30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Report style
+            </label>
+            <select
+              className={`${inputClassName} min-h-[46px]`}
+              value={reportLayout}
+              onChange={(e) => setReportLayout(e.target.value)}
+            >
+              <option value="timeline">Timeline</option>
+              <option value="category">By category</option>
+            </select>
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Active range
+            </label>
+            <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+              Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
+            </div>
+          </div>
+
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Filters
+            </label>
+            <button
+              type="button"
+              onClick={() => setReportFiltersOpen((current) => !current)}
+              className="mt-2 flex min-h-[46px] w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              <span>{filtersLabel}</span>
+              <span>{reportFiltersOpen ? "−" : "+"}</span>
+            </button>
+          </div>
+
+          {reportFiltersOpen ? (
+            <div className="lg:col-span-4 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+                <div>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Category filter
+                  </label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportCategoryFilter}
+                    onChange={(e) => setReportCategoryFilter(e.target.value)}
+                  >
+                    <option value="All">All categories</option>
+                    <option value="Food Diary">Food Diary</option>
+                    <option value="Medication">Medication</option>
+                    <option value="Toileting">Toileting</option>
+                    <option value="Health">Health</option>
+                    <option value="Sleep">Sleep</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Current layout
+                  </label>
+                  <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                    {layoutLabel}
+                  </div>
+                </div>
+
+                {reportDays === "custom" ? (
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">
+                      Custom number of days
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      placeholder="Enter number of days"
+                      className={`${inputClassName} min-h-[46px]`}
+                      value={customReportDays}
+                      onChange={(e) => setCustomReportDays(e.target.value)}
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-sm font-semibold text-slate-700">
+                      Quick note
+                    </label>
+                    <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
+                      Pick “Custom” in Quick range to enter your own number of days.
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="lg:col-span-4">
+            <div className="rounded-2xl border border-slate-300 bg-slate-50/80 p-3 shadow-sm md:p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Report view
+                  </label>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {reportLayout === "timeline"
+                      ? "Showing entries in time order."
+                      : "Grouped by category with matching colours."}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                    {layoutLabel}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                    {filtersLabel}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                    Last {effectiveReportDays} days
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 space-y-2">
+                {renderReportEntries({ mode: "screen" })}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-4 grid gap-3 sm:grid-cols-3">
+            <button
+              type="button"
+              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            >
+              Run report
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  if (
+                    typeof navigator !== "undefined" &&
+                    navigator.clipboard?.writeText
+                  ) {
+                    await navigator.clipboard.writeText(reportText);
+                    setShareCopied(true);
+                    setTimeout(() => setShareCopied(false), 2000);
+                    return;
+                  }
+                } catch (error) {
+                  console.error("Copy failed", error);
+                }
+              }}
+              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              {shareCopied ? "Report copied" : "Copy report"}
+            </button>
+            <button
+              type="button"
+              onClick={handleExportPdf}
+              disabled={isExportingPdf}
+              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
+            </button>
+          </div>
+        </div>
+      </>
     );
   };
 
@@ -2121,83 +2311,6 @@ export default function KaylenCareMonitorDashboard() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
-      <style>{`
-        @page {
-          size: auto;
-          margin: 8mm;
-        }
-
-        @media print {
-          html,
-          body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-
-          body * {
-            visibility: hidden !important;
-          }
-
-          #report-print-area,
-          #report-print-area * {
-            visibility: visible !important;
-          }
-
-          #report-print-area {
-            position: absolute !important;
-            inset: 0 auto auto 0 !important;
-            width: 100% !important;
-            max-width: none !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            background: white !important;
-            border: 0 !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-          }
-
-          .report-print-wrap {
-            margin: 0 !important;
-            padding: 0 !important;
-            border: 0 !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-            background: white !important;
-          }
-
-          .report-screen-header {
-            display: none !important;
-          }
-
-          .report-content {
-            margin-top: 0 !important;
-            padding-top: 0 !important;
-          }
-
-          .print-section-block {
-            margin-top: 0 !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          .report-section-title {
-            margin-top: 0 !important;
-            border-width: 2px !important;
-            break-inside: avoid;
-            page-break-inside: avoid;
-          }
-
-          #report-print-area,
-          #report-print-area * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-        }
-      `}</style>
-
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
         <header className="mb-8">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
