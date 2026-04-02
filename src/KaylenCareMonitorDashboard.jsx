@@ -1056,12 +1056,17 @@ export default function KaylenCareMonitorDashboard() {
             .join(" | "),
         };
 
+        console.log("WAKE DEBUG sleepEntryId:", sleepEntryId);
+        console.log("WAKE DEBUG payload:", payload);
+
         const { data, error } = await supabase
           .from("sleep_logs")
           .update(payload)
           .eq("id", sleepEntryId)
-          .is("wake_time", null)
-          .select("id, bedtime, wake_time");
+          .select("*");
+
+        console.log("WAKE DEBUG result data:", data);
+        console.log("WAKE DEBUG result error:", error);
 
         if (error) {
           console.error("Supabase wake-up update failed:", error);
@@ -1070,14 +1075,13 @@ export default function KaylenCareMonitorDashboard() {
         }
 
         if (!data || !data.length) {
-          alert("Wake-up could not be completed for that sleep entry");
+          alert("Wake-up save ran, but no row was updated");
           return false;
         }
 
         setSleepEntryId(null);
         setSleepBanner("");
         await loadEntriesFromSupabase();
-
         return true;
       }
 
