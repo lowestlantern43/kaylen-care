@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { supabase } from "./Supabase";
@@ -108,6 +108,7 @@ export default function KaylenCareMonitorDashboard() {
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
   const [savedMedicationOptions, setSavedMedicationOptions] = useState([]);
@@ -116,6 +117,10 @@ export default function KaylenCareMonitorDashboard() {
   const [saveMedicationForFuture, setSaveMedicationForFuture] =
     useState(false);
   const [saveGivenByForFuture, setSaveGivenByForFuture] = useState(false);
+
+  const touchStartY = useRef(0);
+  const touchCurrentY = useRef(0);
+  const isPullingRef = useRef(false);
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -276,6 +281,58 @@ export default function KaylenCareMonitorDashboard() {
       ? Math.max(1, Number(customReportDays) || 7)
       : Math.max(1, Number(reportDays) || 7);
 
+  const parseNotesValue = (text, label) => {
+    const parts = (text || "").split(" | ");
+    const found = parts.find((part) => part.startsWith(`${label}: `));
+    return found ? found.replace(`${label}: `, "") : "";
+  };
+
+  const parseDateToIso = (value) => {
+    if (!value || !value.includes("/")) return null;
+    const [day, month, year] = value.split("/");
+    if (!day || !month || !year) return null;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
+  const getSleepDurationMinutes = (
+    sleepDateValue,
+    bedtime,
+    wakeDateValue,
+    wakeTime,
+  ) => {
+    const sleepDateIso = parseDateToIso(sleepDateValue);
+    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
+
+    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
+
+    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
+    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
+
+    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
+      return null;
+    }
+
+    if (wakeDate <= bedtimeDate) {
+      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
+    return Math.round(diffMs / 60000);
+  };
+
+  const formatSleepDuration = (minutes) => {
+    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
+      return "";
+    }
+
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    if (hrs && mins) return `${hrs}h ${mins}m`;
+    if (hrs) return `${hrs}h`;
+    return `${mins}m`;
+  };
+
   const openSection = (section) => {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
@@ -388,58 +445,6 @@ export default function KaylenCareMonitorDashboard() {
     });
     setSleepEntryId(null);
     setSleepBanner("");
-  };
-
-  const parseNotesValue = (text, label) => {
-    const parts = (text || "").split(" | ");
-    const found = parts.find((part) => part.startsWith(`${label}: `));
-    return found ? found.replace(`${label}: `, "") : "";
-  };
-
-  const parseDateToIso = (value) => {
-    if (!value || !value.includes("/")) return null;
-    const [day, month, year] = value.split("/");
-    if (!day || !month || !year) return null;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  };
-
-  const getSleepDurationMinutes = (
-    sleepDateValue,
-    bedtime,
-    wakeDateValue,
-    wakeTime,
-  ) => {
-    const sleepDateIso = parseDateToIso(sleepDateValue);
-    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
-
-    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
-
-    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
-    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
-
-    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
-      return null;
-    }
-
-    if (wakeDate <= bedtimeDate) {
-      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
-    }
-
-    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
-    return Math.round(diffMs / 60000);
-  };
-
-  const formatSleepDuration = (minutes) => {
-    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
-      return "";
-    }
-
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-
-    if (hrs && mins) return `${hrs}h ${mins}m`;
-    if (hrs) return `${hrs}h`;
-    return `${mins}m`;
   };
 
   const loadLatestIncompleteSleepEntry = async () => {
@@ -669,6 +674,19 @@ export default function KaylenCareMonitorDashboard() {
     setSharedLog(combined);
   };
 
+  const refreshAllData = async () => {
+    if (!isUnlocked || isRefreshing) return;
+    try {
+      setIsRefreshing(true);
+      await loadEntriesFromSupabase();
+      if (activeSection?.title === "Sleep") {
+        await loadLatestIncompleteSleepEntry();
+      }
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
+    }
+  };
+
   useEffect(() => {
     if (isUnlocked) {
       loadEntriesFromSupabase();
@@ -679,6 +697,42 @@ export default function KaylenCareMonitorDashboard() {
     if (!isUnlocked || activeSection?.title !== "Sleep") return;
     loadLatestIncompleteSleepEntry();
   }, [isUnlocked, activeSection]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+
+    const handleTouchStart = (e) => {
+      if (window.scrollY > 0 || activeSection) return;
+      touchStartY.current = e.touches[0].clientY;
+      touchCurrentY.current = e.touches[0].clientY;
+      isPullingRef.current = true;
+    };
+
+    const handleTouchMove = (e) => {
+      if (!isPullingRef.current) return;
+      touchCurrentY.current = e.touches[0].clientY;
+    };
+
+    const handleTouchEnd = async () => {
+      if (!isPullingRef.current) return;
+      const pullDistance = touchCurrentY.current - touchStartY.current;
+      isPullingRef.current = false;
+
+      if (pullDistance > 110) {
+        await refreshAllData();
+      }
+    };
+
+    window.addEventListener("touchstart", handleTouchStart, { passive: true });
+    window.addEventListener("touchmove", handleTouchMove, { passive: true });
+    window.addEventListener("touchend", handleTouchEnd);
+
+    return () => {
+      window.removeEventListener("touchstart", handleTouchStart);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, [isUnlocked, activeSection, isRefreshing]);
 
   const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
@@ -736,6 +790,11 @@ export default function KaylenCareMonitorDashboard() {
       sleep: findLatestTwo("Sleep"),
     };
   }, [sharedLog]);
+
+  const latestOverall = sharedLog[0] || null;
+  const latestSleep = latestTwoBySection.sleep[0] || null;
+  const latestMedication = latestTwoBySection.medication[0] || null;
+  const latestFood = latestTwoBySection.food[0] || null;
 
   const groupedReportEntries = useMemo(() => {
     const groups = {
@@ -1054,7 +1113,7 @@ export default function KaylenCareMonitorDashboard() {
         }
 
         if (!data || data.length === 0) {
-          alert("Wake save ran but no row updated (ID mismatch)");
+          alert("Wake save ran but no row updated");
           return false;
         }
 
@@ -1215,7 +1274,13 @@ export default function KaylenCareMonitorDashboard() {
     const selectedLocation = showOtherLocation
       ? foodForm.otherLocation || "Other"
       : foodForm.location || "Not set";
+
     const isMilk = selectedFood?.toLowerCase() === "milk";
+    const canSaveFood =
+      !!foodForm.date.trim() &&
+      !!foodForm.time.trim() &&
+      !!selectedFood?.trim() &&
+      !!foodForm.amount?.toString().trim();
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1385,7 +1450,10 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
+            disabled={!canSaveFood || isRefreshing}
             onClick={async () => {
+              if (!canSaveFood || isRefreshing) return;
+
               const saved = await saveFoodEntryToSupabase({
                 selectedFood,
                 selectedLocation,
@@ -1405,7 +1473,7 @@ export default function KaylenCareMonitorDashboard() {
               resetFoodForm();
               closeSection();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Save food entry
           </button>
@@ -1425,6 +1493,12 @@ export default function KaylenCareMonitorDashboard() {
     const selectedGivenBy = showOtherGivenBy
       ? medicationForm.otherGivenBy || "Other"
       : medicationForm.givenBy || "";
+
+    const canSaveMedication =
+      !!selectedMedicine.trim() &&
+      !!medicationForm.dose.trim() &&
+      !!medicationForm.time.trim() &&
+      !!medicationForm.date.trim();
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1610,7 +1684,10 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
+            disabled={!canSaveMedication || isRefreshing}
             onClick={async () => {
+              if (!canSaveMedication || isRefreshing) return;
+
               if (selectedMedicine === "Melatonin" && !medicationForm.notes.trim()) {
                 alert("Notes are required for Melatonin");
                 return;
@@ -1640,7 +1717,7 @@ export default function KaylenCareMonitorDashboard() {
               resetMedicationForm();
               closeSection();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Save medication entry
           </button>
@@ -1650,6 +1727,11 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const renderToiletingForm = () => {
+    const canSaveToileting =
+      !!toiletingForm.date.trim() &&
+      !!toiletingForm.time.trim() &&
+      !!toiletingForm.entry.trim();
+
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className={cardClassName}>
@@ -1712,7 +1794,10 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
+            disabled={!canSaveToileting || isRefreshing}
             onClick={async () => {
+              if (!canSaveToileting || isRefreshing) return;
+
               const saved = await saveToiletingEntryToSupabase();
 
               if (!saved) return;
@@ -1721,7 +1806,7 @@ export default function KaylenCareMonitorDashboard() {
               resetToiletingForm();
               closeSection();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Save toileting entry
           </button>
@@ -1731,6 +1816,11 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const renderHealthForm = () => {
+    const canSaveHealth =
+      !!healthForm.date.trim() &&
+      !!healthForm.time.trim() &&
+      !!healthForm.event.trim();
+
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className={cardClassName}>
@@ -1924,7 +2014,10 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
+            disabled={!canSaveHealth || isRefreshing}
             onClick={async () => {
+              if (!canSaveHealth || isRefreshing) return;
+
               const saved = await saveHealthEntryToSupabase();
 
               if (!saved) return;
@@ -1933,7 +2026,7 @@ export default function KaylenCareMonitorDashboard() {
               resetHealthForm();
               closeSection();
             }}
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             Save health entry
           </button>
@@ -1972,7 +2065,7 @@ export default function KaylenCareMonitorDashboard() {
     return (
       <div className="mt-6 space-y-4">
         {sleepBanner ? (
-          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-700">
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
             {sleepBanner}
           </div>
         ) : null}
@@ -2029,6 +2122,7 @@ export default function KaylenCareMonitorDashboard() {
               type="button"
               disabled={!canSaveSleep}
               onClick={async () => {
+                if (!canSaveSleep) return;
                 await saveSleepEntryToSupabase({ mode: "sleep" });
               }}
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -2174,6 +2268,7 @@ export default function KaylenCareMonitorDashboard() {
               type="button"
               disabled={!canSaveWake}
               onClick={async () => {
+                if (!canSaveWake) return;
                 const saved = await saveSleepEntryToSupabase({ mode: "wake" });
 
                 if (!saved) return;
@@ -2385,9 +2480,7 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-4">
-          <div className="col-span-2">{renderReportEntries({ mode: "pdf" })}</div>
-        </div>
+        <div className="mt-4">{renderReportEntries({ mode: "pdf" })}</div>
       </div>
     </div>
   );
@@ -2716,7 +2809,7 @@ export default function KaylenCareMonitorDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
-        <header className="mb-8">
+        <header className="mb-6">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
             <div className="hidden sm:block" />
 
@@ -2726,7 +2819,15 @@ export default function KaylenCareMonitorDashboard() {
               </h1>
             </div>
 
-            <div className="flex justify-center sm:justify-end">
+            <div className="flex justify-center gap-2 sm:justify-end">
+              <button
+                type="button"
+                onClick={refreshAllData}
+                disabled={isRefreshing}
+                className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isRefreshing ? "Refreshing" : "Refresh"}
+              </button>
               <button
                 type="button"
                 onClick={() => {
@@ -2742,6 +2843,122 @@ export default function KaylenCareMonitorDashboard() {
             </div>
           </div>
         </header>
+
+        {isRefreshing ? (
+          <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700">
+            Refreshing diary...
+          </div>
+        ) : (
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600">
+            Pull down from the top to refresh on mobile.
+          </div>
+        )}
+
+        <section className="mb-8 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Today at a glance
+                </p>
+                <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                  Quick overview
+                </h2>
+                <p className="mt-1 text-sm font-medium text-slate-600">
+                  Latest entries and shortcuts for the day.
+                </p>
+              </div>
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                Live summary
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-700">
+                  Last sleep
+                </p>
+                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                  {latestSleep ? latestSleep.summary : "Nothing logged yet"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">
+                  Last medication
+                </p>
+                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                  {latestMedication
+                    ? latestMedication.summary
+                    : "Nothing logged yet"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">
+                  Last food
+                </p>
+                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                  {latestFood ? latestFood.summary : "Nothing logged yet"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+                  Latest overall
+                </p>
+                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                  {latestOverall ? latestOverall.summary : "Nothing logged yet"}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+              Quick actions
+            </p>
+            <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900">
+              Jump in fast
+            </h3>
+            <div className="mt-4 grid gap-3">
+              <button
+                type="button"
+                onClick={() => openSection(sections.find((s) => s.title === "Sleep"))}
+                className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left font-semibold text-indigo-800 transition hover:bg-indigo-100"
+              >
+                Log Sleep
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openSection(sections.find((s) => s.title === "Medication"))
+                }
+                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-semibold text-rose-800 transition hover:bg-rose-100"
+              >
+                Log Medication
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openSection(sections.find((s) => s.title === "Food Diary"))
+                }
+                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left font-semibold text-amber-800 transition hover:bg-amber-100"
+              >
+                Log Food
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  openSection(sections.find((s) => s.title === "Reports"))
+                }
+                className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 px-4 py-3 text-left font-semibold text-fuchsia-800 transition hover:bg-fuchsia-100"
+              >
+                Open Reports
+              </button>
+            </div>
+          </div>
+        </section>
 
         <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {sections.map((section) => {
@@ -2812,27 +3029,6 @@ export default function KaylenCareMonitorDashboard() {
               </div>
             );
           })}
-        </section>
-
-        <section className="mt-8 grid gap-5 sm:grid-cols-3">
-          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Sections
-            </p>
-            <p className="mt-2 text-4xl font-bold">6</p>
-          </div>
-          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Recent range
-            </p>
-            <p className="mt-2 text-4xl font-bold">{effectiveReportDays}d</p>
-          </div>
-          <div className="rounded-2xl border border-slate-300 bg-slate-50 p-5 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-              Shared log
-            </p>
-            <p className="mt-2 text-4xl font-bold">{sharedLog.length}</p>
-          </div>
         </section>
       </div>
 
