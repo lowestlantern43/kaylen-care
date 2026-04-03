@@ -2809,153 +2809,83 @@ export default function KaylenCareMonitorDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
-        <header className="mb-6">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-            <div className="hidden sm:block" />
-
+        <header className="mb-5">
+          <div className="mx-auto max-w-2xl">
             <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
               <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
                 Kaylen’s Diary
               </h1>
             </div>
-
-            <div className="flex justify-center gap-2 sm:justify-end">
-              <button
-                type="button"
-                onClick={refreshAllData}
-                disabled={isRefreshing}
-                className="shrink-0 rounded-2xl border border-slate-300 bg-white px-4 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isRefreshing ? "Refreshing" : "Refresh"}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsUnlocked(false);
-                  setPasswordInput("");
-                  setPasswordError("");
-                  setActiveSection(null);
-                }}
-                className="shrink-0 rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50"
-              >
-                Lock
-              </button>
-            </div>
           </div>
         </header>
 
         {isRefreshing ? (
-          <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700">
+          <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">
             Refreshing diary...
           </div>
         ) : (
-          <div className="mb-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-600">
-            Pull down from the top to refresh on mobile.
+          <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600">
+            Pull down from the top to refresh.
           </div>
         )}
 
-        <section className="mb-8 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm lg:col-span-2">
+        <section className="mb-6">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Today at a glance
-                </p>
-                <h2 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
                   Quick overview
+                </p>
+                <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
+                  Today at a glance
                 </h2>
                 <p className="mt-1 text-sm font-medium text-slate-600">
-                  Latest entries and shortcuts for the day.
+                  Latest entries across the diary.
                 </p>
               </div>
-              <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                Live summary
+              <div className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                Live
               </div>
             </div>
 
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-700">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-700">
                   Last sleep
                 </p>
-                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
                   {latestSleep ? latestSleep.summary : "Nothing logged yet"}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">
                   Last medication
                 </p>
-                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
                   {latestMedication
                     ? latestMedication.summary
                     : "Nothing logged yet"}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-amber-700">
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-700">
                   Last food
                 </p>
-                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
                   {latestFood ? latestFood.summary : "Nothing logged yet"}
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600">
                   Latest overall
                 </p>
-                <p className="mt-2 text-sm font-bold leading-5 text-slate-900">
+                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
                   {latestOverall ? latestOverall.summary : "Nothing logged yet"}
                 </p>
               </div>
-            </div>
-          </div>
-
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
-              Quick actions
-            </p>
-            <h3 className="mt-2 text-xl font-bold tracking-tight text-slate-900">
-              Jump in fast
-            </h3>
-            <div className="mt-4 grid gap-3">
-              <button
-                type="button"
-                onClick={() => openSection(sections.find((s) => s.title === "Sleep"))}
-                className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-left font-semibold text-indigo-800 transition hover:bg-indigo-100"
-              >
-                Log Sleep
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  openSection(sections.find((s) => s.title === "Medication"))
-                }
-                className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-left font-semibold text-rose-800 transition hover:bg-rose-100"
-              >
-                Log Medication
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  openSection(sections.find((s) => s.title === "Food Diary"))
-                }
-                className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-left font-semibold text-amber-800 transition hover:bg-amber-100"
-              >
-                Log Food
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  openSection(sections.find((s) => s.title === "Reports"))
-                }
-                className="rounded-2xl border border-fuchsia-200 bg-fuchsia-50 px-4 py-3 text-left font-semibold text-fuchsia-800 transition hover:bg-fuchsia-100"
-              >
-                Open Reports
-              </button>
             </div>
           </div>
         </section>
