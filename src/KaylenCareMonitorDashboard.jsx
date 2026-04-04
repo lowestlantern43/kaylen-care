@@ -122,6 +122,10 @@ export default function KaylenCareMonitorDashboard() {
   const touchCurrentY = useRef(0);
   const isPullingRef = useRef(false);
 
+  const [activeSaveAction, setActiveSaveAction] = useState("");
+  const saveLockRef = useRef(false);
+  const [overviewIndex, setOverviewIndex] = useState(0);
+
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
     time: nowTimeValue(),
@@ -281,58 +285,6 @@ export default function KaylenCareMonitorDashboard() {
       ? Math.max(1, Number(customReportDays) || 7)
       : Math.max(1, Number(reportDays) || 7);
 
-  const parseNotesValue = (text, label) => {
-    const parts = (text || "").split(" | ");
-    const found = parts.find((part) => part.startsWith(`${label}: `));
-    return found ? found.replace(`${label}: `, "") : "";
-  };
-
-  const parseDateToIso = (value) => {
-    if (!value || !value.includes("/")) return null;
-    const [day, month, year] = value.split("/");
-    if (!day || !month || !year) return null;
-    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  };
-
-  const getSleepDurationMinutes = (
-    sleepDateValue,
-    bedtime,
-    wakeDateValue,
-    wakeTime,
-  ) => {
-    const sleepDateIso = parseDateToIso(sleepDateValue);
-    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
-
-    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
-
-    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
-    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
-
-    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
-      return null;
-    }
-
-    if (wakeDate <= bedtimeDate) {
-      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
-    }
-
-    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
-    return Math.round(diffMs / 60000);
-  };
-
-  const formatSleepDuration = (minutes) => {
-    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
-      return "";
-    }
-
-    const hrs = Math.floor(minutes / 60);
-    const mins = minutes % 60;
-
-    if (hrs && mins) return `${hrs}h ${mins}m`;
-    if (hrs) return `${hrs}h`;
-    return `${mins}m`;
-  };
-
   const openSection = (section) => {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
@@ -445,6 +397,70 @@ export default function KaylenCareMonitorDashboard() {
     });
     setSleepEntryId(null);
     setSleepBanner("");
+  };
+
+  const parseNotesValue = (text, label) => {
+    const parts = (text || "").split(" | ");
+    const found = parts.find((part) => part.startsWith(`${label}: `));
+    return found ? found.replace(`${label}: `, "") : "";
+  };
+
+  const parseDateToIso = (value) => {
+    if (!value || !value.includes("/")) return null;
+    const [day, month, year] = value.split("/");
+    if (!day || !month || !year) return null;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  };
+
+  const getSleepDurationMinutes = (
+    sleepDateValue,
+    bedtime,
+    wakeDateValue,
+    wakeTime,
+  ) => {
+    const sleepDateIso = parseDateToIso(sleepDateValue);
+    const wakeDateIso = parseDateToIso(wakeDateValue || sleepDateValue);
+
+    if (!sleepDateIso || !wakeDateIso || !bedtime || !wakeTime) return null;
+
+    const bedtimeDate = new Date(`${sleepDateIso}T${bedtime}:00`);
+    let wakeDate = new Date(`${wakeDateIso}T${wakeTime}:00`);
+
+    if (Number.isNaN(bedtimeDate.getTime()) || Number.isNaN(wakeDate.getTime())) {
+      return null;
+    }
+
+    if (wakeDate <= bedtimeDate) {
+      wakeDate = new Date(wakeDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+
+    const diffMs = wakeDate.getTime() - bedtimeDate.getTime();
+    return Math.round(diffMs / 60000);
+  };
+
+  const formatSleepDuration = (minutes) => {
+    if (minutes === null || minutes === undefined || Number.isNaN(minutes)) {
+      return "";
+    }
+
+    const hrs = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    if (hrs && mins) return `${hrs}h ${mins}m`;
+    if (hrs) return `${hrs}h`;
+    return `${mins}m`;
+  };
+
+  const runLockedSave = async (actionKey, action) => {
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
+    setActiveSaveAction(actionKey);
+    try {
+      await action();
+    } finally {
+      saveLockRef.current = false;
+      setActiveSaveAction("");
+    }
   };
 
   const loadLatestIncompleteSleepEntry = async () => {
@@ -791,10 +807,78 @@ export default function KaylenCareMonitorDashboard() {
     };
   }, [sharedLog]);
 
-  const latestOverall = sharedLog[0] || null;
-  const latestSleep = latestTwoBySection.sleep[0] || null;
-  const latestMedication = latestTwoBySection.medication[0] || null;
-  const latestFood = latestTwoBySection.food[0] || null;
+  const overviewItems = useMemo(
+    () => [
+      {
+        key: "sleep",
+        title: "Sleep",
+        emoji: "🌙",
+        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
+        summary: latestTwoBySection.sleep[0]?.summary || "Nothing logged yet",
+        meta:
+          latestTwoBySection.sleep[0]?.time ||
+          latestTwoBySection.sleep[0]?.date ||
+          "No recent entry",
+      },
+      {
+        key: "medication",
+        title: "Medication",
+        emoji: "💊",
+        tone: "border-rose-200 bg-rose-50 text-rose-800",
+        summary:
+          latestTwoBySection.medication[0]?.summary || "Nothing logged yet",
+        meta:
+          latestTwoBySection.medication[0]?.time ||
+          latestTwoBySection.medication[0]?.date ||
+          "No recent entry",
+      },
+      {
+        key: "food",
+        title: "Food",
+        emoji: "🍽️",
+        tone: "border-amber-200 bg-amber-50 text-amber-800",
+        summary: latestTwoBySection.food[0]?.summary || "Nothing logged yet",
+        meta:
+          latestTwoBySection.food[0]?.time ||
+          latestTwoBySection.food[0]?.date ||
+          "No recent entry",
+      },
+      {
+        key: "toileting",
+        title: "Toileting",
+        emoji: "🚽",
+        tone: "border-sky-200 bg-sky-50 text-sky-800",
+        summary:
+          latestTwoBySection.toileting[0]?.summary || "Nothing logged yet",
+        meta:
+          latestTwoBySection.toileting[0]?.time ||
+          latestTwoBySection.toileting[0]?.date ||
+          "No recent entry",
+      },
+      {
+        key: "health",
+        title: "Health",
+        emoji: "🩺",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+        summary: latestTwoBySection.health[0]?.summary || "Nothing logged yet",
+        meta:
+          latestTwoBySection.health[0]?.time ||
+          latestTwoBySection.health[0]?.date ||
+          "No recent entry",
+      },
+    ],
+    [latestTwoBySection],
+  );
+
+  useEffect(() => {
+    if (!overviewItems.length) return;
+    const timer = setInterval(() => {
+      setOverviewIndex((current) => (current + 1) % overviewItems.length);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, [overviewItems.length]);
+
+  const activeOverview = overviewItems[overviewIndex] || overviewItems[0];
 
   const groupedReportEntries = useMemo(() => {
     const groups = {
@@ -1095,16 +1179,11 @@ export default function KaylenCareMonitorDashboard() {
             .join(" | "),
         };
 
-        console.log("WAKE DEBUG ID:", sleepEntryId);
-        console.log("WAKE DEBUG payload:", payload);
-
         const { data, error } = await supabase
           .from("sleep_logs")
           .update(payload)
           .match({ id: String(sleepEntryId) })
           .select("*");
-
-        console.log("WAKE RESULT:", data, error);
 
         if (error) {
           console.error("Wake update failed:", error);
@@ -1280,7 +1359,8 @@ export default function KaylenCareMonitorDashboard() {
       !!foodForm.date.trim() &&
       !!foodForm.time.trim() &&
       !!selectedFood?.trim() &&
-      !!foodForm.amount?.toString().trim();
+      !!foodForm.amount?.toString().trim() &&
+      !activeSaveAction;
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1450,32 +1530,32 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            disabled={!canSaveFood || isRefreshing}
-            onClick={async () => {
-              if (!canSaveFood || isRefreshing) return;
+            disabled={!canSaveFood}
+            onClick={() =>
+              runLockedSave("food", async () => {
+                const saved = await saveFoodEntryToSupabase({
+                  selectedFood,
+                  selectedLocation,
+                  isMilk,
+                });
 
-              const saved = await saveFoodEntryToSupabase({
-                selectedFood,
-                selectedLocation,
-                isMilk,
-              });
+                if (!saved) return;
 
-              if (!saved) return;
+                await loadEntriesFromSupabase();
 
-              await loadEntriesFromSupabase();
+                if (showOtherFood && saveFoodForFuture) {
+                  setSavedFoodOptions((current) =>
+                    dedupeAppend(current, foodForm.otherItem),
+                  );
+                }
 
-              if (showOtherFood && saveFoodForFuture) {
-                setSavedFoodOptions((current) =>
-                  dedupeAppend(current, foodForm.otherItem),
-                );
-              }
-
-              resetFoodForm();
-              closeSection();
-            }}
+                resetFoodForm();
+                closeSection();
+              })
+            }
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            Save food entry
+            {activeSaveAction === "food" ? "Saving..." : "Save food entry"}
           </button>
         </div>
       </div>
@@ -1498,7 +1578,8 @@ export default function KaylenCareMonitorDashboard() {
       !!selectedMedicine.trim() &&
       !!medicationForm.dose.trim() &&
       !!medicationForm.time.trim() &&
-      !!medicationForm.date.trim();
+      !!medicationForm.date.trim() &&
+      !activeSaveAction;
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1684,42 +1765,44 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            disabled={!canSaveMedication || isRefreshing}
-            onClick={async () => {
-              if (!canSaveMedication || isRefreshing) return;
+            disabled={!canSaveMedication}
+            onClick={() =>
+              runLockedSave("medication", async () => {
+                if (selectedMedicine === "Melatonin" && !medicationForm.notes.trim()) {
+                  alert("Notes are required for Melatonin");
+                  return;
+                }
 
-              if (selectedMedicine === "Melatonin" && !medicationForm.notes.trim()) {
-                alert("Notes are required for Melatonin");
-                return;
-              }
+                const saved = await saveMedicationEntryToSupabase({
+                  selectedMedicine,
+                  selectedGivenBy,
+                });
 
-              const saved = await saveMedicationEntryToSupabase({
-                selectedMedicine,
-                selectedGivenBy,
-              });
+                if (!saved) return;
 
-              if (!saved) return;
+                await loadEntriesFromSupabase();
 
-              await loadEntriesFromSupabase();
+                if (showOtherMedication && saveMedicationForFuture) {
+                  setSavedMedicationOptions((current) =>
+                    dedupeAppend(current, medicationForm.otherMedicine),
+                  );
+                }
 
-              if (showOtherMedication && saveMedicationForFuture) {
-                setSavedMedicationOptions((current) =>
-                  dedupeAppend(current, medicationForm.otherMedicine),
-                );
-              }
+                if (showOtherGivenBy && saveGivenByForFuture) {
+                  setSavedGivenByOptions((current) =>
+                    dedupeAppend(current, medicationForm.otherGivenBy),
+                  );
+                }
 
-              if (showOtherGivenBy && saveGivenByForFuture) {
-                setSavedGivenByOptions((current) =>
-                  dedupeAppend(current, medicationForm.otherGivenBy),
-                );
-              }
-
-              resetMedicationForm();
-              closeSection();
-            }}
+                resetMedicationForm();
+                closeSection();
+              })
+            }
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            Save medication entry
+            {activeSaveAction === "medication"
+              ? "Saving..."
+              : "Save medication entry"}
           </button>
         </div>
       </div>
@@ -1730,7 +1813,8 @@ export default function KaylenCareMonitorDashboard() {
     const canSaveToileting =
       !!toiletingForm.date.trim() &&
       !!toiletingForm.time.trim() &&
-      !!toiletingForm.entry.trim();
+      !!toiletingForm.entry.trim() &&
+      !activeSaveAction;
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -1794,21 +1878,23 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            disabled={!canSaveToileting || isRefreshing}
-            onClick={async () => {
-              if (!canSaveToileting || isRefreshing) return;
+            disabled={!canSaveToileting}
+            onClick={() =>
+              runLockedSave("toileting", async () => {
+                const saved = await saveToiletingEntryToSupabase();
 
-              const saved = await saveToiletingEntryToSupabase();
+                if (!saved) return;
 
-              if (!saved) return;
-
-              await loadEntriesFromSupabase();
-              resetToiletingForm();
-              closeSection();
-            }}
+                await loadEntriesFromSupabase();
+                resetToiletingForm();
+                closeSection();
+              })
+            }
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            Save toileting entry
+            {activeSaveAction === "toileting"
+              ? "Saving..."
+              : "Save toileting entry"}
           </button>
         </div>
       </div>
@@ -1819,7 +1905,8 @@ export default function KaylenCareMonitorDashboard() {
     const canSaveHealth =
       !!healthForm.date.trim() &&
       !!healthForm.time.trim() &&
-      !!healthForm.event.trim();
+      !!healthForm.event.trim() &&
+      !activeSaveAction;
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -2014,21 +2101,21 @@ export default function KaylenCareMonitorDashboard() {
         <div className="md:col-span-2">
           <button
             type="button"
-            disabled={!canSaveHealth || isRefreshing}
-            onClick={async () => {
-              if (!canSaveHealth || isRefreshing) return;
+            disabled={!canSaveHealth}
+            onClick={() =>
+              runLockedSave("health", async () => {
+                const saved = await saveHealthEntryToSupabase();
 
-              const saved = await saveHealthEntryToSupabase();
+                if (!saved) return;
 
-              if (!saved) return;
-
-              await loadEntriesFromSupabase();
-              resetHealthForm();
-              closeSection();
-            }}
+                await loadEntriesFromSupabase();
+                resetHealthForm();
+                closeSection();
+              })
+            }
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            Save health entry
+            {activeSaveAction === "health" ? "Saving..." : "Save health entry"}
           </button>
         </div>
       </div>
@@ -2051,7 +2138,8 @@ export default function KaylenCareMonitorDashboard() {
       !!sleepForm.bedtime.trim() &&
       !sleepEntryId &&
       !isLoadingSleepDraft &&
-      !isSavingSleep;
+      !isSavingSleep &&
+      !activeSaveAction;
 
     const canSaveWake =
       !!sleepEntryId &&
@@ -2060,7 +2148,8 @@ export default function KaylenCareMonitorDashboard() {
       !!sleepForm.wakeTime.trim() &&
       !!sleepForm.quality.trim() &&
       !isLoadingSleepDraft &&
-      !isSavingSleep;
+      !isSavingSleep &&
+      !activeSaveAction;
 
     return (
       <div className="mt-6 space-y-4">
@@ -2121,13 +2210,16 @@ export default function KaylenCareMonitorDashboard() {
             <button
               type="button"
               disabled={!canSaveSleep}
-              onClick={async () => {
-                if (!canSaveSleep) return;
-                await saveSleepEntryToSupabase({ mode: "sleep" });
-              }}
+              onClick={() =>
+                runLockedSave("sleep-start", async () => {
+                  await saveSleepEntryToSupabase({ mode: "sleep" });
+                })
+              }
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              {isSavingSleep ? "Saving..." : "Save sleep"}
+              {activeSaveAction === "sleep-start" || isSavingSleep
+                ? "Saving..."
+                : "Save sleep"}
             </button>
           </div>
         </div>
@@ -2267,24 +2359,27 @@ export default function KaylenCareMonitorDashboard() {
             <button
               type="button"
               disabled={!canSaveWake}
-              onClick={async () => {
-                if (!canSaveWake) return;
-                const saved = await saveSleepEntryToSupabase({ mode: "wake" });
+              onClick={() =>
+                runLockedSave("sleep-wake", async () => {
+                  const saved = await saveSleepEntryToSupabase({ mode: "wake" });
 
-                if (!saved) return;
+                  if (!saved) return;
 
-                resetSleepForm();
-                closeSection();
-              }}
+                  resetSleepForm();
+                  closeSection();
+                })
+              }
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
             >
-              {isSavingSleep ? "Saving..." : "Save wake-up"}
+              {activeSaveAction === "sleep-wake" || isSavingSleep
+                ? "Saving..."
+                : "Save wake-up"}
             </button>
 
             <button
               type="button"
               onClick={resetSleepForm}
-              disabled={isSavingSleep}
+              disabled={isSavingSleep || !!activeSaveAction}
               className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Clear sleep form
@@ -2829,62 +2924,52 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         )}
 
-        <section className="mb-6">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-            <div className="flex items-start justify-between gap-4">
+        <section className="mb-5">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.18em] text-slate-500">
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
                   Quick overview
                 </p>
-                <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900 md:text-2xl">
+                <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900 md:text-xl">
                   Today at a glance
                 </h2>
-                <p className="mt-1 text-sm font-medium text-slate-600">
-                  Latest entries across the diary.
-                </p>
               </div>
-              <div className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                Live
+
+              <div className="flex items-center gap-1.5">
+                {overviewItems.map((item, index) => (
+                  <span
+                    key={item.key}
+                    className={`h-2 w-2 rounded-full transition ${
+                      index === overviewIndex ? "bg-slate-700" : "bg-slate-300"
+                    }`}
+                  />
+                ))}
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-700">
-                  Last sleep
-                </p>
-                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
-                  {latestSleep ? latestSleep.summary : "Nothing logged yet"}
-                </p>
-              </div>
+            <div
+              className={`mt-3 rounded-2xl border px-4 py-3 ${activeOverview.tone}`}
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-2xl shadow-sm">
+                  {activeOverview.emoji}
+                </div>
 
-              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-rose-700">
-                  Last medication
-                </p>
-                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
-                  {latestMedication
-                    ? latestMedication.summary
-                    : "Nothing logged yet"}
-                </p>
-              </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs font-bold uppercase tracking-[0.14em]">
+                      {activeOverview.title}
+                    </p>
+                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      {activeOverview.meta}
+                    </span>
+                  </div>
 
-              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-amber-700">
-                  Last food
-                </p>
-                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
-                  {latestFood ? latestFood.summary : "Nothing logged yet"}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                  Latest overall
-                </p>
-                <p className="mt-1.5 text-sm font-bold leading-5 text-slate-900">
-                  {latestOverall ? latestOverall.summary : "Nothing logged yet"}
-                </p>
+                  <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
+                    {activeOverview.summary}
+                  </p>
+                </div>
               </div>
             </div>
           </div>
