@@ -892,7 +892,6 @@ export default function KaylenCareMonitorDashboard() {
   }, [isUnlocked, activeSection, isRefreshing]);
 
   const sectionHelpText = useMemo(() => {
-  const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
 
     switch (activeSection.title) {
@@ -1101,7 +1100,6 @@ export default function KaylenCareMonitorDashboard() {
       ].join("\n"),
     [dailyReportGroups, reportSummary],
   );
-  ]);
 
   const saveFoodEntryToSupabase = async ({
     selectedFood,
