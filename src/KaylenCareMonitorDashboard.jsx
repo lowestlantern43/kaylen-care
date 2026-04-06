@@ -43,11 +43,17 @@ const formatReportDateLabel = (dateString) => {
   });
 };
 
+const PIN_SESSION_KEY = "kaylens-diary-pin-session";
+const PIN_INACTIVITY_MS = 5 * 60 * 60 * 1000;
+const DUPLICATE_WINDOW_MS = 15 * 1000;
+const REPORT_WINDOW_DAYS = 7;
+const APP_PASSWORD = "030920";
+
 const dateTimeInputClass =
-  "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 
 const smallActionButtonClass =
-  "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+  "mt-2 shrink-0 rounded-xl border border-slate-200 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
 
 const sectionTheme = {
   "Food Diary": {
@@ -85,30 +91,71 @@ const getDefaultDoseForMedicine = (medicine) => {
       return "2.5ml";
     case "Melatonin":
       return "3ml";
+    case "Vitamin D":
+      return "3 drops";
+    case "Calcichew":
+    case "Calcichews":
+      return "1 tablet";
+    case "Midazolam":
+      return "1 syringe";
     default:
       return "";
   }
 };
 
-export default function KaylenCareMonitorDashboard() {
-  const APP_PASSWORD = "030920";
+const buildSubmissionSignature = (scope, payload) =>
+  `${scope}:${JSON.stringify(payload)}`;
 
+const readPinSession = () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(PIN_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (error) {
+    console.error("Failed to read saved PIN session:", error);
+    return null;
+  }
+};
+
+const writePinSession = (payload) => {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.setItem(PIN_SESSION_KEY, JSON.stringify(payload));
+  } catch (error) {
+    console.error("Failed to persist PIN session:", error);
+  }
+};
+
+const clearPinSession = () => {
+  if (typeof window === "undefined") return;
+
+  try {
+    window.localStorage.removeItem(PIN_SESSION_KEY);
+  } catch (error) {
+    console.error("Failed to clear PIN session:", error);
+  }
+};
+
+export default function KaylenCareMonitorDashboard() {
   const [passwordInput, setPasswordInput] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [isCheckingPinSession, setIsCheckingPinSession] = useState(true);
 
   const [activeSection, setActiveSection] = useState(null);
   const [medicationValue, setMedicationValue] = useState("");
   const [foodValue, setFoodValue] = useState("");
-  const [reportDays, setReportDays] = useState("7");
-  const [customReportDays, setCustomReportDays] = useState("7");
-  const [reportLayout, setReportLayout] = useState("timeline");
-  const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
-  const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [reportOpenDays, setReportOpenDays] = useState({});
+  const [rawMilkLogs, setRawMilkLogs] = useState([]);
+  const [rawSleepLogs, setRawSleepLogs] = useState([]);
+  const [rawHealthLogs, setRawHealthLogs] = useState([]);
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
   const [savedMedicationOptions, setSavedMedicationOptions] = useState([]);
@@ -124,7 +171,9 @@ export default function KaylenCareMonitorDashboard() {
 
   const [activeSaveAction, setActiveSaveAction] = useState("");
   const saveLockRef = useRef(false);
-  const [overviewIndex, setOverviewIndex] = useState(0);
+  const recentSubmissionRef = useRef(new Map());
+  const lastActivityAtRef = useRef(0);
+  const lastSessionWriteRef = useRef(0);
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -164,10 +213,7 @@ export default function KaylenCareMonitorDashboard() {
     action: "",
     notes: "",
     weightKg: "",
-    weightLb: "",
     heightCm: "",
-    heightFt: "",
-    heightIn: "",
   });
 
   const [sleepForm, setSleepForm] = useState({
@@ -187,51 +233,51 @@ export default function KaylenCareMonitorDashboard() {
   const sections = [
     {
       title: "Food Diary",
-      subtitle: "Meals, drinks, amounts, and refusals",
-      button: "Open Log",
-      emoji: "🍽️",
+      subtitle: "Meals, drinks, and amounts",
+      button: "Open food",
+      emoji: "FD",
       color: "from-amber-400 to-orange-500",
-      soft: "bg-amber-50 border-amber-300",
+      soft: "bg-amber-50 border-amber-200",
     },
     {
       title: "Medication",
-      subtitle: "Dropdown + other option",
-      button: "Open Log",
-      emoji: "💊",
+      subtitle: "Medication timing and notes",
+      button: "Open meds",
+      emoji: "MD",
       color: "from-rose-400 to-pink-500",
-      soft: "bg-rose-50 border-rose-300",
+      soft: "bg-rose-50 border-rose-200",
     },
     {
       title: "Toileting",
-      subtitle: "Quick combined entry logging",
-      button: "Open Log",
-      emoji: "🚽",
+      subtitle: "Quick toileting entries",
+      button: "Open toileting",
+      emoji: "TL",
       color: "from-sky-400 to-blue-500",
-      soft: "bg-sky-50 border-sky-300",
+      soft: "bg-sky-50 border-sky-200",
     },
     {
       title: "Health",
-      subtitle: "Symptoms, seizures, actions taken",
-      button: "Open Log",
-      emoji: "🩺",
+      subtitle: "Symptoms, actions, measurements",
+      button: "Open health",
+      emoji: "HL",
       color: "from-emerald-400 to-green-500",
-      soft: "bg-emerald-50 border-emerald-300",
+      soft: "bg-emerald-50 border-emerald-200",
     },
     {
       title: "Sleep",
       subtitle: "Night sleep and wake-up tracking",
-      button: "Open Log",
-      emoji: "🌙",
-      color: "from-indigo-400 to-purple-500",
-      soft: "bg-indigo-50 border-indigo-300",
+      button: "Open sleep",
+      emoji: "SL",
+      color: "from-indigo-400 to-violet-500",
+      soft: "bg-indigo-50 border-indigo-200",
     },
     {
       title: "Reports",
-      subtitle: "View and share recent entries",
-      button: "View Reports",
-      emoji: "📊",
+      subtitle: "Last 7 days only",
+      button: "Open reports",
+      emoji: "RP",
       color: "from-fuchsia-400 to-pink-500",
-      soft: "bg-fuchsia-50 border-fuchsia-300",
+      soft: "bg-fuchsia-50 border-fuchsia-200",
     },
   ];
 
@@ -242,7 +288,8 @@ export default function KaylenCareMonitorDashboard() {
     "Calpol",
     "Ibuprofen",
     "Vitamin D",
-    "Calcichew",
+    "Calcichews",
+    "Midazolam",
     "Other",
   ];
 
@@ -275,24 +322,17 @@ export default function KaylenCareMonitorDashboard() {
   ];
 
   const inputClassName =
-    "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+    "mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-sky-300 focus:ring-2 focus:ring-sky-100";
 
   const cardClassName =
-    "rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm";
-
-  const effectiveReportDays =
-    reportDays === "custom"
-      ? Math.max(1, Number(customReportDays) || 7)
-      : Math.max(1, Number(reportDays) || 7);
+    "rounded-2xl border border-slate-200 bg-slate-50/80 p-4 shadow-sm";
 
   const openSection = (section) => {
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
     if (section.title !== "Food Diary") setFoodValue("");
-    if (section.title !== "Reports") {
-      setReportFiltersOpen(false);
-    }
     setShareCopied(false);
+    lastActivityAtRef.current = Date.now();
   };
 
   const closeSection = () => {
@@ -300,7 +340,48 @@ export default function KaylenCareMonitorDashboard() {
     setMedicationValue("");
     setFoodValue("");
     setShareCopied(false);
-    setReportFiltersOpen(false);
+  };
+
+  const lockDiary = () => {
+    clearPinSession();
+    setIsUnlocked(false);
+    setActiveSection(null);
+    setPasswordInput("");
+    setPasswordError("");
+  };
+
+  const refreshSessionActivity = (force = false) => {
+    if (!isUnlocked) return;
+
+    const now = Date.now();
+    lastActivityAtRef.current = now;
+
+    if (!force && now - lastSessionWriteRef.current < 15000) {
+      return;
+    }
+
+    lastSessionWriteRef.current = now;
+    writePinSession({
+      unlockedAt: now,
+      lastActiveAt: now,
+    });
+  };
+
+  const isRecentDuplicate = (signature) => {
+    const now = Date.now();
+
+    for (const [key, timestamp] of recentSubmissionRef.current.entries()) {
+      if (now - timestamp > DUPLICATE_WINDOW_MS) {
+        recentSubmissionRef.current.delete(key);
+      }
+    }
+
+    const lastSavedAt = recentSubmissionRef.current.get(signature);
+    return Boolean(lastSavedAt && now - lastSavedAt < DUPLICATE_WINDOW_MS);
+  };
+
+  const rememberSubmission = (signature) => {
+    recentSubmissionRef.current.set(signature, Date.now());
   };
 
   const handlePinPress = (value) => {
@@ -323,6 +404,14 @@ export default function KaylenCareMonitorDashboard() {
     if (passwordInput === APP_PASSWORD) {
       setIsUnlocked(true);
       setPasswordError("");
+      setPasswordInput("");
+      const now = Date.now();
+      lastActivityAtRef.current = now;
+      lastSessionWriteRef.current = now;
+      writePinSession({
+        unlockedAt: now,
+        lastActiveAt: now,
+      });
     } else {
       setPasswordError("Incorrect PIN");
     }
@@ -378,10 +467,7 @@ export default function KaylenCareMonitorDashboard() {
       action: "",
       notes: "",
       weightKg: "",
-      weightLb: "",
       heightCm: "",
-      heightFt: "",
-      heightIn: "",
     });
   };
 
@@ -558,6 +644,10 @@ export default function KaylenCareMonitorDashboard() {
     if (sleepError) console.error("Error loading sleep entries:", sleepError);
     if (healthError) console.error("Error loading health entries:", healthError);
 
+    setRawMilkLogs(milkData || []);
+    setRawSleepLogs(sleepData || []);
+    setRawHealthLogs(healthData || []);
+
     const mappedMilkEntries = (milkData || []).map((row) => ({
       id: `milk-${row.id}`,
       createdAt: row.time || new Date().toISOString(),
@@ -667,11 +757,7 @@ export default function KaylenCareMonitorDashboard() {
         row.happened ? `What happened: ${row.happened}` : null,
         row.action ? `Action taken: ${row.action}` : null,
         row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
-        row.weight_lb ? `Weight (lb): ${row.weight_lb}` : null,
         row.height_cm ? `Height (cm): ${row.height_cm}` : null,
-        row.height_ft || row.height_in
-          ? `Height (ft/in): ${row.height_ft || 0}ft ${row.height_in || 0}in`
-          : null,
         parseNotesValue(row.notes, "Notes")
           ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
           : null,
@@ -699,9 +785,29 @@ export default function KaylenCareMonitorDashboard() {
         await loadLatestIncompleteSleepEntry();
       }
     } finally {
+      setPullDistance(0);
       setTimeout(() => setIsRefreshing(false), 400);
     }
   };
+
+  useEffect(() => {
+    const session = readPinSession();
+    const now = Date.now();
+
+    if (session?.lastActiveAt && now - session.lastActiveAt < PIN_INACTIVITY_MS) {
+      setIsUnlocked(true);
+      lastActivityAtRef.current = now;
+      lastSessionWriteRef.current = now;
+      writePinSession({
+        unlockedAt: session.unlockedAt || now,
+        lastActiveAt: now,
+      });
+    } else {
+      clearPinSession();
+    }
+
+    setIsCheckingPinSession(false);
+  }, []);
 
   useEffect(() => {
     if (isUnlocked) {
@@ -717,8 +823,38 @@ export default function KaylenCareMonitorDashboard() {
   useEffect(() => {
     if (!isUnlocked) return;
 
+    const markActive = () => refreshSessionActivity();
+    const validateSession = () => {
+      const now = Date.now();
+      if (
+        lastActivityAtRef.current &&
+        now - lastActivityAtRef.current >= PIN_INACTIVITY_MS
+      ) {
+        lockDiary();
+      }
+    };
+
+    const interval = window.setInterval(validateSession, 60 * 1000);
+
+    window.addEventListener("click", markActive, { passive: true });
+    window.addEventListener("touchstart", markActive, { passive: true });
+    window.addEventListener("keydown", markActive);
+    window.addEventListener("scroll", markActive, { passive: true });
+
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("click", markActive);
+      window.removeEventListener("touchstart", markActive);
+      window.removeEventListener("keydown", markActive);
+      window.removeEventListener("scroll", markActive);
+    };
+  }, [isUnlocked]);
+
+  useEffect(() => {
+    if (!isUnlocked) return;
+
     const handleTouchStart = (e) => {
-      if (window.scrollY > 0 || activeSection) return;
+      if (window.scrollY > 0 || activeSection || isRefreshing) return;
       touchStartY.current = e.touches[0].clientY;
       touchCurrentY.current = e.touches[0].clientY;
       isPullingRef.current = true;
@@ -727,6 +863,8 @@ export default function KaylenCareMonitorDashboard() {
     const handleTouchMove = (e) => {
       if (!isPullingRef.current) return;
       touchCurrentY.current = e.touches[0].clientY;
+      const distance = Math.max(0, touchCurrentY.current - touchStartY.current);
+      setPullDistance(Math.min(distance, 120));
     };
 
     const handleTouchEnd = async () => {
@@ -736,7 +874,10 @@ export default function KaylenCareMonitorDashboard() {
 
       if (pullDistance > 110) {
         await refreshAllData();
+        return;
       }
+
+      setPullDistance(0);
     };
 
     window.addEventListener("touchstart", handleTouchStart, { passive: true });
@@ -751,21 +892,22 @@ export default function KaylenCareMonitorDashboard() {
   }, [isUnlocked, activeSection, isRefreshing]);
 
   const sectionHelpText = useMemo(() => {
+  const sectionHelpText = useMemo(() => {
     if (!activeSection) return "";
 
     switch (activeSection.title) {
       case "Food Diary":
-        return "Food saves into the same shared log as everything else.";
+        return "Log meals, drinks, and milk amounts with one quick save.";
       case "Medication":
-        return "Log one medication at a time with dose, time, and notes.";
+        return "Safer medication logging with duplicate protection and rescue note checks.";
       case "Toileting":
-        return "Quick combined toileting entry and notes.";
+        return "Quick toileting logging with clean notes when needed.";
       case "Health":
-        return "Record seizures, symptoms, actions, weight, and height.";
+        return "Record symptoms, actions, and metric measurements.";
       case "Sleep":
         return "Log bedtime first, then complete wake-up the next morning.";
       case "Reports":
-        return "View recent entries and export a proper PDF.";
+        return "See the latest 7 days with collapsible daily summaries.";
       default:
         return "Form preview";
     }
@@ -774,25 +916,15 @@ export default function KaylenCareMonitorDashboard() {
   const recentEntries = useMemo(() => {
     const cutoff = new Date();
     cutoff.setHours(0, 0, 0, 0);
-    cutoff.setDate(cutoff.getDate() - (effectiveReportDays - 1));
+    cutoff.setDate(cutoff.getDate() - (REPORT_WINDOW_DAYS - 1));
 
     return sharedLog.filter((entry) => {
       if (!entry.date) return false;
       const [day, month, year] = entry.date.split("/");
       const entryDate = new Date(`${year}-${month}-${day}T00:00:00`);
-
-      if (Number.isNaN(entryDate.getTime()) || entryDate < cutoff) return false;
-
-      if (
-        reportCategoryFilter !== "All" &&
-        entry.section !== reportCategoryFilter
-      ) {
-        return false;
-      }
-
-      return true;
+      return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
     });
-  }, [effectiveReportDays, reportCategoryFilter, sharedLog]);
+  }, [sharedLog]);
 
   const latestTwoBySection = useMemo(() => {
     const findLatestTwo = (sectionTitle) =>
@@ -807,121 +939,37 @@ export default function KaylenCareMonitorDashboard() {
     };
   }, [sharedLog]);
 
-  const overviewItems = useMemo(
+  const quickOverview = useMemo(
     () => [
       {
-        key: "sleep",
-        title: "Sleep",
-        emoji: "🌙",
-        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
-        summary: latestTwoBySection.sleep[0]?.summary || "Nothing logged yet",
-        meta:
-          latestTwoBySection.sleep[0]?.time ||
-          latestTwoBySection.sleep[0]?.date ||
-          "No recent entry",
+        label: "Last sleep",
+        value: latestTwoBySection.sleep[0]?.summary || "No sleep logged",
       },
       {
-        key: "medication",
-        title: "Medication",
-        emoji: "💊",
-        tone: "border-rose-200 bg-rose-50 text-rose-800",
-        summary:
-          latestTwoBySection.medication[0]?.summary || "Nothing logged yet",
-        meta:
-          latestTwoBySection.medication[0]?.time ||
-          latestTwoBySection.medication[0]?.date ||
-          "No recent entry",
+        label: "Last medication",
+        value: latestTwoBySection.medication[0]?.summary || "No medication logged",
       },
       {
-        key: "food",
-        title: "Food",
-        emoji: "🍽️",
-        tone: "border-amber-200 bg-amber-50 text-amber-800",
-        summary: latestTwoBySection.food[0]?.summary || "Nothing logged yet",
-        meta:
-          latestTwoBySection.food[0]?.time ||
-          latestTwoBySection.food[0]?.date ||
-          "No recent entry",
+        label: "Milk today",
+        value: `${rawMilkLogs
+          .filter(
+            (row) => (parseNotesValue(row.notes, "Date") || todayValue()) === todayValue(),
+          )
+          .reduce((total, row) => total + Number(row.amount || 0), 0)}oz`,
       },
       {
-        key: "toileting",
-        title: "Toileting",
-        emoji: "🚽",
-        tone: "border-sky-200 bg-sky-50 text-sky-800",
-        summary:
-          latestTwoBySection.toileting[0]?.summary || "Nothing logged yet",
-        meta:
-          latestTwoBySection.toileting[0]?.time ||
-          latestTwoBySection.toileting[0]?.date ||
-          "No recent entry",
-      },
-      {
-        key: "health",
-        title: "Health",
-        emoji: "🩺",
-        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-        summary: latestTwoBySection.health[0]?.summary || "Nothing logged yet",
-        meta:
-          latestTwoBySection.health[0]?.time ||
-          latestTwoBySection.health[0]?.date ||
-          "No recent entry",
+        label: "Sleep status",
+        value: sleepEntryId ? "Wake-up still pending" : "No open sleep entry",
       },
     ],
-    [latestTwoBySection],
+    [latestTwoBySection, rawMilkLogs, sleepEntryId],
   );
-
-  useEffect(() => {
-    if (!overviewItems.length) return;
-    const timer = setInterval(() => {
-      setOverviewIndex((current) => (current + 1) % overviewItems.length);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, [overviewItems.length]);
-
-  const activeOverview = overviewItems[overviewIndex] || overviewItems[0];
-
-  const groupedReportEntries = useMemo(() => {
-    const groups = {
-      "Food Diary": [],
-      Medication: [],
-      Toileting: [],
-      Health: [],
-      Sleep: [],
-    };
-
-    recentEntries.forEach((entry) => {
-      if (groups[entry.section]) {
-        groups[entry.section].push(entry);
-      }
-    });
-
-    return groups;
-  }, [recentEntries]);
-
-  const timelineGroups = useMemo(() => {
-    const groups = [];
-
-    recentEntries.forEach((entry) => {
-      const lastGroup = groups[groups.length - 1];
-      if (!lastGroup || lastGroup.date !== entry.date) {
-        groups.push({
-          date: entry.date,
-          label: formatReportDateLabel(entry.date),
-          entries: [entry],
-        });
-      } else {
-        lastGroup.entries.push(entry);
-      }
-    });
-
-    return groups;
-  }, [recentEntries]);
 
   const tileStatusText = (sectionTitle) => {
     const formatList = (entries) => {
       if (!entries.length) return ["Nothing logged yet"];
       return entries.map(
-        (entry) => `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
+        (entry) => `${entry.summary}${entry.time ? ` - ${entry.time}` : ""}`,
       );
     };
 
@@ -941,53 +989,118 @@ export default function KaylenCareMonitorDashboard() {
     }
   };
 
-  const reportText = useMemo(() => {
-    if (reportLayout === "timeline") {
-      return [
-        `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-        `Timeline view${
-          reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
+  const shortcutItems = useMemo(
+    () =>
+      sections.map((section) => ({
+        ...section,
+        latest:
+          tileStatusText(section.title)[0] ||
+          (section.title === "Reports" ? "7 day summary" : "Nothing logged yet"),
+      })),
+    [latestTwoBySection, sharedLog],
+  );
+
+  const dailyReportGroups = useMemo(() => {
+    const groups = [];
+
+    recentEntries.forEach((entry) => {
+      const lastGroup = groups[groups.length - 1];
+
+      if (!lastGroup || lastGroup.date !== entry.date) {
+        groups.push({
+          date: entry.date,
+          label: formatReportDateLabel(entry.date),
+          entries: [entry],
+        });
+      } else {
+        lastGroup.entries.push(entry);
+      }
+    });
+
+    return groups;
+  }, [recentEntries]);
+
+  useEffect(() => {
+    if (!dailyReportGroups.length) return;
+
+    setReportOpenDays((current) => {
+      const next = {};
+
+      dailyReportGroups.forEach((group, index) => {
+        next[group.date] = current[group.date] ?? index === 0;
+      });
+
+      return next;
+    });
+  }, [dailyReportGroups]);
+
+  const reportSummary = useMemo(() => {
+    const cutoff = new Date();
+    cutoff.setHours(0, 0, 0, 0);
+    cutoff.setDate(cutoff.getDate() - (REPORT_WINDOW_DAYS - 1));
+
+    const totalMilk = rawMilkLogs
+      .filter((row) => {
+        const parsed = parseDateToIso(parseNotesValue(row.notes, "Date"));
+        if (!parsed) return false;
+        const entryDate = new Date(`${parsed}T00:00:00`);
+        return !Number.isNaN(entryDate.getTime()) && entryDate >= cutoff;
+      })
+      .reduce((total, row) => total + Number(row.amount || 0), 0);
+
+    const totalSleepMinutes = rawSleepLogs
+      .filter((row) => row.wake_time)
+      .reduce((total, row) => {
+        const sleepDate = parseNotesValue(row.notes, "Date") || "";
+        const wakeDate = parseNotesValue(row.notes, "Wake Date") || sleepDate;
+        const parsed = parseDateToIso(sleepDate);
+
+        if (!parsed) return total;
+
+        const entryDate = new Date(`${parsed}T00:00:00`);
+
+        if (Number.isNaN(entryDate.getTime()) || entryDate < cutoff) {
+          return total;
+        }
+
+        return (
+          total +
+          (getSleepDurationMinutes(sleepDate, row.bedtime, wakeDate, row.wake_time) || 0)
+        );
+      }, 0);
+
+    const latestWeight = rawHealthLogs.find((row) => row.weight_kg)?.weight_kg || "";
+
+    return {
+      totalMilk,
+      totalSleepMinutes,
+      latestWeight,
+    };
+  }, [rawHealthLogs, rawMilkLogs, rawSleepLogs]);
+
+  const reportText = useMemo(
+    () =>
+      [
+        "Kaylen's Diary Report - Last 7 days",
+        `Total sleep: ${formatSleepDuration(reportSummary.totalSleepMinutes) || "0m"}`,
+        `Total milk: ${reportSummary.totalMilk}oz`,
+        `Latest weight: ${
+          reportSummary.latestWeight ? `${reportSummary.latestWeight}kg` : "Not logged"
         }`,
         "",
-        ...recentEntries.flatMap((entry) => [
-          `${entry.date}${entry.time ? ` ${entry.time}` : ""} · ${entry.section}`,
-          entry.summary,
-          ...(entry.details?.length ? entry.details : []),
-          "",
-        ]),
-        ...(recentEntries.length ? [] : ["No entries found for this date range."]),
-      ].join("\n");
-    }
-
-    const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
-
-    return [
-      `Kaylen's Diary Report - Last ${effectiveReportDays} days`,
-      `Category view${
-        reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
-      }`,
-      "",
-      ...order.flatMap((section) => {
-        const entries = groupedReportEntries[section] || [];
-        if (!entries.length) return [];
-        return [
-          section.toUpperCase(),
-          ...entries.flatMap((entry) => [
-            `${entry.date}${entry.time ? ` ${entry.time}` : ""}`,
+        ...dailyReportGroups.flatMap((group) => [
+          group.label,
+          ...group.entries.flatMap((entry) => [
+            `${entry.section}${entry.time ? ` - ${entry.time}` : ""}`,
             entry.summary,
             ...(entry.details?.length ? entry.details : []),
             "",
           ]),
-        ];
-      }),
-      ...(recentEntries.length ? [] : ["No entries found for this date range."]),
-    ].join("\n");
-  }, [
-    effectiveReportDays,
-    groupedReportEntries,
-    recentEntries,
-    reportCategoryFilter,
-    reportLayout,
+        ]),
+        ...(dailyReportGroups.length ? [] : ["No entries logged in the last 7 days."]),
+      ].join("\n"),
+    [dailyReportGroups, reportSummary],
+  );
   ]);
 
   const saveFoodEntryToSupabase = async ({
@@ -995,6 +1108,21 @@ export default function KaylenCareMonitorDashboard() {
     selectedLocation,
     isMilk,
   }) => {
+    const signature = buildSubmissionSignature("food", {
+      date: foodForm.date,
+      time: foodForm.time,
+      selectedFood,
+      selectedLocation,
+      amount: foodForm.amount,
+      notes: foodForm.notes,
+      isMilk,
+    });
+
+    if (isRecentDuplicate(signature)) {
+      alert("That food entry was just saved. Duplicate tap prevented.");
+      return false;
+    }
+
     if (isMilk) {
       const payload = {
         amount: Number(foodForm.amount || 0),
@@ -1019,6 +1147,7 @@ export default function KaylenCareMonitorDashboard() {
         return false;
       }
 
+      rememberSubmission(signature);
       return true;
     }
 
@@ -1044,6 +1173,7 @@ export default function KaylenCareMonitorDashboard() {
       return false;
     }
 
+    rememberSubmission(signature);
     return true;
   };
 
@@ -1051,6 +1181,20 @@ export default function KaylenCareMonitorDashboard() {
     selectedMedicine,
     selectedGivenBy,
   }) => {
+    const signature = buildSubmissionSignature("medication", {
+      date: medicationForm.date,
+      time: medicationForm.time,
+      selectedMedicine,
+      dose: medicationForm.dose,
+      selectedGivenBy,
+      notes: medicationForm.notes,
+    });
+
+    if (isRecentDuplicate(signature)) {
+      alert("That medication entry was just saved. Duplicate tap prevented.");
+      return false;
+    }
+
     const payload = {
       medicine: selectedMedicine || "Medication",
       dose: medicationForm.dose || "",
@@ -1075,10 +1219,23 @@ export default function KaylenCareMonitorDashboard() {
       return false;
     }
 
+    rememberSubmission(signature);
     return true;
   };
 
   const saveToiletingEntryToSupabase = async () => {
+    const signature = buildSubmissionSignature("toileting", {
+      date: toiletingForm.date,
+      time: toiletingForm.time,
+      entry: toiletingForm.entry,
+      notes: toiletingForm.notes,
+    });
+
+    if (isRecentDuplicate(signature)) {
+      alert("That toileting entry was just saved. Duplicate tap prevented.");
+      return false;
+    }
+
     const payload = {
       entry: toiletingForm.entry || "Toileting entry",
       time: new Date().toISOString(),
@@ -1101,6 +1258,7 @@ export default function KaylenCareMonitorDashboard() {
       return false;
     }
 
+    rememberSubmission(signature);
     return true;
   };
 
@@ -1116,6 +1274,16 @@ export default function KaylenCareMonitorDashboard() {
 
         if (sleepEntryId) {
           alert("There is already an unfinished sleep entry");
+          return false;
+        }
+
+        const signature = buildSubmissionSignature("sleep-start", {
+          date: sleepForm.date,
+          bedtime: sleepForm.bedtime,
+        });
+
+        if (isRecentDuplicate(signature)) {
+          alert("That bedtime was just saved. Duplicate tap prevented.");
           return false;
         }
 
@@ -1140,8 +1308,7 @@ export default function KaylenCareMonitorDashboard() {
           return false;
         }
 
-        console.log("SLEEP CREATED:", data);
-
+        rememberSubmission(signature);
         await loadLatestIncompleteSleepEntry();
         await loadEntriesFromSupabase();
         return true;
@@ -1160,6 +1327,22 @@ export default function KaylenCareMonitorDashboard() {
           !sleepForm.quality.trim()
         ) {
           alert("Fill all required wake-up fields");
+          return false;
+        }
+
+        const signature = buildSubmissionSignature("sleep-wake", {
+          sleepEntryId,
+          date: sleepForm.date,
+          bedtime: sleepForm.bedtime,
+          wakeTime: sleepForm.wakeTime,
+          quality: sleepForm.quality,
+          nightWakings: sleepForm.nightWakings,
+          nap: sleepForm.nap,
+          notes: sleepForm.notes,
+        });
+
+        if (isRecentDuplicate(signature)) {
+          alert("That wake-up was just saved. Duplicate tap prevented.");
           return false;
         }
 
@@ -1196,6 +1379,7 @@ export default function KaylenCareMonitorDashboard() {
           return false;
         }
 
+        rememberSubmission(signature);
         setSleepEntryId(null);
         setSleepBanner("");
         setSleepForm({
@@ -1223,6 +1407,23 @@ export default function KaylenCareMonitorDashboard() {
   };
 
   const saveHealthEntryToSupabase = async () => {
+    const signature = buildSubmissionSignature("health", {
+      date: healthForm.date,
+      time: healthForm.time,
+      event: healthForm.event,
+      duration: healthForm.duration,
+      happened: healthForm.happened,
+      action: healthForm.action,
+      notes: healthForm.notes,
+      weightKg: healthForm.weightKg,
+      heightCm: healthForm.heightCm,
+    });
+
+    if (isRecentDuplicate(signature)) {
+      alert("That health entry was just saved. Duplicate tap prevented.");
+      return false;
+    }
+
     const payload = {
       event: healthForm.event || "Health",
       duration: healthForm.duration || "",
@@ -1230,10 +1431,10 @@ export default function KaylenCareMonitorDashboard() {
       happened: healthForm.happened || "",
       action: healthForm.action || "",
       weight_kg: healthForm.weightKg || "",
-      weight_lb: healthForm.weightLb || "",
+      weight_lb: "",
       height_cm: healthForm.heightCm || "",
-      height_ft: healthForm.heightFt || "",
-      height_in: healthForm.heightIn || "",
+      height_ft: "",
+      height_in: "",
       notes: [
         `Date: ${healthForm.date}`,
         `Time: ${healthForm.time}`,
@@ -1251,6 +1452,7 @@ export default function KaylenCareMonitorDashboard() {
       return false;
     }
 
+    rememberSubmission(signature);
     return true;
   };
 
@@ -1300,7 +1502,7 @@ export default function KaylenCareMonitorDashboard() {
       }
 
       pdf.save(
-        `kaylens-diary-report-${effectiveReportDays}-days-${reportLayout.toLowerCase()}.pdf`,
+        `kaylens-diary-report-last-7-days.pdf`,
       );
     } catch (error) {
       console.error("PDF export failed", error);
@@ -1568,6 +1770,8 @@ export default function KaylenCareMonitorDashboard() {
       ? medicationForm.otherMedicine || "Other medicine"
       : medicationForm.medicine || "Medication";
     const isMelatonin = selectedMedicine === "Melatonin";
+    const isMidazolam = selectedMedicine === "Midazolam";
+    const notesRequired = isMelatonin || isMidazolam;
 
     const showOtherGivenBy = medicationForm.givenBy === "Other";
     const selectedGivenBy = showOtherGivenBy
@@ -1579,6 +1783,7 @@ export default function KaylenCareMonitorDashboard() {
       !!medicationForm.dose.trim() &&
       !!medicationForm.time.trim() &&
       !!medicationForm.date.trim() &&
+      (!notesRequired || !!medicationForm.notes.trim()) &&
       !activeSaveAction;
 
     return (
@@ -1605,7 +1810,7 @@ export default function KaylenCareMonitorDashboard() {
             }}
             className={`${inputClassName} min-h-[48px]`}
           >
-            <option value="">Select regular medication</option>
+            <option value="">Select medication</option>
             {medicationOptions.map((item) => (
               <option key={item} value={item}>
                 {item}
@@ -1747,11 +1952,15 @@ export default function KaylenCareMonitorDashboard() {
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Notes{isMelatonin ? " *" : ""}
+            Notes{notesRequired ? " *" : ""}
           </label>
           <textarea
             placeholder={
-              isMelatonin ? "Notes required for Melatonin" : "Optional notes"
+              isMidazolam
+                ? "Notes required for Midazolam rescue medication"
+                : isMelatonin
+                  ? "Notes required for Melatonin"
+                  : "Optional notes"
             }
             rows={5}
             className={`${inputClassName} min-h-[48px]`}
@@ -1768,8 +1977,12 @@ export default function KaylenCareMonitorDashboard() {
             disabled={!canSaveMedication}
             onClick={() =>
               runLockedSave("medication", async () => {
-                if (selectedMedicine === "Melatonin" && !medicationForm.notes.trim()) {
-                  alert("Notes are required for Melatonin");
+                if (notesRequired && !medicationForm.notes.trim()) {
+                  alert(
+                    isMidazolam
+                      ? "Notes are required for Midazolam"
+                      : "Notes are required for Melatonin",
+                  );
                   return;
                 }
 
@@ -1997,24 +2210,18 @@ export default function KaylenCareMonitorDashboard() {
         </div>
 
         <div className={`${cardClassName} md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">Notes</label>
-          <textarea
-            rows={4}
-            placeholder="Anything else important"
-            className={`${inputClassName} min-h-[48px]`}
-            value={healthForm.notes}
-            onChange={(e) =>
-              setHealthForm({ ...healthForm, notes: e.target.value })
-            }
-          />
-        </div>
-
-        <div className={`${cardClassName} md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">Weight</label>
+          <div className="flex items-center justify-between gap-3">
+            <label className="text-sm font-semibold text-slate-700">
+              Measurements
+            </label>
+            <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-700">
+              Metric only
+            </span>
+          </div>
           <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Metric (kg)
+                Weight (kg)
               </label>
               <input
                 type="number"
@@ -2030,29 +2237,7 @@ export default function KaylenCareMonitorDashboard() {
             </div>
             <div>
               <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Imperial (lb)
-              </label>
-              <input
-                type="number"
-                min="0"
-                step="0.1"
-                placeholder="e.g. 40.6"
-                className={`${inputClassName} mt-1 min-h-[48px]`}
-                value={healthForm.weightLb}
-                onChange={(e) =>
-                  setHealthForm({ ...healthForm, weightLb: e.target.value })
-                }
-              />
-            </div>
-          </div>
-        </div>
-
-        <div className={`${cardClassName} md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">Height</label>
-          <div className="mt-2 grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Metric (cm)
+                Height (cm)
               </label>
               <input
                 type="number"
@@ -2066,36 +2251,20 @@ export default function KaylenCareMonitorDashboard() {
                 }
               />
             </div>
-            <div>
-              <label className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
-                Imperial (ft / in)
-              </label>
-              <div className="mt-1 grid grid-cols-2 gap-3">
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  placeholder="ft"
-                  className={`${inputClassName} mt-0 min-h-[48px]`}
-                  value={healthForm.heightFt}
-                  onChange={(e) =>
-                    setHealthForm({ ...healthForm, heightFt: e.target.value })
-                  }
-                />
-                <input
-                  type="number"
-                  min="0"
-                  step="0.1"
-                  placeholder="in"
-                  className={`${inputClassName} mt-0 min-h-[48px]`}
-                  value={healthForm.heightIn}
-                  onChange={(e) =>
-                    setHealthForm({ ...healthForm, heightIn: e.target.value })
-                  }
-                />
-              </div>
-            </div>
           </div>
+        </div>
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">Notes</label>
+          <textarea
+            rows={4}
+            placeholder="Anything else important"
+            className={`${inputClassName} min-h-[48px]`}
+            value={healthForm.notes}
+            onChange={(e) =>
+              setHealthForm({ ...healthForm, notes: e.target.value })
+            }
+          />
         </div>
 
         <div className="md:col-span-2">
@@ -2390,150 +2559,103 @@ export default function KaylenCareMonitorDashboard() {
     );
   };
 
+  const renderReportEntryCard = (entry) => {
+    const theme = sectionTheme[entry.section] || {
+      report: "border-slate-200 bg-slate-50",
+    };
+
+    return (
+      <div
+        key={entry.id}
+        className={`rounded-2xl border px-4 py-3 text-sm text-slate-700 ${theme.report}`}
+      >
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <p className="font-bold leading-5 text-slate-900">{entry.summary}</p>
+            <span className="mt-2 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+              {entry.section}
+            </span>
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+            {entry.time || "Time not set"}
+          </span>
+        </div>
+
+        {entry.details?.length ? (
+          <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
+            {entry.details.map((detail, index) => (
+              <p key={`${entry.id}-detail-${index}`}>{detail}</p>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const renderReportEntries = ({ mode = "screen" }) => {
-    const compactCardClass =
-      mode === "pdf"
-        ? "rounded-xl border px-4 py-3 text-sm text-slate-700"
-        : "rounded-xl border px-3 py-2.5 text-sm text-slate-700 md:px-4 md:py-3";
-
-    const sectionHeaderClass =
-      mode === "pdf"
-        ? "report-section-title rounded-2xl border px-4 py-3"
-        : "report-section-title rounded-2xl border px-4 py-2.5";
-
-    if (!recentEntries.length) {
+    if (!dailyReportGroups.length) {
       return (
-        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
-          Nothing logged yet for these filters.
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
+          No entries logged in the last 7 days.
         </div>
       );
     }
 
-    if (reportLayout === "timeline") {
+    if (mode === "pdf") {
       return (
-        <div className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
-          <div
-            className={`${sectionHeaderClass} border-slate-800 bg-slate-800`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
-                Timeline
-              </h4>
-              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                {recentEntries.length} item{recentEntries.length === 1 ? "" : "s"}
-              </span>
-            </div>
-          </div>
-
-          {timelineGroups.map((group) => (
-            <div
-              key={group.date}
-              className={mode === "pdf" ? "space-y-3" : "space-y-2"}
-            >
-              <div className="rounded-xl border border-slate-200 bg-white px-4 py-2">
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-600">
+        <div className="space-y-4">
+          {dailyReportGroups.map((group) => (
+            <div key={`pdf-${group.date}`} className="space-y-3">
+              <div className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-3">
+                <h4 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-700">
                   {group.label}
-                </p>
+                </h4>
               </div>
-
-              {group.entries.map((entry) => {
-                const theme = sectionTheme[entry.section] || {
-                  report: "border-slate-200 bg-slate-50",
-                };
-
-                return (
-                  <div
-                    key={entry.id}
-                    className={`${compactCardClass} ${theme.report}`}
-                  >
-                    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                          {entry.section}
-                        </div>
-                        <p className="font-bold leading-5 text-slate-900">
-                          {entry.summary}
-                        </p>
-                      </div>
-                      <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                        {entry.time || "Time not set"}
-                      </span>
-                    </div>
-
-                    {entry.details?.length ? (
-                      <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                        {entry.details.map((detail, index) => (
-                          <p key={index}>{detail}</p>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                );
-              })}
+              <div className="space-y-3">
+                {group.entries.map((entry) => renderReportEntryCard(entry))}
+              </div>
             </div>
           ))}
         </div>
       );
     }
 
-    const orderedSections = [
-      "Food Diary",
-      "Medication",
-      "Toileting",
-      "Health",
-      "Sleep",
-    ];
-
     return (
-      <div className={mode === "pdf" ? "space-y-3" : "space-y-2"}>
-        {orderedSections.map((section) => {
-          const entries = groupedReportEntries[section] || [];
-          if (!entries.length) return null;
-
-          const theme = sectionTheme[section] || {
-            report: "border-slate-200 bg-slate-50",
-            solidHeader: "bg-slate-700 text-white border-slate-800",
-          };
+      <div className="space-y-3">
+        {dailyReportGroups.map((group, index) => {
+          const isOpen = reportOpenDays[group.date];
 
           return (
             <div
-              key={section}
-              className={mode === "pdf" ? "space-y-3" : "space-y-2"}
+              key={group.date}
+              className="rounded-2xl border border-slate-200 bg-white shadow-sm"
             >
-              <div className={`${sectionHeaderClass} ${theme.solidHeader}`}>
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-bold uppercase tracking-[0.16em] text-white md:text-base">
-                    {section}
-                  </h4>
-                  <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-white">
-                    {entries.length} item{entries.length === 1 ? "" : "s"}
-                  </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setReportOpenDays((current) => ({
+                    ...current,
+                    [group.date]: !current[group.date],
+                  }))
+                }
+                className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left"
+              >
+                <div>
+                  <p className="text-sm font-bold text-slate-900">{group.label}</p>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-[0.14em] text-slate-500">
+                    {index === 0 ? "Today first" : `${group.entries.length} entries`}
+                  </p>
                 </div>
-              </div>
+                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                  {isOpen ? "Hide" : "Show"}
+                </span>
+              </button>
 
-              {entries.map((entry) => (
-                <div
-                  key={entry.id}
-                  className={`${compactCardClass} ${theme.report}`}
-                >
-                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <span className="font-bold leading-5 text-slate-900">
-                      {entry.summary}
-                    </span>
-                    <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                      {entry.date}
-                      {entry.time ? ` · ${entry.time}` : ""}
-                    </span>
-                  </div>
-                  {entry.details?.length ? (
-                    <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                      {entry.details.map((detail, index) => (
-                        <p key={index}>{detail}</p>
-                      ))}
-                    </div>
-                  ) : null}
+              {isOpen ? (
+                <div className="space-y-3 border-t border-slate-100 px-4 py-4">
+                  {group.entries.map((entry) => renderReportEntryCard(entry))}
                 </div>
-              ))}
+              ) : null}
             </div>
           );
         })}
@@ -2547,31 +2669,42 @@ export default function KaylenCareMonitorDashboard() {
         id="report-pdf-export"
         className="w-[1123px] bg-white p-8 text-slate-900"
       >
-        <div className="rounded-2xl bg-slate-800 px-6 py-4">
-          <h1 className="text-center text-2xl font-bold uppercase tracking-[0.18em] text-white">
-            Kaylen’s Diary
+        <div className="rounded-3xl border border-sky-100 bg-sky-50 px-8 py-6">
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-400">
+            Kaylen&apos;s Diary
+          </p>
+          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-900">
+            7 day care summary
           </h1>
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            Prepared for future sleep and milk trend graphs.
+          </p>
         </div>
 
-        <div className="mt-4 rounded-2xl border border-slate-300 bg-slate-50 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                Report summary
-              </p>
-              <h2 className="mt-2 text-xl font-bold text-slate-900">
-                {reportLayout === "timeline" ? "Timeline" : "By category"}
-                {reportCategoryFilter !== "All" ? ` · ${reportCategoryFilter}` : ""}
-              </h2>
-            </div>
-            <div className="text-right text-sm font-semibold text-slate-600">
-              <p>
-                Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
-              </p>
-              <p>
-                {recentEntries.length} entr{recentEntries.length === 1 ? "y" : "ies"}
-              </p>
-            </div>
+        <div className="mt-4 grid grid-cols-3 gap-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              Total sleep
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">
+              {formatSleepDuration(reportSummary.totalSleepMinutes) || "0m"}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              Total milk
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">
+              {reportSummary.totalMilk}oz
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              Latest weight
+            </p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">
+              {reportSummary.latestWeight ? `${reportSummary.latestWeight}kg` : "Not logged"}
+            </p>
           </div>
         </div>
 
@@ -2581,172 +2714,62 @@ export default function KaylenCareMonitorDashboard() {
   );
 
   const renderReportsForm = () => {
-    const filtersLabel =
-      reportCategoryFilter === "All"
-        ? "All categories"
-        : reportCategoryFilter;
-
-    const layoutLabel =
-      reportLayout === "timeline" ? "Timeline" : "By category";
-
     return (
       <>
         {renderPdfExportArea()}
 
-        <div className="mt-6 grid grid-cols-1 gap-3 lg:grid-cols-4">
-          <div className={cardClassName}>
-            <label className="text-sm font-semibold text-slate-700">
-              Quick range
-            </label>
-            <select
-              className={`${inputClassName} min-h-[46px]`}
-              value={reportDays}
-              onChange={(e) => setReportDays(e.target.value)}
-            >
-              <option value="7">7 days</option>
-              <option value="14">14 days</option>
-              <option value="30">30 days</option>
-              <option value="60">60 days</option>
-              <option value="90">90 days</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
+        <div className="mt-6 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                Total sleep
+              </p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">
+                {formatSleepDuration(reportSummary.totalSleepMinutes) || "0m"}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">Last 7 days</p>
+            </div>
 
-          <div className={cardClassName}>
-            <label className="text-sm font-semibold text-slate-700">
-              Report style
-            </label>
-            <select
-              className={`${inputClassName} min-h-[46px]`}
-              value={reportLayout}
-              onChange={(e) => setReportLayout(e.target.value)}
-            >
-              <option value="timeline">Timeline</option>
-              <option value="category">By category</option>
-            </select>
-          </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                Total milk
+              </p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">
+                {reportSummary.totalMilk}oz
+              </p>
+              <p className="mt-1 text-sm text-slate-500">Last 7 days</p>
+            </div>
 
-          <div className={cardClassName}>
-            <label className="text-sm font-semibold text-slate-700">
-              Active range
-            </label>
-            <div className="mt-2 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-              Last {effectiveReportDays} day{effectiveReportDays === 1 ? "" : "s"}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                Latest weight
+              </p>
+              <p className="mt-2 text-2xl font-bold text-slate-900">
+                {reportSummary.latestWeight ? `${reportSummary.latestWeight}kg` : "Not logged"}
+              </p>
+              <p className="mt-1 text-sm text-slate-500">Most recent health entry</p>
             </div>
           </div>
 
-          <div className={cardClassName}>
-            <label className="text-sm font-semibold text-slate-700">
-              Filters
-            </label>
-            <button
-              type="button"
-              onClick={() => setReportFiltersOpen((current) => !current)}
-              className="mt-2 flex min-h-[46px] w-full items-center justify-between rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-            >
-              <span>{filtersLabel}</span>
-              <span>{reportFiltersOpen ? "−" : "+"}</span>
-            </button>
-          </div>
-
-          {reportFiltersOpen ? (
-            <div className="lg:col-span-4 rounded-2xl border border-slate-300 bg-white p-4 shadow-sm">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Category filter
-                  </label>
-                  <select
-                    className={`${inputClassName} min-h-[46px]`}
-                    value={reportCategoryFilter}
-                    onChange={(e) => setReportCategoryFilter(e.target.value)}
-                  >
-                    <option value="All">All categories</option>
-                    <option value="Food Diary">Food Diary</option>
-                    <option value="Medication">Medication</option>
-                    <option value="Toileting">Toileting</option>
-                    <option value="Health">Health</option>
-                    <option value="Sleep">Sleep</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Current layout
-                  </label>
-                  <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                    {layoutLabel}
-                  </div>
-                </div>
-
-                {reportDays === "custom" ? (
-                  <div>
-                    <label className="text-sm font-semibold text-slate-700">
-                      Custom number of days
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      step="1"
-                      placeholder="Enter number of days"
-                      className={`${inputClassName} min-h-[46px]`}
-                      value={customReportDays}
-                      onChange={(e) => setCustomReportDays(e.target.value)}
-                    />
-                  </div>
-                ) : (
-                  <div>
-                    <label className="text-sm font-semibold text-slate-700">
-                      Quick note
-                    </label>
-                    <div className="mt-2 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-700">
-                      Pick “Custom” in Quick range to enter your own number of days.
-                    </div>
-                  </div>
-                )}
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-4 shadow-sm">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                  Future graphs
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-600">
+                  Placeholder ready for sleep and milk trend charts.
+                </p>
               </div>
-            </div>
-          ) : null}
-
-          <div className="lg:col-span-4">
-            <div className="rounded-2xl border border-slate-300 bg-slate-50/80 p-3 shadow-sm md:p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Report view
-                  </label>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {reportLayout === "timeline"
-                      ? "Showing entries in time order."
-                      : "Grouped by category with matching colours."}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    {layoutLabel}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    {filtersLabel}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    Last {effectiveReportDays} days
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {renderReportEntries({ mode: "screen" })}
-              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                Structure only
+              </span>
             </div>
           </div>
 
-          <div className="lg:col-span-4 grid gap-3 sm:grid-cols-3">
-            <button
-              type="button"
-              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
-            >
-              Run report
-            </button>
+          <div>{renderReportEntries({ mode: "screen" })}</div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={async () => {
@@ -2758,13 +2781,12 @@ export default function KaylenCareMonitorDashboard() {
                     await navigator.clipboard.writeText(reportText);
                     setShareCopied(true);
                     setTimeout(() => setShareCopied(false), 2000);
-                    return;
                   }
                 } catch (error) {
                   console.error("Copy failed", error);
                 }
               }}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              className="w-full rounded-2xl border border-slate-200 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
             >
               {shareCopied ? "Report copied" : "Copy report"}
             </button>
@@ -2772,7 +2794,7 @@ export default function KaylenCareMonitorDashboard() {
               type="button"
               onClick={handleExportPdf}
               disabled={isExportingPdf}
-              className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-60`}
             >
               {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
             </button>
@@ -2803,50 +2825,63 @@ export default function KaylenCareMonitorDashboard() {
     }
   };
 
+  if (isCheckingPinSession) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 via-white to-sky-50 px-6">
+        <div className="rounded-3xl border border-slate-200 bg-white px-6 py-5 text-sm font-medium text-slate-600 shadow-sm">
+          Checking saved PIN session...
+        </div>
+      </div>
+    );
+  }
+
   if (!isUnlocked) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 px-6 py-10 text-slate-900 md:py-16">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-50 px-6 py-10 text-slate-900 md:py-16">
         <div className="mx-auto max-w-md">
-          <div className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl md:p-10">
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-8 shadow-xl md:p-10">
             <div className="text-center">
-              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-400 to-purple-500 text-4xl text-white shadow-lg">
-                🔒
+              <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-gradient-to-br from-sky-200 to-sky-400 text-xl font-bold uppercase tracking-[0.22em] text-sky-900 shadow-lg">
+                PIN
               </div>
 
-              <div className="mt-6 w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
-                <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
-                  Kaylen’s Diary
-                </h1>
-              </div>
-
-              <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
-                Enter PIN to access the diary.
-              </p>
-            </div>
-
-            <div className="mt-8">
-              <label className="text-sm font-semibold text-slate-700">PIN</label>
-
-              <div className="mt-3 flex justify-center gap-3">
-                {Array.from({ length: 6 }).map((_, index) => (
-                  <div
-                    key={index}
-                    className={`flex h-12 w-12 items-center justify-center rounded-xl border text-xl font-bold ${
-                      passwordInput[index]
-                        ? "border-indigo-400 bg-indigo-50 text-slate-900"
-                        : "border-slate-300 bg-white text-slate-300"
-                    }`}
-                  >
-                    {passwordInput[index] ? "•" : ""}
-                  </div>
-                ))}
-              </div>
-
-              {passwordError ? (
-                <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-                  {passwordError}
+              <div className="mt-6 rounded-3xl border border-sky-100 bg-sky-50 px-6 py-5 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-400">
+                  Kaylen&apos;s Diary
                 </p>
-              ) : null}
+                <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                  Care tracker unlock
+                </h1>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                  Enter the PIN to access the diary. The app stays unlocked for up to
+                  5 hours of inactivity.
+                </p>
+              </div>
+
+              <div className="mt-8">
+                <label className="text-sm font-semibold text-slate-700">PIN</label>
+
+                <div className="mt-3 flex justify-center gap-3">
+                  {Array.from({ length: 6 }).map((_, index) => (
+                    <div
+                      key={index}
+                      className={`flex h-12 w-12 items-center justify-center rounded-xl border text-xl font-bold ${
+                        passwordInput[index]
+                          ? "border-sky-300 bg-sky-50 text-slate-900"
+                          : "border-slate-200 bg-white text-slate-300"
+                      }`}
+                    >
+                      {passwordInput[index] ? "*" : ""}
+                    </div>
+                  ))}
+                </div>
+
+                {passwordError ? (
+                  <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                    {passwordError}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="mt-8 grid grid-cols-3 gap-3">
@@ -2855,7 +2890,7 @@ export default function KaylenCareMonitorDashboard() {
                   key={num}
                   type="button"
                   onClick={() => handlePinPress(num)}
-                  className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+                  className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
                 >
                   {num}
                 </button>
@@ -2864,7 +2899,7 @@ export default function KaylenCareMonitorDashboard() {
               <button
                 type="button"
                 onClick={handlePinClear}
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
               >
                 Clear
               </button>
@@ -2872,7 +2907,7 @@ export default function KaylenCareMonitorDashboard() {
               <button
                 type="button"
                 onClick={() => handlePinPress("0")}
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-xl font-bold text-slate-800 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
               >
                 0
               </button>
@@ -2880,7 +2915,7 @@ export default function KaylenCareMonitorDashboard() {
               <button
                 type="button"
                 onClick={handlePinDelete}
-                className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 active:scale-[0.98]"
               >
                 Delete
               </button>
@@ -2889,7 +2924,7 @@ export default function KaylenCareMonitorDashboard() {
             <button
               type="button"
               onClick={handleUnlock}
-              className="mt-6 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 px-5 py-4 text-base font-semibold text-white shadow-md transition hover:scale-[1.01]"
+              className="mt-6 flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-sky-400 to-sky-500 px-5 py-4 text-base font-semibold text-sky-950 shadow-md transition hover:scale-[1.01]"
             >
               Unlock diary
             </button>
@@ -2900,150 +2935,138 @@ export default function KaylenCareMonitorDashboard() {
   }
 
   const isReportsOpen = activeSection?.title === "Reports";
+  const pullProgress = Math.min(100, Math.round((pullDistance / 100) * 100));
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
-      <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
-        <header className="mb-5">
-          <div className="mx-auto max-w-2xl">
-            <div className="w-full rounded-2xl bg-slate-800 px-6 py-4 shadow-md">
-              <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-white md:text-2xl">
-                Kaylen’s Diary
-              </h1>
+    <div className="min-h-screen overscroll-y-contain bg-gradient-to-br from-slate-50 via-white to-sky-50 text-slate-900">
+      <div className="mx-auto max-w-5xl px-4 pb-10 pt-6 sm:px-5">
+        <header className="space-y-3">
+          <div className="rounded-[2rem] border border-sky-100 bg-white/90 px-5 py-5 shadow-sm backdrop-blur">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-sky-300">
+                  Kaylen&apos;s Diary
+                </p>
+                <h1 className="mt-2 text-[1.75rem] font-bold tracking-tight text-slate-900">
+                  Mobile care tracker
+                </h1>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                  Fast, thumb-friendly logging for sleep, medication, food,
+                  toileting, health, and reports.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={lockDiary}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-bold uppercase tracking-[0.16em] text-slate-600 shadow-sm transition hover:bg-slate-50"
+              >
+                Lock
+              </button>
             </div>
           </div>
-        </header>
 
-        {isRefreshing ? (
-          <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">
-            Refreshing diary...
+          <div className="h-12 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex h-full items-center justify-between px-4">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Pull to refresh
+                </p>
+                <p className="text-sm font-medium text-slate-600">
+                  {isRefreshing
+                    ? "Refreshing diary..."
+                    : pullDistance
+                      ? `Release to refresh (${pullProgress}%)`
+                      : "Pull down from the top"}
+                </p>
+              </div>
+              <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-100">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    isRefreshing ? "bg-sky-500" : "bg-sky-300"
+                  }`}
+                  style={{ width: `${isRefreshing ? 100 : pullProgress}%` }}
+                />
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600">
-            Pull down from the top to refresh.
-          </div>
-        )}
 
-        <section className="mb-5">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
                   Quick overview
                 </p>
-                <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900 md:text-xl">
-                  Today at a glance
-                </h2>
+                <p className="mt-1 text-sm font-medium text-slate-600">
+                  Compact summary for today&apos;s care.
+                </p>
               </div>
-
-              <div className="flex items-center gap-1.5">
-                {overviewItems.map((item, index) => (
-                  <span
-                    key={item.key}
-                    className={`h-2 w-2 rounded-full transition ${
-                      index === overviewIndex ? "bg-slate-700" : "bg-slate-300"
-                    }`}
-                  />
-                ))}
-              </div>
+              <span className="rounded-full bg-sky-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-700">
+                Live
+              </span>
             </div>
 
-            <div
-              className={`mt-3 rounded-2xl border px-4 py-3 ${activeOverview.tone}`}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-2xl shadow-sm">
-                  {activeOverview.emoji}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-bold uppercase tracking-[0.14em]">
-                      {activeOverview.title}
-                    </p>
-                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                      {activeOverview.meta}
-                    </span>
-                  </div>
-
-                  <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
-                    {activeOverview.summary}
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {quickOverview.map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">
+                    {item.label}
+                  </p>
+                  <p className="mt-1 text-sm font-semibold leading-5 text-slate-900">
+                    {item.value}
                   </p>
                 </div>
-              </div>
+              ))}
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {sections.map((section) => {
-            const latestLines =
-              section.title !== "Reports"
-                ? tileStatusText(section.title)
-                : sharedLog.length
-                  ? sharedLog
-                      .slice(0, 2)
-                      .map(
-                        (entry) =>
-                          `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
-                      )
-                  : ["Nothing logged yet"];
-
-            return (
-              <div
-                key={section.title}
-                className={`group flex min-h-[17rem] flex-col rounded-[2rem] border p-5 shadow-md transition duration-200 hover:-translate-y-1 hover:shadow-lg sm:p-6 ${section.soft}`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div
-                    className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br text-4xl text-white shadow-lg ${section.color}`}
-                  >
-                    {section.emoji}
-                  </div>
-                  <div className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    Log
-                  </div>
-                </div>
-
-                <div className="mt-6 flex-1">
-                  <h2 className="text-[1.6rem] font-bold leading-tight tracking-tight sm:text-[1.9rem]">
-                    {section.title}
-                  </h2>
-
-                  {section.subtitle ? (
-                    <p className="mt-2 min-h-[2.5rem] text-sm font-medium leading-5 text-slate-600">
-                      {section.subtitle}
-                    </p>
-                  ) : null}
-
-                  <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                      Latest
-                    </p>
-                    <div className="mt-1 space-y-1">
-                      {latestLines.map((line, index) => (
-                        <p
-                          key={`${section.title}-${index}`}
-                          className="break-words text-sm font-semibold leading-5 text-slate-700"
-                        >
-                          {line}
-                        </p>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
+          <section className="rounded-[2rem] border border-slate-200 bg-white px-3 py-3 shadow-sm">
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {shortcutItems.map((section) => (
                 <button
+                  key={section.title}
                   type="button"
                   onClick={() => openSection(section)}
-                  className={`mt-6 flex w-full items-center justify-between rounded-2xl bg-gradient-to-r px-5 py-3.5 text-base font-semibold text-white shadow-md transition hover:scale-[1.02] ${section.color}`}
+                  className="min-w-[132px] shrink-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left shadow-sm transition hover:bg-white"
                 >
-                  <span>{section.button}</span>
-                  <span>→</span>
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br text-[11px] font-bold uppercase tracking-[0.16em] text-white ${section.color}`}
+                    >
+                      {section.emoji}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-slate-900">
+                        {section.title}
+                      </p>
+                      <p className="truncate text-xs font-medium text-slate-500">
+                        {section.latest}
+                      </p>
+                    </div>
+                  </div>
                 </button>
-              </div>
-            );
-          })}
+              ))}
+            </div>
+          </section>
+        </header>
+
+        <section className="mt-5 rounded-[2rem] border border-slate-200 bg-white px-4 py-4 shadow-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                Ready to log
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-600">
+                Use the shortcut row above to open a section without extra clutter.
+              </p>
+            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400">
+              Mobile first
+            </p>
+          </div>
         </section>
       </div>
 
@@ -3052,7 +3075,7 @@ export default function KaylenCareMonitorDashboard() {
           <div className="flex min-h-full items-start justify-center py-2 md:items-center md:py-4">
             <div
               className={`relative my-auto w-full rounded-[2rem] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-8 ${
-                isReportsOpen ? "max-w-5xl" : "max-w-2xl"
+                isReportsOpen ? "max-w-4xl" : "max-w-2xl"
               }`}
             >
               <button
@@ -3065,7 +3088,7 @@ export default function KaylenCareMonitorDashboard() {
 
               <div className="flex min-w-0 items-start gap-3 pr-14 md:pr-16">
                 <div
-                  className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-2xl text-white shadow-md ${activeSection.color}`}
+                  className={`flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br text-xs font-bold uppercase tracking-[0.16em] text-white shadow-md ${activeSection.color}`}
                 >
                   {activeSection.emoji}
                 </div>
