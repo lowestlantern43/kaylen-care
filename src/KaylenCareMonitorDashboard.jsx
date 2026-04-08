@@ -159,6 +159,7 @@ export default function KaylenCareMonitorDashboard() {
   const [foodValue, setFoodValue] = useState("");
   const [reportDays, setReportDays] = useState("7");
   const [customReportDays, setCustomReportDays] = useState("7");
+  const [reportTab, setReportTab] = useState("recent");
   const [reportLayout, setReportLayout] = useState("daily");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
@@ -2689,7 +2690,7 @@ export default function KaylenCareMonitorDashboard() {
     );
   };
 
-  const renderReportEntries = ({ mode = "screen" }) => {
+  const renderReportEntries = ({ mode = "screen", layout = reportLayout }) => {
     if (!recentEntries.length) {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
@@ -2698,67 +2699,98 @@ export default function KaylenCareMonitorDashboard() {
       );
     }
 
-    if (reportLayout === "daily") {
+    if (layout === "daily") {
       return (
-        <div className={mode === "pdf" ? "space-y-3" : "space-y-3"}>
-          {timelineGroups.map((group, index) => (
-            <details
-              key={group.date}
-              open={mode === "pdf" || index === 0}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                    {group.label}
-                  </p>
-                  <p className="mt-1 text-sm font-semibold text-slate-700">
-                    {group.entries.length} entr{group.entries.length === 1 ? "y" : "ies"}
-                  </p>
-                </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                  {index === 0 ? "Today first" : group.date}
-                </span>
-              </summary>
+        <div className="space-y-3">
+          {timelineGroups.map((group, index) => {
+            const sleepMinutes = group.entries
+              .filter((entry) => entry.section === "Sleep")
+              .reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0);
+            const milkOz = group.entries
+              .filter((entry) => entry.isMilk)
+              .reduce((sum, entry) => sum + Number(entry.amountOz || 0), 0);
+            const medsCount = group.entries.filter(
+              (entry) => entry.section === "Medication",
+            ).length;
+            const healthCount = group.entries.filter(
+              (entry) => entry.section === "Health",
+            ).length;
 
-              <div className="border-t border-slate-100 px-4 py-3">
-                <div className="space-y-2">
-                  {group.entries.map((entry) => {
-                    const theme = sectionTheme[entry.section] || {
-                      report: "border-slate-200 bg-slate-50",
-                    };
+            return (
+              <details
+                key={group.date}
+                open={mode === "pdf" || index === 0}
+                className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm"
+              >
+                <summary className="list-none cursor-pointer px-4 py-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                        {group.label}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold text-slate-700">
+                        {index === 0 ? "Today first" : `${group.entries.length} entries`}
+                      </p>
+                    </div>
 
-                    return (
-                      <div
-                        key={entry.id}
-                        className={`rounded-2xl border px-3 py-3 text-sm text-slate-700 ${theme.report}`}
-                      >
-                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0">
-                            <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                              {entry.section}
+                    <div className="flex flex-wrap gap-2">
+                      <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">
+                        Sleep {formatHoursMinutes(sleepMinutes)}
+                      </span>
+                      <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+                        Milk {milkOz}oz
+                      </span>
+                      <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700">
+                        Meds {medsCount}
+                      </span>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                        Health {healthCount}
+                      </span>
+                    </div>
+                  </div>
+                </summary>
+
+                <div className="border-t border-slate-100 px-4 pb-4 pt-3">
+                  <div className="space-y-2">
+                    {group.entries.map((entry) => {
+                      const theme = sectionTheme[entry.section] || {
+                        report: "border-slate-200 bg-slate-50",
+                      };
+
+                      return (
+                        <div
+                          key={entry.id}
+                          className={`rounded-2xl border px-3 py-3 text-sm text-slate-700 ${theme.report}`}
+                        >
+                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                                {entry.section}
+                              </div>
+                              <p className="font-bold leading-5 text-slate-900">
+                                {entry.summary}
+                              </p>
                             </div>
-                            <p className="font-bold leading-5 text-slate-900">{entry.summary}</p>
+                            <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
+                              {entry.time || "Time not set"}
+                            </span>
                           </div>
-                          <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                            {entry.time || "Time not set"}
-                          </span>
-                        </div>
 
-                        {entry.details?.length ? (
-                          <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                            {entry.details.map((detail, detailIndex) => (
-                              <p key={detailIndex}>{detail}</p>
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                          {entry.details?.length ? (
+                            <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
+                              {entry.details.map((detail, detailIndex) => (
+                                <p key={detailIndex}>{detail}</p>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            </details>
-          ))}
+              </details>
+            );
+          })}
         </div>
       );
     }
@@ -2766,7 +2798,7 @@ export default function KaylenCareMonitorDashboard() {
     const latestMeasurement = weeklyReportStats.latestMeasurement;
     const summaryCards = [
       {
-        title: "Sleep this range",
+        title: "Sleep",
         value: formatHoursMinutes(
           recentEntries
             .filter((entry) => entry.section === "Sleep")
@@ -2775,26 +2807,26 @@ export default function KaylenCareMonitorDashboard() {
         meta: `${recentEntries.filter((entry) => entry.section === "Sleep").length} sleep logs`,
       },
       {
-        title: "Milk this range",
+        title: "Milk",
         value: `${recentEntries
           .filter((entry) => entry.isMilk)
           .reduce((sum, entry) => sum + Number(entry.amountOz || 0), 0)}oz`,
         meta: `${recentEntries.filter((entry) => entry.isMilk).length} milk logs`,
       },
       {
-        title: "Latest weight",
+        title: "Weight",
         value: formatMetric(latestMeasurement?.weightKg || "", "kg"),
         meta: latestMeasurement?.date || "No measurement yet",
       },
       {
-        title: "Latest height",
+        title: "Height",
         value: formatMetric(latestMeasurement?.heightCm || "", "cm"),
         meta: latestMeasurement?.date || "No measurement yet",
       },
       {
-        title: "Latest BMI",
+        title: "BMI",
         value: latestMeasurement?.bmi ? `${latestMeasurement.bmi}` : "Not logged",
-        meta: "From saved measurements",
+        meta: "Latest measurement",
       },
       {
         title: "Entries",
@@ -2852,42 +2884,6 @@ export default function KaylenCareMonitorDashboard() {
             maxValue: measurementChartStats.bmiMax,
           })}
         </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
-                Summary notes
-              </p>
-              <h4 className="mt-1 text-lg font-bold text-slate-900">
-                Measurements and category totals
-              </h4>
-            </div>
-            <span className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Birthday: 03/09/2020
-            </span>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {["Food Diary", "Medication", "Toileting", "Health", "Sleep"].map((section) => {
-              const sectionEntries = recentEntries.filter((entry) => entry.section === section);
-              return (
-                <div
-                  key={section}
-                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
-                >
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                    {section}
-                  </p>
-                  <p className="mt-2 text-2xl font-bold text-slate-900">{sectionEntries.length}</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {sectionEntries[0]?.summary || "Nothing logged in this range"}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
     );
   };
@@ -2928,7 +2924,7 @@ export default function KaylenCareMonitorDashboard() {
           </div>
         </div>
 
-        <div className="mt-4">{renderReportEntries({ mode: "pdf" })}</div>
+        <div className="mt-4">{renderReportEntries({ mode: "pdf", layout: reportLayout })}</div>
       </div>
     </div>
   );
@@ -2939,8 +2935,18 @@ export default function KaylenCareMonitorDashboard() {
         ? "All categories"
         : reportCategoryFilter;
 
-    const layoutLabel =
-      reportLayout === "daily" ? "Daily log" : "Summary";
+    const invalidCustomRange =
+      reportDays === "custom" &&
+      reportRangeStart &&
+      reportRangeEnd &&
+      reportRangeStart > reportRangeEnd;
+
+    const tabButtonClass = (tab) =>
+      `rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+        reportTab === tab
+          ? "bg-slate-900 text-white shadow-sm"
+          : "bg-white text-slate-600 hover:bg-slate-50"
+      }`;
 
     const topStats = [
       {
@@ -2993,102 +2999,42 @@ export default function KaylenCareMonitorDashboard() {
             ))}
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-4">
-            <div className={cardClassName}>
-              <label className="text-sm font-semibold text-slate-700">
-                Quick range
-              </label>
-              <select
-                className={`${inputClassName} min-h-[46px]`}
-                value={reportDays}
-                onChange={(e) => setReportDays(e.target.value)}
-              >
-                <option value="7">Last 7 days</option>
-                <option value="14">Last 14 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="60">Last 60 days</option>
-                <option value="90">Last 90 days</option>
-                <option value="custom">Custom range</option>
-              </select>
-            </div>
-
-            <div className={cardClassName}>
-              <label className="text-sm font-semibold text-slate-700">
-                View
-              </label>
-              <select
-                className={`${inputClassName} min-h-[46px]`}
-                value={reportLayout}
-                onChange={(e) => setReportLayout(e.target.value)}
-              >
-                <option value="daily">Daily dropdowns</option>
-                <option value="summary">Summary + graphs</option>
-              </select>
-            </div>
-
-            <div className={cardClassName}>
-              <label className="text-sm font-semibold text-slate-700">
-                Start date
-              </label>
-              <input
-                type="date"
-                className={`${inputClassName} min-h-[46px]`}
-                value={reportStartDate}
-                onChange={(e) => {
-                  setReportDays("custom");
-                  setReportStartDate(e.target.value);
-                }}
-              />
-            </div>
-
-            <div className={cardClassName}>
-              <label className="text-sm font-semibold text-slate-700">
-                End date
-              </label>
-              <input
-                type="date"
-                className={`${inputClassName} min-h-[46px]`}
-                value={reportEndDate}
-                onChange={(e) => {
-                  setReportDays("custom");
-                  setReportEndDate(e.target.value);
-                }}
-              />
+          <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
+            <div className="grid gap-2 sm:grid-cols-3">
+              <button type="button" onClick={() => setReportTab("recent")} className={tabButtonClass("recent")}>
+                Recent
+              </button>
+              <button type="button" onClick={() => setReportTab("summary")} className={tabButtonClass("summary")}>
+                Summary
+              </button>
+              <button type="button" onClick={() => setReportTab("export")} className={tabButtonClass("export")}>
+                Export
+              </button>
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-            <div className="rounded-2xl border border-slate-300 bg-slate-50/80 p-3 shadow-sm md:p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-slate-700">Report view</p>
-                  <p className="mt-1 text-sm text-slate-500">
-                    {reportLayout === "daily"
-                      ? "Showing the newest day first in expandable sections."
-                      : "Showing a cleaner summary with measurements and graphs."}
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    {layoutLabel}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    {filtersLabel}
-                  </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
-                    {reportDays === "custom"
-                      ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-                      : `Last ${effectiveReportDays} days`}
-                  </span>
-                </div>
-              </div>
-
-              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
-                <div>{renderReportEntries({ mode: "screen" })}</div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          {reportTab === "recent" ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 lg:grid-cols-[220px_220px_minmax(0,1fr)]">
+                <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">
-                    Category filter
+                    Range
+                  </label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportDays}
+                    onChange={(e) => setReportDays(e.target.value)}
+                  >
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="custom">Custom range</option>
+                  </select>
+                </div>
+
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">
+                    Filter
                   </label>
                   <select
                     className={`${inputClassName} min-h-[46px]`}
@@ -3102,73 +3048,252 @@ export default function KaylenCareMonitorDashboard() {
                     <option value="Health">Health</option>
                     <option value="Sleep">Sleep</option>
                   </select>
+                </div>
 
-                  {reportDays === "custom" ? (
-                    <div className="mt-4 rounded-xl border border-sky-200 bg-sky-50 px-3 py-3 text-sm font-medium text-sky-800">
-                      Custom range is active.
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                    Recent view
+                  </p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Day-by-day logs with today at the top. Open only the days you want to read.
+                  </p>
+                </div>
+              </div>
+
+              {reportDays === "custom" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className={cardClassName}>
+                    <label className="text-sm font-semibold text-slate-700">Start date</label>
+                    <input
+                      type="date"
+                      className={`${inputClassName} min-h-[46px]`}
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className={cardClassName}>
+                    <label className="text-sm font-semibold text-slate-700">End date</label>
+                    <input
+                      type="date"
+                      className={`${inputClassName} min-h-[46px]`}
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {invalidCustomRange ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  End date must be on or after the start date.
+                </div>
+              ) : null}
+
+              {renderReportEntries({ mode: "screen", layout: "daily" })}
+            </div>
+          ) : null}
+
+          {reportTab === "summary" ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">Range</label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportDays}
+                    onChange={(e) => setReportDays(e.target.value)}
+                  >
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                    <option value="60">Last 60 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="custom">Custom range</option>
+                  </select>
+                </div>
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">Filter</label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportCategoryFilter}
+                    onChange={(e) => setReportCategoryFilter(e.target.value)}
+                  >
+                    <option value="All">All categories</option>
+                    <option value="Food Diary">Food Diary</option>
+                    <option value="Medication">Medication</option>
+                    <option value="Toileting">Toileting</option>
+                    <option value="Health">Health</option>
+                    <option value="Sleep">Sleep</option>
+                  </select>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Summary view</p>
+                  <p className="mt-1 text-sm text-slate-600">
+                    Cleaner totals and graphs for spotting patterns without all the logs underneath.
+                  </p>
+                </div>
+              </div>
+
+              {reportDays === "custom" ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className={cardClassName}>
+                    <label className="text-sm font-semibold text-slate-700">Start date</label>
+                    <input
+                      type="date"
+                      className={`${inputClassName} min-h-[46px]`}
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                    />
+                  </div>
+                  <div className={cardClassName}>
+                    <label className="text-sm font-semibold text-slate-700">End date</label>
+                    <input
+                      type="date"
+                      className={`${inputClassName} min-h-[46px]`}
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                    />
+                  </div>
+                </div>
+              ) : null}
+
+              {invalidCustomRange ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  End date must be on or after the start date.
+                </div>
+              ) : null}
+
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
+                  <span className="rounded-full bg-slate-100 px-3 py-1">{filtersLabel}</span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1">
+                    {reportDays === "custom"
+                      ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
+                      : `Last ${effectiveReportDays} days`}
+                  </span>
+                </div>
+              </div>
+
+              {renderReportEntries({ mode: "screen", layout: "summary" })}
+            </div>
+          ) : null}
+
+          {reportTab === "export" ? (
+            <div className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">Report type</label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportLayout}
+                    onChange={(e) => setReportLayout(e.target.value)}
+                  >
+                    <option value="daily">Full daily log</option>
+                    <option value="summary">Summary with graphs</option>
+                  </select>
+                </div>
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">Filter</label>
+                  <select
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportCategoryFilter}
+                    onChange={(e) => setReportCategoryFilter(e.target.value)}
+                  >
+                    <option value="All">All categories</option>
+                    <option value="Food Diary">Food Diary</option>
+                    <option value="Medication">Medication</option>
+                    <option value="Toileting">Toileting</option>
+                    <option value="Health">Health</option>
+                    <option value="Sleep">Sleep</option>
+                  </select>
+                </div>
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">Start date</label>
+                  <input
+                    type="date"
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportStartDate}
+                    onChange={(e) => {
+                      setReportDays("custom");
+                      setReportStartDate(e.target.value);
+                    }}
+                  />
+                </div>
+                <div className={cardClassName}>
+                  <label className="text-sm font-semibold text-slate-700">End date</label>
+                  <input
+                    type="date"
+                    className={`${inputClassName} min-h-[46px]`}
+                    value={reportEndDate}
+                    onChange={(e) => {
+                      setReportDays("custom");
+                      setReportEndDate(e.target.value);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {invalidCustomRange ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+                  End date must be on or after the start date.
+                </div>
+              ) : null}
+
+              <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Export</p>
+                    <h4 className="mt-1 text-lg font-bold text-slate-900">
+                      Create the report only when you need it
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Pick the date range and report style, then copy or export the finished report.
+                    </p>
+                  </div>
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (invalidCustomRange) return;
+                        try {
+                          if (
+                            typeof navigator !== "undefined" &&
+                            navigator.clipboard?.writeText
+                          ) {
+                            await navigator.clipboard.writeText(reportText);
+                            setShareCopied(true);
+                            setTimeout(() => setShareCopied(false), 2000);
+                          }
+                        } catch (error) {
+                          console.error("Copy failed", error);
+                        }
+                      }}
+                      disabled={invalidCustomRange}
+                      className={`rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+                    >
+                      {shareCopied ? "Copied" : "Copy report"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportPdf}
+                      disabled={isExportingPdf || invalidCustomRange}
+                      className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isExportingPdf ? "Exporting..." : "Export PDF"}
+                    </button>
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm">
+                      {reportLayout === "daily" ? "Full daily log" : "Summary with graphs"}
                     </div>
-                  ) : (
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-medium text-slate-600">
-                      Use the date boxes above if you want a longer custom report.
-                    </div>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div className="grid gap-3 sm:grid-cols-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (
-                    reportDays === "custom" &&
-                    reportRangeStart &&
-                    reportRangeEnd &&
-                    reportRangeStart > reportRangeEnd
-                  ) {
-                    alert("End date must be on or after the start date.");
-                  }
-                }}
-                className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color}`}
-              >
-                Run report
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    if (
-                      typeof navigator !== "undefined" &&
-                      navigator.clipboard?.writeText
-                    ) {
-                      await navigator.clipboard.writeText(reportText);
-                      setShareCopied(true);
-                      setTimeout(() => setShareCopied(false), 2000);
-                      return;
-                    }
-                  } catch (error) {
-                    console.error("Copy failed", error);
-                  }
-                }}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
-              >
-                {shareCopied ? "Report copied" : "Copy report"}
-              </button>
-              <button
-                type="button"
-                onClick={handleExportPdf}
-                disabled={isExportingPdf}
-                className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {isExportingPdf ? "Exporting PDF..." : "Export PDF"}
-              </button>
-            </div>
-          </div>
+          ) : null}
         </div>
       </>
     );
   };
-
   const renderActiveForm = () => {
     if (!activeSection) return null;
 
