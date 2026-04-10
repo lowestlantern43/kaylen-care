@@ -1,3 +1,5 @@
+const https = require("https");
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "Content-Type, x-widget-token",
@@ -84,21 +86,44 @@ function buildSleepSummary(row) {
   };
 }
 
-async function fetchLatest(path, url, serviceRoleKey) {
-  const supabaseResponse = await fetch(`${url}/rest/v1/${path}`, {
-    headers: {
-      Authorization: `Bearer ${serviceRoleKey}`,
-      apikey: serviceRoleKey,
-      Accept: "application/json",
-    },
+function requestJson(url, headers) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, { method: "GET", headers }, (res) => {
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        const status = res.statusCode || 0;
+        if (status < 200 || status >= 300) {
+          reject(new Error(`Supabase request failed: ${status} ${body}`));
+          return;
+        }
+
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(new Error(`Invalid JSON from Supabase: ${body}`));
+        }
+      });
+    });
+
+    req.on("error", (error) => {
+      reject(new Error(`HTTPS request failed: ${error.message}`));
+    });
+
+    req.end();
   });
+}
 
-  if (!supabaseResponse.ok) {
-    const text = await supabaseResponse.text();
-    throw new Error(`Supabase request failed: ${supabaseResponse.status} ${text}`);
-  }
-
-  const data = await supabaseResponse.json();
+async function fetchLatest(path, url, serviceRoleKey) {
+  const cleanUrl = String(url || "").trim().replace(/\/+$/, "");
+  const cleanKey = String(serviceRoleKey || "").trim();
+  const data = await requestJson(`${cleanUrl}/rest/v1/${path}`, {
+    Authorization: `Bearer ${cleanKey}`,
+    apikey: cleanKey,
+    Accept: "application/json",
+  });
   return Array.isArray(data) ? data[0] ?? null : null;
 }
 
@@ -111,16 +136,24 @@ exports.handler = async (event) => {
     return response(405, { error: "Method not allowed" });
   }
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const widgetToken = process.env.WIDGET_TOKEN;
+  const supabaseUrl = String(process.env.SUPABASE_URL || "").trim();
+  const supabaseServiceRoleKey = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  const widgetToken = String(process.env.WIDGET_TOKEN || "").trim();
 
   if (!supabaseUrl || !supabaseServiceRoleKey || !widgetToken) {
-    return response(500, { error: "Missing server environment variables" });
+    return response(500, {
+      error: "Missing server environment variables",
+      debug: {
+        hasSupabaseUrl: !!supabaseUrl,
+        hasServiceRoleKey: !!supabaseServiceRoleKey,
+        hasWidgetToken: !!widgetToken,
+      },
+    });
   }
 
-  const requestToken =
-    event.headers["x-widget-token"] || event.headers["X-Widget-Token"];
+  const requestToken = String(
+    event.headers["x-widget-token"] || event.headers["X-Widget-Token"] || "",
+  ).trim();
 
   if (requestToken !== widgetToken) {
     return response(401, { error: "Unauthorized" });
@@ -188,6 +221,10 @@ exports.handler = async (event) => {
   } catch (error) {
     return response(500, {
       error: error instanceof Error ? error.message : "Unknown error",
+      debug: {
+        supabaseHost: supabaseUrl,
+        tokenLength: widgetToken.length,
+      },
     });
   }
 };
