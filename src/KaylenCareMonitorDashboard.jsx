@@ -192,6 +192,7 @@ export default function KaylenCareMonitorDashboard() {
   const [activeSaveAction, setActiveSaveAction] = useState("");
   const saveLockRef = useRef(false);
   const [overviewIndex, setOverviewIndex] = useState(0);
+  const [reportOverviewIndex, setReportOverviewIndex] = useState(0);
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -1057,6 +1058,14 @@ export default function KaylenCareMonitorDashboard() {
     }, 3200);
     return () => clearInterval(timer);
   }, [overviewItems.length]);
+
+  useEffect(() => {
+    const reportCardCount = 3;
+    const timer = setInterval(() => {
+      setReportOverviewIndex((current) => (current + 1) % reportCardCount);
+    }, 3200);
+    return () => clearInterval(timer);
+  }, []);
 
   const activeOverview = overviewItems[overviewIndex] || overviewItems[0];
 
@@ -2722,36 +2731,47 @@ export default function KaylenCareMonitorDashboard() {
                 open={mode === "pdf" || index === 0}
                 className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm"
               >
-                <summary className="list-none cursor-pointer px-4 py-4">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">
+                <summary className="list-none cursor-pointer px-4 py-4 md:px-5">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
                         {group.label}
                       </p>
-                      <p className="mt-1 text-sm font-semibold text-slate-700">
-                        {index === 0 ? "Today first" : `${group.entries.length} entries`}
-                      </p>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-semibold text-slate-700">
+                          {index === 0 ? "Today first" : `${group.entries.length} entries`}
+                        </p>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                          {group.entries.length} item{group.entries.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2">
-                      <span className="rounded-full bg-indigo-50 px-3 py-1 text-[11px] font-semibold text-indigo-700">
+                    <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                      <span className="rounded-full bg-indigo-50 px-3 py-1.5 text-[11px] font-semibold text-indigo-700">
                         Sleep {formatHoursMinutes(sleepMinutes)}
                       </span>
-                      <span className="rounded-full bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-700">
+                      <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[11px] font-semibold text-amber-700">
                         Milk {milkOz}oz
                       </span>
-                      <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-700">
+                      <span className="rounded-full bg-rose-50 px-3 py-1.5 text-[11px] font-semibold text-rose-700">
                         Meds {medsCount}
                       </span>
-                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-[11px] font-semibold text-emerald-700">
+                      <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700">
                         Health {healthCount}
+                      </span>
+                    </div>
+
+                    <div className="hidden lg:flex items-center">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                        Open
                       </span>
                     </div>
                   </div>
                 </summary>
 
-                <div className="border-t border-slate-100 px-4 pb-4 pt-3">
-                  <div className="space-y-2">
+                <div className="border-t border-slate-100 bg-slate-50/60 px-4 pb-4 pt-3 md:px-5">
+                  <div className="space-y-2.5">
                     {group.entries.map((entry) => {
                       const theme = sectionTheme[entry.section] || {
                         report: "border-slate-200 bg-slate-50",
@@ -2760,27 +2780,36 @@ export default function KaylenCareMonitorDashboard() {
                       return (
                         <div
                           key={entry.id}
-                          className={`rounded-2xl border px-3 py-3 text-sm text-slate-700 ${theme.report}`}
+                          className={`rounded-2xl border px-3 py-3 text-sm text-slate-700 shadow-sm ${theme.report}`}
                         >
-                          <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">
-                              <div className="mb-1.5 inline-flex rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
-                                {entry.section}
+                              <div className="flex flex-wrap items-center gap-2">
+                                <div className="inline-flex rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                                  {entry.section}
+                                </div>
+                                <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                                  {entry.time || "Time not set"}
+                                </span>
                               </div>
-                              <p className="font-bold leading-5 text-slate-900">
+
+                              <p className="mt-2 font-bold leading-5 text-slate-900">
                                 {entry.summary}
                               </p>
                             </div>
-                            <span className="break-words text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 sm:text-right">
-                              {entry.time || "Time not set"}
+
+                            <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400 sm:pt-1">
+                              {entry.date}
                             </span>
                           </div>
 
                           {entry.details?.length ? (
-                            <div className="mt-2 space-y-1 break-words text-[13px] leading-5 text-slate-600">
-                              {entry.details.map((detail, detailIndex) => (
-                                <p key={detailIndex}>{detail}</p>
-                              ))}
+                            <div className="mt-2.5 rounded-xl bg-white/70 px-3 py-2.5">
+                              <div className="space-y-1 break-words text-[13px] leading-5 text-slate-600">
+                                {entry.details.map((detail, detailIndex) => (
+                                  <p key={detailIndex}>{detail}</p>
+                                ))}
+                              </div>
                             </div>
                           ) : null}
                         </div>
@@ -2935,6 +2964,9 @@ export default function KaylenCareMonitorDashboard() {
         ? "All categories"
         : reportCategoryFilter;
 
+    const reportInputClassName =
+      "mt-2 min-h-[44px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+
     const invalidCustomRange =
       reportDays === "custom" &&
       reportRangeStart &&
@@ -2972,40 +3004,52 @@ export default function KaylenCareMonitorDashboard() {
       },
     ];
 
+    const activeReportStat = topStats[reportOverviewIndex] || topStats[0];
+
     return (
       <>
         {renderPdfExportArea()}
 
         <div className="mt-6 space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
-            {topStats.map((stat) => (
-              <div
-                key={stat.title}
-                className={`rounded-2xl border p-3 shadow-sm ${stat.tone}`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
-                    {stat.icon}
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.16em]">
-                      {stat.title}
-                    </p>
-                    <p className="mt-1 text-lg font-bold text-slate-900">{stat.value}</p>
-                    <p className="text-xs font-semibold text-slate-500">{stat.meta}</p>
-                  </div>
+          <div className={`rounded-[1.75rem] border p-3 shadow-sm ${activeReportStat.tone}`}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-2xl shadow-sm">
+                  {activeReportStat.icon}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-bold uppercase tracking-[0.16em]">
+                    {activeReportStat.title}
+                  </p>
+                  <p className="mt-1 text-lg font-bold text-slate-900">
+                    {activeReportStat.value}
+                  </p>
+                  <p className="text-xs font-semibold text-slate-500">
+                    {activeReportStat.meta}
+                  </p>
                 </div>
               </div>
-            ))}
+
+              <div className="flex items-center gap-1.5">
+                {topStats.map((stat, index) => (
+                  <span
+                    key={`report-stat-${stat.title}`}
+                    className={`h-2 w-2 rounded-full transition ${
+                      index === reportOverviewIndex ? "bg-slate-700" : "bg-slate-300"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
             <div className="grid gap-2 sm:grid-cols-3">
               <button type="button" onClick={() => setReportTab("recent")} className={tabButtonClass("recent")}>
-                Recent
+                Daily logs
               </button>
               <button type="button" onClick={() => setReportTab("summary")} className={tabButtonClass("summary")}>
-                Summary
+                Trends
               </button>
               <button type="button" onClick={() => setReportTab("export")} className={tabButtonClass("export")}>
                 Export
@@ -3015,13 +3059,22 @@ export default function KaylenCareMonitorDashboard() {
 
           {reportTab === "recent" ? (
             <div className="space-y-4">
-              <div className="grid gap-3 lg:grid-cols-[220px_220px_minmax(0,1fr)]">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                  Daily logs
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Day-by-day logs with today at the top. Open only the days you want to read.
+                </p>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-[minmax(0,220px)_minmax(0,220px)]">
                 <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">
                     Range
                   </label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportDays}
                     onChange={(e) => setReportDays(e.target.value)}
                   >
@@ -3037,7 +3090,7 @@ export default function KaylenCareMonitorDashboard() {
                     Filter
                   </label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
@@ -3049,15 +3102,6 @@ export default function KaylenCareMonitorDashboard() {
                     <option value="Sleep">Sleep</option>
                   </select>
                 </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                    Recent view
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Day-by-day logs with today at the top. Open only the days you want to read.
-                  </p>
-                </div>
               </div>
 
               {reportDays === "custom" ? (
@@ -3066,7 +3110,7 @@ export default function KaylenCareMonitorDashboard() {
                     <label className="text-sm font-semibold text-slate-700">Start date</label>
                     <input
                       type="date"
-                      className={`${inputClassName} min-h-[46px]`}
+                      className={reportInputClassName}
                       value={reportStartDate}
                       onChange={(e) => setReportStartDate(e.target.value)}
                     />
@@ -3075,7 +3119,7 @@ export default function KaylenCareMonitorDashboard() {
                     <label className="text-sm font-semibold text-slate-700">End date</label>
                     <input
                       type="date"
-                      className={`${inputClassName} min-h-[46px]`}
+                      className={reportInputClassName}
                       value={reportEndDate}
                       onChange={(e) => setReportEndDate(e.target.value)}
                     />
@@ -3095,11 +3139,18 @@ export default function KaylenCareMonitorDashboard() {
 
           {reportTab === "summary" ? (
             <div className="space-y-4">
-              <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Trends</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Cleaner totals and graphs for spotting patterns without all the logs underneath.
+                </p>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
                 <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">Range</label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportDays}
                     onChange={(e) => setReportDays(e.target.value)}
                   >
@@ -3114,7 +3165,7 @@ export default function KaylenCareMonitorDashboard() {
                 <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">Filter</label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
@@ -3126,12 +3177,6 @@ export default function KaylenCareMonitorDashboard() {
                     <option value="Sleep">Sleep</option>
                   </select>
                 </div>
-                <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-                  <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Summary view</p>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Cleaner totals and graphs for spotting patterns without all the logs underneath.
-                  </p>
-                </div>
               </div>
 
               {reportDays === "custom" ? (
@@ -3140,7 +3185,7 @@ export default function KaylenCareMonitorDashboard() {
                     <label className="text-sm font-semibold text-slate-700">Start date</label>
                     <input
                       type="date"
-                      className={`${inputClassName} min-h-[46px]`}
+                      className={reportInputClassName}
                       value={reportStartDate}
                       onChange={(e) => setReportStartDate(e.target.value)}
                     />
@@ -3149,7 +3194,7 @@ export default function KaylenCareMonitorDashboard() {
                     <label className="text-sm font-semibold text-slate-700">End date</label>
                     <input
                       type="date"
-                      className={`${inputClassName} min-h-[46px]`}
+                      className={reportInputClassName}
                       value={reportEndDate}
                       onChange={(e) => setReportEndDate(e.target.value)}
                     />
@@ -3180,11 +3225,18 @@ export default function KaylenCareMonitorDashboard() {
 
           {reportTab === "export" ? (
             <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Export</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Pick the date range and report style, then copy or export the finished report.
+                </p>
+              </div>
+
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">Report type</label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportLayout}
                     onChange={(e) => setReportLayout(e.target.value)}
                   >
@@ -3195,7 +3247,7 @@ export default function KaylenCareMonitorDashboard() {
                 <div className={cardClassName}>
                   <label className="text-sm font-semibold text-slate-700">Filter</label>
                   <select
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
@@ -3211,7 +3263,7 @@ export default function KaylenCareMonitorDashboard() {
                   <label className="text-sm font-semibold text-slate-700">Start date</label>
                   <input
                     type="date"
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportStartDate}
                     onChange={(e) => {
                       setReportDays("custom");
@@ -3223,7 +3275,7 @@ export default function KaylenCareMonitorDashboard() {
                   <label className="text-sm font-semibold text-slate-700">End date</label>
                   <input
                     type="date"
-                    className={`${inputClassName} min-h-[46px]`}
+                    className={reportInputClassName}
                     value={reportEndDate}
                     onChange={(e) => {
                       setReportDays("custom");
@@ -3242,13 +3294,9 @@ export default function KaylenCareMonitorDashboard() {
               <div className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
                 <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">Export</p>
-                    <h4 className="mt-1 text-lg font-bold text-slate-900">
+                    <h4 className="text-lg font-bold text-slate-900">
                       Create the report only when you need it
                     </h4>
-                    <p className="mt-1 text-sm text-slate-600">
-                      Pick the date range and report style, then copy or export the finished report.
-                    </p>
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
