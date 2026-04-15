@@ -708,7 +708,7 @@ export default function KaylenCareMonitorDashboard() {
         time: entryTime,
         amountOz: Number(row.amount || 0),
         isMilk: true,
-        summary: `${parseNotesValue(row.notes, "Item") || "Milk"} ? ${
+        summary: `${parseNotesValue(row.notes, "Item") || "Milk"} - ${
           row.amount || 0
         }oz`,
         details: [
@@ -733,7 +733,7 @@ export default function KaylenCareMonitorDashboard() {
         section: "Food Diary",
         date: entryDate,
         time: entryTime,
-        summary: `${row.item || "Food entry"} ? ${row.amount || "No amount"}`,
+        summary: `${row.item || "Food entry"} - ${row.amount || "No amount"}`,
         details: [
           `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
           parseNotesValue(row.notes, "Notes")
@@ -756,7 +756,7 @@ export default function KaylenCareMonitorDashboard() {
         section: "Medication",
         date: entryDate,
         time: entryTime,
-        summary: `${row.medicine || "Medication"} ? ${row.dose || "No dose"}`,
+        summary: `${row.medicine || "Medication"} - ${row.dose || "No dose"}`,
         details: [
           `Given by: ${parseNotesValue(row.notes, "Given by") || "Not set"}`,
           parseNotesValue(row.notes, "Notes")
@@ -846,7 +846,7 @@ export default function KaylenCareMonitorDashboard() {
         weightKg: row.weight_kg || "",
         heightCm: row.height_cm || "",
         bmi: calculateBmi(row.weight_kg || "", row.height_cm || ""),
-        summary: `${row.event || "Health"} ? ${row.duration || "No duration"}`,
+        summary: `${row.event || "Health"} - ${row.duration || "No duration"}`,
         details: [
           row.happened ? `What happened: ${row.happened}` : null,
           row.action ? `Action taken: ${row.action}` : null,
