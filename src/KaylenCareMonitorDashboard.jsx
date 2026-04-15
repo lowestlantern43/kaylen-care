@@ -58,6 +58,18 @@ const parseDisplayDate = (value) => {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
+const parseDisplayDateTime = (dateValue, timeValue = "") => {
+  const parsedDate = parseDisplayDate(dateValue);
+  if (!parsedDate) return null;
+
+  if (!timeValue || !timeValue.includes(":")) return parsedDate;
+
+  const [hours, minutes] = timeValue.split(":");
+  const next = new Date(parsedDate);
+  next.setHours(Number(hours) || 0, Number(minutes) || 0, 0, 0);
+  return Number.isNaN(next.getTime()) ? parsedDate : next;
+};
+
 const parseIsoDate = (value, endOfDay = false) => {
   if (!value) return null;
   const parsed = new Date(
@@ -681,68 +693,100 @@ export default function KaylenCareMonitorDashboard() {
     if (sleepError) console.error("Error loading sleep entries:", sleepError);
     if (healthError) console.error("Error loading health entries:", healthError);
 
-    const mappedMilkEntries = (milkData || []).map((row) => ({
-      id: `milk-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Food Diary",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: parseNotesValue(row.notes, "Time") || "",
-      amountOz: Number(row.amount || 0),
-      isMilk: true,
-      summary: `${parseNotesValue(row.notes, "Item") || "Milk"} · ${
-        row.amount || 0
-      }oz`,
-      details: [
-        `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+    const mappedMilkEntries = (milkData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const entryTime = parseNotesValue(row.notes, "Time") || "";
 
-    const mappedFoodEntries = (foodData || []).map((row) => ({
-      id: `food-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Food Diary",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: parseNotesValue(row.notes, "Time") || "",
-      summary: `${row.item || "Food entry"} · ${row.amount || "No amount"}`,
-      details: [
-        `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+      return {
+        id: `milk-${row.id}`,
+        createdAt:
+          parseDisplayDateTime(entryDate, entryTime)?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
+        section: "Food Diary",
+        date: entryDate,
+        time: entryTime,
+        amountOz: Number(row.amount || 0),
+        isMilk: true,
+        summary: `${parseNotesValue(row.notes, "Item") || "Milk"} ? ${
+          row.amount || 0
+        }oz`,
+        details: [
+          `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
 
-    const mappedMedicationEntries = (medicationData || []).map((row) => ({
-      id: `medication-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Medication",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: parseNotesValue(row.notes, "Time") || "",
-      summary: `${row.medicine || "Medication"} · ${row.dose || "No dose"}`,
-      details: [
-        `Given by: ${parseNotesValue(row.notes, "Given by") || "Not set"}`,
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+    const mappedFoodEntries = (foodData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const entryTime = parseNotesValue(row.notes, "Time") || "";
 
-    const mappedToiletingEntries = (toiletingData || []).map((row) => ({
-      id: `toileting-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Toileting",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: parseNotesValue(row.notes, "Time") || "",
-      summary: row.entry || "Toileting entry",
-      details: [
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+      return {
+        id: `food-${row.id}`,
+        createdAt:
+          parseDisplayDateTime(entryDate, entryTime)?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
+        section: "Food Diary",
+        date: entryDate,
+        time: entryTime,
+        summary: `${row.item || "Food entry"} ? ${row.amount || "No amount"}`,
+        details: [
+          `Location: ${parseNotesValue(row.notes, "Location") || "Not set"}`,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const mappedMedicationEntries = (medicationData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const entryTime = parseNotesValue(row.notes, "Time") || "";
+
+      return {
+        id: `medication-${row.id}`,
+        createdAt:
+          parseDisplayDateTime(entryDate, entryTime)?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
+        section: "Medication",
+        date: entryDate,
+        time: entryTime,
+        summary: `${row.medicine || "Medication"} ? ${row.dose || "No dose"}`,
+        details: [
+          `Given by: ${parseNotesValue(row.notes, "Given by") || "Not set"}`,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
+
+    const mappedToiletingEntries = (toiletingData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const entryTime = parseNotesValue(row.notes, "Time") || "";
+
+      return {
+        id: `toileting-${row.id}`,
+        createdAt:
+          parseDisplayDateTime(entryDate, entryTime)?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
+        section: "Toileting",
+        date: entryDate,
+        time: entryTime,
+        summary: row.entry || "Toileting entry",
+        details: [
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
 
     const mappedSleepEntries = (sleepData || []).map((row) => {
       const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
@@ -757,7 +801,10 @@ export default function KaylenCareMonitorDashboard() {
 
       return {
         id: `sleep-${row.id}`,
-        createdAt: row.time || new Date().toISOString(),
+        createdAt:
+          parseDisplayDateTime(entryDate, row.bedtime || "")?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
         section: "Sleep",
         date: entryDate,
         time: row.bedtime || "",
@@ -782,30 +829,38 @@ export default function KaylenCareMonitorDashboard() {
       };
     });
 
-    const mappedHealthEntries = (healthData || []).map((row) => ({
-      id: `health-${row.id}`,
-      createdAt: row.time || new Date().toISOString(),
-      section: "Health",
-      date: parseNotesValue(row.notes, "Date") || todayValue(),
-      time: parseNotesValue(row.notes, "Time") || "",
-      event: row.event || "Health",
-      weightKg: row.weight_kg || "",
-      heightCm: row.height_cm || "",
-      bmi: calculateBmi(row.weight_kg || "", row.height_cm || ""),
-      summary: `${row.event || "Health"} · ${row.duration || "No duration"}`,
-      details: [
-        row.happened ? `What happened: ${row.happened}` : null,
-        row.action ? `Action taken: ${row.action}` : null,
-        row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
-        row.height_cm ? `Height (cm): ${row.height_cm}` : null,
-        calculateBmi(row.weight_kg || "", row.height_cm || "")
-          ? `BMI: ${calculateBmi(row.weight_kg || "", row.height_cm || "")}`
-          : null,
-        parseNotesValue(row.notes, "Notes")
-          ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
-          : null,
-      ].filter(Boolean),
-    }));
+    const mappedHealthEntries = (healthData || []).map((row) => {
+      const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
+      const entryTime = parseNotesValue(row.notes, "Time") || "";
+
+      return {
+        id: `health-${row.id}`,
+        createdAt:
+          parseDisplayDateTime(entryDate, entryTime)?.toISOString() ||
+          row.time ||
+          new Date().toISOString(),
+        section: "Health",
+        date: entryDate,
+        time: entryTime,
+        event: row.event || "Health",
+        weightKg: row.weight_kg || "",
+        heightCm: row.height_cm || "",
+        bmi: calculateBmi(row.weight_kg || "", row.height_cm || ""),
+        summary: `${row.event || "Health"} ? ${row.duration || "No duration"}`,
+        details: [
+          row.happened ? `What happened: ${row.happened}` : null,
+          row.action ? `Action taken: ${row.action}` : null,
+          row.weight_kg ? `Weight (kg): ${row.weight_kg}` : null,
+          row.height_cm ? `Height (cm): ${row.height_cm}` : null,
+          calculateBmi(row.weight_kg || "", row.height_cm || "")
+            ? `BMI: ${calculateBmi(row.weight_kg || "", row.height_cm || "")}`
+            : null,
+          parseNotesValue(row.notes, "Notes")
+            ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
+            : null,
+        ].filter(Boolean),
+      };
+    });
 
     const combined = [
       ...mappedMilkEntries,
