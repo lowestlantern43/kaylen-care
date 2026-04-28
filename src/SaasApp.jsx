@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
-import {
-  createChildPhotoObjectKey,
-  getSpacesUploadNotReadyMessage,
-} from "./storage/spaces";
 
 const inputClass =
   "mt-2 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -462,6 +458,7 @@ function WorkspaceGate({ session, onLogout }) {
     dateOfBirth: "",
     nhsNumber: "",
     avatarUrl: "",
+    avatarObjectKey: "",
     notes: "",
   });
   const [error, setError] = useState("");
@@ -596,6 +593,8 @@ function WorkspaceGate({ session, onLogout }) {
         selectedChild?.dateOfBirth || selectedChild?.date_of_birth || "",
       nhsNumber: selectedChild?.nhsNumber || selectedChild?.nhs_number || "",
       avatarUrl: selectedChild?.avatarUrl || selectedChild?.avatar_url || "",
+      avatarObjectKey:
+        selectedChild?.avatarObjectKey || selectedChild?.avatar_object_key || "",
       notes: selectedChild?.notes || "",
     });
   }, [selectedChild]);
@@ -757,6 +756,7 @@ function WorkspaceGate({ session, onLogout }) {
         dateOfBirth: childEditForm.dateOfBirth,
         nhsNumber: childEditForm.nhsNumber,
         avatarUrl: childEditForm.avatarUrl,
+        avatarObjectKey: childEditForm.avatarObjectKey,
         notes: childEditForm.notes,
       });
       setChildren((current) =>
@@ -774,17 +774,44 @@ function WorkspaceGate({ session, onLogout }) {
     const file = event.target.files?.[0];
     if (!file || !selectedFamilyId || !selectedChildId) return;
 
-    const objectKey = createChildPhotoObjectKey({
-      familyId: selectedFamilyId,
-      childId: selectedChildId,
-      fileName: file.name,
-    });
+    setIsUploadingChildPhoto(true);
+    setError("");
 
-    setError(
-      `${getSpacesUploadNotReadyMessage()} Prepared object path: ${objectKey}`,
-    );
-    setIsUploadingChildPhoto(false);
-    event.target.value = "";
+    try {
+      const upload = await api.signProfilePhotoUpload({
+        familyId: selectedFamilyId,
+        childId: selectedChildId,
+        fileName: file.name,
+        fileType: file.type,
+      });
+
+      await api.uploadToSignedUrl(upload.signedUploadUrl, file);
+
+      const updated = await api.updateChild(selectedFamilyId, selectedChildId, {
+        firstName: childEditForm.firstName,
+        lastName: childEditForm.lastName,
+        dateOfBirth: childEditForm.dateOfBirth,
+        nhsNumber: childEditForm.nhsNumber,
+        avatarUrl: upload.publicUrl,
+        avatarObjectKey: upload.objectKey,
+        notes: childEditForm.notes,
+      });
+
+      setChildEditForm((current) => ({
+        ...current,
+        avatarUrl: upload.publicUrl,
+        avatarObjectKey: upload.objectKey,
+      }));
+      setChildren((current) =>
+        current.map((child) => (child.id === updated.id ? updated : child)),
+      );
+      setAccountMessage("Child photo updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsUploadingChildPhoto(false);
+      event.target.value = "";
+    }
   };
 
   const loadAdmin = async () => {
@@ -1942,7 +1969,7 @@ function WorkspaceGate({ session, onLogout }) {
                           {isUploadingChildPhoto ? "Uploading..." : "Upload photo"}
                           <input
                             type="file"
-                            accept="image/*"
+                            accept="image/jpeg,image/png,image/webp"
                             className="hidden"
                             onChange={uploadSelectedChildPhoto}
                             disabled={isUploadingChildPhoto}

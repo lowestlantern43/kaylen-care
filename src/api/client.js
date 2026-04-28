@@ -27,6 +27,20 @@ async function request(path, options = {}) {
   return payload.data;
 }
 
+async function uploadToSignedUrl(signedUploadUrl, file) {
+  const response = await fetch(signedUploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": file.type,
+    },
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error("The photo upload failed. Please try again.");
+  }
+}
+
 export const api = {
   me: () => request("/auth/me"),
   login: ({ email, password }) =>
@@ -76,6 +90,12 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  signProfilePhotoUpload: ({ familyId, childId, fileName, fileType }) =>
+    request("/uploads/profile-photo/sign", {
+      method: "POST",
+      body: JSON.stringify({ familyId, childId, fileName, fileType }),
+    }),
+  uploadToSignedUrl,
   listChildCareOptions: (familyId, childId) =>
     request(`/families/${familyId}/children/${childId}/care-options`),
   createChildCareOption: (familyId, childId, payload) =>
