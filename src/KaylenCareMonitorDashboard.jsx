@@ -280,6 +280,7 @@ export default function KaylenCareMonitorDashboard({
   customFoodOptions = [],
   customMedicationOptions = [],
   customGivenByOptions = [],
+  customLocationOptions = [],
   onCreateCareOption,
   childProfile = {},
   importantEvents = [],
@@ -339,6 +340,7 @@ export default function KaylenCareMonitorDashboard({
   const [saveMedicationForFuture, setSaveMedicationForFuture] =
     useState(false);
   const [saveGivenByForFuture, setSaveGivenByForFuture] = useState(false);
+  const [saveLocationForFuture, setSaveLocationForFuture] = useState(false);
 
   const touchStartY = useRef(0);
   const touchCurrentY = useRef(0);
@@ -677,6 +679,7 @@ export default function KaylenCareMonitorDashboard({
 
   const customFoodLabels = customFoodOptions.map((option) => option.label);
   const customGivenByLabels = customGivenByOptions.map((option) => option.label);
+  const customLocationLabels = customLocationOptions.map((option) => option.label);
 
   const defaultMedicationOptions = useSaasApi
     ? ["Other"]
@@ -700,7 +703,7 @@ export default function KaylenCareMonitorDashboard({
   ]);
 
   const defaultFoodOptions = useSaasApi
-    ? ["Drink", "Breakfast", "Lunch", "Dinner", "Snack", "Other"]
+    ? ["Drink", "Breakfast", "Lunch", "Dinner", "Dessert", "Snack", "Other"]
     : ["Cottage pie", "Weetabix", "Heinz Fruit Custard", "Drink", "Other"];
 
   const foodOptions = uniqueList([
@@ -718,6 +721,13 @@ export default function KaylenCareMonitorDashboard({
     ...defaultGivenByOptions.slice(0, -1),
     ...customGivenByLabels,
     ...savedGivenByOptions,
+    "Other",
+  ]);
+
+  const locationOptions = uniqueList([
+    "Home",
+    "School",
+    ...customLocationLabels,
     "Other",
   ]);
 
@@ -900,6 +910,7 @@ export default function KaylenCareMonitorDashboard({
     });
     setFoodValue("");
     setSaveFoodForFuture(false);
+    setSaveLocationForFuture(false);
   };
 
   const resetMedicationForm = () => {
@@ -3208,27 +3219,42 @@ export default function KaylenCareMonitorDashboard({
             }
           >
             <option value="">Select location</option>
-            <option>Home</option>
-            <option>School</option>
-            <option>Other</option>
+            {locationOptions.map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
+            ))}
           </select>
         </div>
 
         {showOtherLocation ? (
-          <div className={`${cardClassName} md:col-span-2`}>
-            <label className="text-sm font-semibold text-slate-700">
-              Other location
-            </label>
-            <input
-              type="text"
-              placeholder="Type location"
-              className={`${inputClassName} min-h-[48px] border-dashed`}
-              value={foodForm.otherLocation}
-              onChange={(e) =>
-                setFoodForm({ ...foodForm, otherLocation: e.target.value })
-              }
-            />
-          </div>
+          <>
+            <div className={`${cardClassName} md:col-span-2`}>
+              <label className="text-sm font-semibold text-slate-700">
+                Other location
+              </label>
+              <input
+                type="text"
+                placeholder="Type location"
+                className={`${inputClassName} min-h-[48px] border-dashed`}
+                value={foodForm.otherLocation}
+                onChange={(e) =>
+                  setFoodForm({ ...foodForm, otherLocation: e.target.value })
+                }
+              />
+            </div>
+            <div className={`${cardClassName} md:col-span-2`}>
+              <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  checked={saveLocationForFuture}
+                  onChange={(e) => setSaveLocationForFuture(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+                Save this location for future
+              </label>
+            </div>
+          </>
         ) : null}
 
         <div className={`${cardClassName} md:col-span-2`}>
@@ -3426,6 +3452,16 @@ export default function KaylenCareMonitorDashboard({
                   setSavedFoodOptions((current) =>
                     dedupeAppend(current, foodForm.otherItem),
                   );
+                }
+
+                if (showOtherLocation && saveLocationForFuture) {
+                  if (onCreateCareOption) {
+                    await onCreateCareOption({
+                      category: "location",
+                      label: foodForm.otherLocation,
+                      defaultValue: "",
+                    });
+                  }
                 }
 
                 resetFoodForm();

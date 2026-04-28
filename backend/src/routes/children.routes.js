@@ -458,6 +458,7 @@ childrenRouter.post(
       "food",
       "medication",
       "given_by",
+      "location",
     ]);
     const label = requireString(req.body, "label", "Name");
     const defaultValue = optionalString(req.body, "defaultValue");

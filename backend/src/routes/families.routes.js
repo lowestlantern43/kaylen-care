@@ -9,6 +9,22 @@ export const familiesRouter = Router();
 
 familiesRouter.use(requireAuth);
 
+function optionalEmergencyContacts(body) {
+  const contacts = body?.emergencyContacts;
+
+  if (!Array.isArray(contacts)) {
+    return [];
+  }
+
+  return contacts.slice(0, 2).map((contact) => ({
+    name: typeof contact?.name === "string" ? contact.name.trim() : "",
+    relationship:
+      typeof contact?.relationship === "string" ? contact.relationship.trim() : "",
+    phone: typeof contact?.phone === "string" ? contact.phone.trim() : "",
+    notes: typeof contact?.notes === "string" ? contact.notes.trim() : "",
+  }));
+}
+
 familiesRouter.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -18,6 +34,8 @@ familiesRouter.get(
           f.id,
           f.name,
           f.timezone,
+          f.address,
+          f.emergency_contacts AS "emergencyContacts",
           fm.role,
           f.created_at AS "createdAt"
         FROM family_members fm
@@ -89,15 +107,32 @@ familiesRouter.patch(
   asyncHandler(async (req, res) => {
     const name = requireString(req.body, "name", "Family name");
     const timezone = optionalString(req.body, "timezone") || "Europe/London";
+    const address = optionalString(req.body, "address");
+    const emergencyContacts = optionalEmergencyContacts(req.body);
 
     const { rows } = await query(
       `
         UPDATE families
-        SET name = $1, timezone = $2
-        WHERE id = $3 AND deleted_at IS NULL
-        RETURNING id, name, timezone, updated_at AS "updatedAt"
+        SET name = $1,
+            timezone = $2,
+            address = $3,
+            emergency_contacts = $4
+        WHERE id = $5 AND deleted_at IS NULL
+        RETURNING
+          id,
+          name,
+          timezone,
+          address,
+          emergency_contacts AS "emergencyContacts",
+          updated_at AS "updatedAt"
       `,
-      [name, timezone, req.familyMember.family_id],
+      [
+        name,
+        timezone,
+        address,
+        JSON.stringify(emergencyContacts),
+        req.familyMember.family_id,
+      ],
     );
 
     res.json({ data: rows[0], error: null });

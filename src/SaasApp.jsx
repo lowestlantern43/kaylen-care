@@ -421,6 +421,10 @@ function WorkspaceGate({ session, onLogout }) {
   const normalizeFamily = (family) => ({
     familyId: family.familyId || family.id,
     familyName: family.familyName || family.name,
+    address: family.address || "",
+    emergencyContacts: Array.isArray(family.emergencyContacts)
+      ? family.emergencyContacts
+      : family.emergency_contacts || [],
     role: family.role,
   });
   const childDisplayName = (child) =>
@@ -454,6 +458,11 @@ function WorkspaceGate({ session, onLogout }) {
   const [childName, setChildName] = useState("");
   const [familyName, setFamilyName] = useState("");
   const [familyEditName, setFamilyEditName] = useState("");
+  const [familyAddress, setFamilyAddress] = useState("");
+  const [familyEmergencyContacts, setFamilyEmergencyContacts] = useState([
+    { name: "", relationship: "", phone: "", notes: "" },
+    { name: "", relationship: "", phone: "", notes: "" },
+  ]);
   const [childEditForm, setChildEditForm] = useState({
     firstName: "",
     lastName: "",
@@ -543,6 +552,7 @@ function WorkspaceGate({ session, onLogout }) {
         (option) => option.category === "medication",
       ),
       givenBy: childCareOptions.filter((option) => option.category === "given_by"),
+      locations: childCareOptions.filter((option) => option.category === "location"),
     }),
     [childCareOptions],
   );
@@ -585,7 +595,17 @@ function WorkspaceGate({ session, onLogout }) {
 
   useEffect(() => {
     setFamilyEditName(selectedFamily?.familyName || "");
-  }, [selectedFamily?.familyName]);
+    setFamilyAddress(selectedFamily?.address || "");
+    const contacts = selectedFamily?.emergencyContacts || [];
+    setFamilyEmergencyContacts([
+      contacts[0] || { name: "", relationship: "", phone: "", notes: "" },
+      contacts[1] || { name: "", relationship: "", phone: "", notes: "" },
+    ]);
+  }, [
+    selectedFamily?.familyName,
+    selectedFamily?.address,
+    selectedFamily?.emergencyContacts,
+  ]);
 
   useEffect(() => {
     setChildEditForm({
@@ -726,15 +746,22 @@ function WorkspaceGate({ session, onLogout }) {
     try {
       const updated = await api.updateFamily(selectedFamilyId, {
         name: familyEditName,
+        address: familyAddress,
+        emergencyContacts: familyEmergencyContacts,
       });
       setFamilies((current) =>
         current.map((family) =>
           family.familyId === selectedFamilyId
-            ? { ...family, familyName: updated.name }
+            ? {
+                ...family,
+                familyName: updated.name,
+                address: updated.address || "",
+                emergencyContacts: updated.emergencyContacts || [],
+              }
             : family,
         ),
       );
-      setAccountMessage("Family name updated.");
+      setAccountMessage("Family details updated.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -1789,20 +1816,113 @@ function WorkspaceGate({ session, onLogout }) {
                   This is the shared workspace name shown to parents and carers.
                 </p>
                 <form
-                  className="mt-4 grid gap-3 md:grid-cols-[1fr_auto]"
+                  className="mt-4 space-y-4"
                   onSubmit={saveFamilyProfile}
                 >
-                  <input
-                    className={`${inputClass} mt-0`}
-                    value={familyEditName}
-                    onChange={(event) => setFamilyEditName(event.target.value)}
-                    placeholder="Family name"
-                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-sm font-semibold text-slate-700">
+                        Family name
+                      </label>
+                      <input
+                        className={inputClass}
+                        value={familyEditName}
+                        onChange={(event) => setFamilyEditName(event.target.value)}
+                        placeholder="Family name"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-sm font-semibold text-slate-700">
+                        Family address
+                      </label>
+                      <input
+                        className={inputClass}
+                        value={familyAddress}
+                        onChange={(event) => setFamilyAddress(event.target.value)}
+                        placeholder="Address, optional"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {familyEmergencyContacts.map((contact, index) => (
+                      <div
+                        key={index}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                      >
+                        <h4 className="text-sm font-bold text-slate-900">
+                          Emergency contact {index + 1}
+                        </h4>
+                        <div className="mt-3 grid gap-3">
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={contact.name || ""}
+                            onChange={(event) =>
+                              setFamilyEmergencyContacts((current) =>
+                                current.map((item, contactIndex) =>
+                                  contactIndex === index
+                                    ? { ...item, name: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            placeholder="Name"
+                          />
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={contact.relationship || ""}
+                            onChange={(event) =>
+                              setFamilyEmergencyContacts((current) =>
+                                current.map((item, contactIndex) =>
+                                  contactIndex === index
+                                    ? {
+                                        ...item,
+                                        relationship: event.target.value,
+                                      }
+                                    : item,
+                                ),
+                              )
+                            }
+                            placeholder="Relationship"
+                          />
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={contact.phone || ""}
+                            onChange={(event) =>
+                              setFamilyEmergencyContacts((current) =>
+                                current.map((item, contactIndex) =>
+                                  contactIndex === index
+                                    ? { ...item, phone: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            placeholder="Phone number"
+                          />
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={contact.notes || ""}
+                            onChange={(event) =>
+                              setFamilyEmergencyContacts((current) =>
+                                current.map((item, contactIndex) =>
+                                  contactIndex === index
+                                    ? { ...item, notes: event.target.value }
+                                    : item,
+                                ),
+                              )
+                            }
+                            placeholder="Notes, optional"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                   <button
                     className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSavingFamily || !familyEditName.trim()}
                   >
-                    {isSavingFamily ? "Saving..." : "Save family"}
+                    {isSavingFamily ? "Saving..." : "Save family details"}
                   </button>
                 </form>
               </section>
@@ -3340,6 +3460,7 @@ function WorkspaceGate({ session, onLogout }) {
         customFoodOptions={groupedCareOptions.food}
         customMedicationOptions={groupedCareOptions.medication}
         customGivenByOptions={groupedCareOptions.givenBy}
+        customLocationOptions={groupedCareOptions.locations}
         onCreateCareOption={addCareOptionFromDiary}
         childProfile={childProfile}
         importantEvents={importantEvents}
