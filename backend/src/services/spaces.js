@@ -88,12 +88,23 @@ export function buildPublicSpacesUrl(objectKey) {
   return `${normalizePublicUrl(config.spacesPublicUrl)}/${encodeObjectKey(objectKey)}`;
 }
 
+function buildBucketUploadUrl(objectKey) {
+  const endpoint = new URL(normalizeEndpoint(config.spacesEndpoint));
+  const bucketPrefix = `${config.spacesBucket}.`;
+  const host = endpoint.hostname.startsWith(bucketPrefix)
+    ? endpoint.hostname
+    : `${config.spacesBucket}.${endpoint.hostname}`;
+
+  return new URL(
+    `${endpoint.protocol}//${host}/${encodeObjectKey(objectKey)}`,
+  );
+}
+
 export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300 }) {
   requireSpacesConfig();
   getProfilePhotoExtension(fileType);
 
-  const endpoint = normalizeEndpoint(config.spacesEndpoint);
-  const uploadUrl = new URL(`/${config.spacesBucket}/${encodeObjectKey(objectKey)}`, endpoint);
+  const uploadUrl = buildBucketUploadUrl(objectKey);
   const host = uploadUrl.host;
   const { amzDate, dateStamp } = buildAmzDates();
   const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;

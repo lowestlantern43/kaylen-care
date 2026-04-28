@@ -28,16 +28,27 @@ async function request(path, options = {}) {
 }
 
 async function uploadToSignedUrl(signedUploadUrl, file) {
-  const response = await fetch(signedUploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Type": file.type,
-    },
-    body: file,
-  });
+  let response;
+
+  try {
+    response = await fetch(signedUploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Type": file.type,
+      },
+      body: file,
+    });
+  } catch {
+    throw new Error(
+      "The photo upload could not reach DigitalOcean Spaces. Check the Space CORS settings allow PUT from this app URL.",
+    );
+  }
 
   if (!response.ok) {
-    throw new Error("The photo upload failed. Please try again.");
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `The photo upload failed (${response.status}). ${details || "Please check the Spaces bucket name, endpoint, CORS, and access key permissions."}`,
+    );
   }
 }
 
