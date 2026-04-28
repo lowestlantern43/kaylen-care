@@ -36,6 +36,26 @@ const dedupeAppend = (items, value) => {
 const uniqueList = (items) =>
   Array.from(new Set(items.map((item) => (item || "").trim()).filter(Boolean)));
 
+const parseMedicationProfile = (value = "") =>
+  String(value)
+    .split(/\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separator = [" - ", " – ", " — ", ":"].find((item) =>
+        line.includes(item),
+      );
+      if (!separator) {
+        return { name: line, dose: "" };
+      }
+      const [name, ...doseParts] = line.split(separator);
+      return {
+        name: name.trim(),
+        dose: doseParts.join(separator).trim(),
+      };
+    })
+    .filter((item) => item.name);
+
 const medicationStatusLabel = (status) => {
   switch (status) {
     case "missed":
@@ -517,6 +537,10 @@ export default function KaylenCareMonitorDashboard({
   const customMedicationLabels = customMedicationOptions.map(
     (option) => option.label,
   );
+  const profileMedicationOptions = parseMedicationProfile(
+    childProfile.currentMedications,
+  );
+  const profileMedicationLabels = profileMedicationOptions.map((item) => item.name);
   const orderedSections = useMemo(() => {
     const byTitle = new Map(sections.map((section) => [section.title, section]));
     const ordered = dashboardOrder
@@ -698,6 +722,7 @@ export default function KaylenCareMonitorDashboard({
 
   const medicationOptions = uniqueList([
     ...defaultMedicationOptions.slice(0, -1),
+    ...profileMedicationLabels,
     ...customMedicationLabels,
     ...savedMedicationOptions,
     "Other",
@@ -734,7 +759,9 @@ export default function KaylenCareMonitorDashboard({
 
   const getMedicationDefaultDose = (medicine) =>
     customMedicationOptions.find((option) => option.label === medicine)
-      ?.defaultValue || getDefaultDoseForMedicine(medicine);
+      ?.defaultValue ||
+    profileMedicationOptions.find((option) => option.name === medicine)?.dose ||
+    getDefaultDoseForMedicine(medicine);
   const getFoodDefaultNote = (food) =>
     customFoodOptions.find((option) => option.label === food)?.defaultValue || "";
 
@@ -3647,12 +3674,34 @@ export default function KaylenCareMonitorDashboard({
             className={`${inputClassName} min-h-[48px]`}
           >
             <option value="">Select regular medication</option>
+            {profileMedicationLabels.length ? (
+              <optgroup label="Child profile">
+                {profileMedicationLabels.map((item) => (
+                  <option key={`profile-${item}`} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
             {medicationOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+              profileMedicationLabels.includes(item) ? null : (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              )
             ))}
           </select>
+          {profileMedicationLabels.length ? (
+            <p className="mt-2 text-xs font-medium text-slate-500">
+              Profile medicines are pulled from Settings &gt; Children &gt; Care
+              profile.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs font-medium text-slate-500">
+              Add regular medication in Settings &gt; Children &gt; Care profile
+              to prefill this list.
+            </p>
+          )}
         </div>
 
         {showOtherMedication ? (

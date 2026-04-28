@@ -2248,8 +2248,14 @@ function WorkspaceGate({ session, onLogout }) {
                     ].map(([field, label]) => (
                       <label key={field} className="text-sm font-semibold text-slate-700">
                         {label}
+                        {field === "currentMedications" ? (
+                          <span className="mt-1 block text-xs font-medium text-slate-500">
+                            Add one per line, for example: Keppra - 5ml. These
+                            will appear in the Medication card and Care Snapshot.
+                          </span>
+                        ) : null}
                         <textarea
-                          rows={3}
+                          rows={field === "currentMedications" ? 5 : 3}
                           className={inputClass}
                           value={childProfile[field] || ""}
                           onChange={(event) =>
