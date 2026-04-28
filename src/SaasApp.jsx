@@ -3580,6 +3580,7 @@ function WorkspaceGate({ session, onLogout }) {
         childId={selectedChild.id}
         childName={selectedChild.firstName || selectedChild.first_name}
         childDetails={selectedChild}
+        familyDetails={selectedFamily}
         customFoodOptions={groupedCareOptions.food}
         customMedicationOptions={groupedCareOptions.medication}
         customGivenByOptions={groupedCareOptions.givenBy}

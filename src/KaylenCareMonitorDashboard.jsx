@@ -277,6 +277,7 @@ export default function KaylenCareMonitorDashboard({
   childId,
   childName = "Child",
   childDetails = {},
+  familyDetails = {},
   customFoodOptions = [],
   customMedicationOptions = [],
   customGivenByOptions = [],
@@ -1823,6 +1824,19 @@ export default function KaylenCareMonitorDashboard({
   const childDob = childDetails?.dateOfBirth || childDetails?.date_of_birth || "";
   const childAge = calculateAge(childDob);
   const childNhsNumber = childDetails?.nhsNumber || childDetails?.nhs_number || "";
+  const familyAddress = familyDetails?.address || "";
+  const familyEmergencyContacts = Array.isArray(familyDetails?.emergencyContacts)
+    ? familyDetails.emergencyContacts
+    : Array.isArray(familyDetails?.emergency_contacts)
+      ? familyDetails.emergency_contacts
+      : [];
+  const visibleEmergencyContacts = familyEmergencyContacts
+    .slice(0, 2)
+    .filter((contact) =>
+      [contact?.name, contact?.relationship, contact?.phone, contact?.notes].some(
+        (value) => String(value || "").trim(),
+      ),
+    );
 
   const snapshotEntries = useMemo(() => {
     const end = new Date();
@@ -5264,10 +5278,39 @@ export default function KaylenCareMonitorDashboard({
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
               Emergency details
             </h4>
+            <div className="mt-2 space-y-2">
+              {visibleEmergencyContacts.length ? (
+                visibleEmergencyContacts.map((contact, index) => (
+                  <div
+                    key={`${contact.name || "contact"}-${index}`}
+                    className="rounded-xl border border-amber-100 bg-white/80 px-2.5 py-2 text-sm text-slate-700"
+                  >
+                    <p className="font-bold text-slate-900">
+                      Emergency contact {index + 1}: {contact.name || "Name not added"}
+                    </p>
+                    {contact.relationship ? (
+                      <p>Relationship: {contact.relationship}</p>
+                    ) : null}
+                    {contact.phone ? <p>Phone: {contact.phone}</p> : null}
+                    {contact.notes ? <p>Notes: {contact.notes}</p> : null}
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-700">
+                  Add emergency contacts in Settings &gt; Family.
+                </p>
+              )}
+            </div>
             <p className="mt-2 text-sm text-slate-700">
-              <span className="font-bold">Contacts:</span>{" "}
-              {childProfile.emergencyNotes || "Add emergency contacts/notes in the care profile."}
+              <span className="font-bold">Family address:</span>{" "}
+              {familyAddress || "Not added"}
             </p>
+            {childProfile.emergencyNotes ? (
+              <p className="mt-1 text-sm text-slate-700">
+                <span className="font-bold">Emergency notes:</span>{" "}
+                {childProfile.emergencyNotes}
+              </p>
+            ) : null}
             <p className="mt-1 text-sm text-slate-700">
               <span className="font-bold">Allergies:</span> {allergies}
             </p>
