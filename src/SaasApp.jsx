@@ -777,23 +777,12 @@ function WorkspaceGate({ session, onLogout }) {
     setError("");
 
     try {
-      const upload = await api.signProfilePhotoUpload({
+      const upload = await api.uploadProfilePhoto({
         familyId: selectedFamilyId,
         childId: selectedChildId,
-        fileName: file.name,
-        fileType: file.type,
+        file,
       });
-
-      await api.uploadToSignedUrl(upload.signedUploadUrl, file);
-
-      const updated = await api.updateChild(selectedFamilyId, selectedChildId, {
-        firstName: childEditForm.firstName,
-        lastName: childEditForm.lastName,
-        dateOfBirth: childEditForm.dateOfBirth,
-        nhsNumber: childEditForm.nhsNumber,
-        avatarUrl: upload.publicUrl,
-        notes: childEditForm.notes,
-      });
+      const updated = upload.child;
 
       setChildEditForm((current) => ({
         ...current,

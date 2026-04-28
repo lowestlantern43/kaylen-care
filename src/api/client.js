@@ -52,6 +52,39 @@ async function uploadToSignedUrl(signedUploadUrl, file) {
   }
 }
 
+async function uploadProfilePhoto({ familyId, childId, file }) {
+  const params = new URLSearchParams({
+    familyId,
+    childId,
+    fileName: file.name,
+  });
+
+  const response = await fetch(`${API_BASE_URL}/uploads/profile-photo?${params}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": file.type,
+      "X-File-Name": file.name,
+    },
+    body: file,
+  });
+
+  const payload = await response.json().catch(() => ({
+    data: null,
+    error: {
+      message: "The server returned an unreadable upload response.",
+    },
+  }));
+
+  if (!response.ok) {
+    throw new Error(
+      payload?.error?.message || "The photo upload failed. Please try again.",
+    );
+  }
+
+  return payload.data;
+}
+
 export const api = {
   me: () => request("/auth/me"),
   login: ({ email, password }) =>
@@ -107,6 +140,7 @@ export const api = {
       body: JSON.stringify({ familyId, childId, fileName, fileType }),
     }),
   uploadToSignedUrl,
+  uploadProfilePhoto,
   listChildCareOptions: (familyId, childId) =>
     request(`/families/${familyId}/children/${childId}/care-options`),
   createChildCareOption: (familyId, childId, payload) =>
