@@ -15,10 +15,11 @@ const avatarUrlForChild = (child) => child?.avatarUrl || child?.avatar_url || ""
 
 function ChildAvatar({ child, active = false, size = "sm" }) {
   const avatarUrl = avatarUrlForChild(child);
+  const [failedUrl, setFailedUrl] = useState("");
   const sizeClass = size === "lg" ? "h-14 w-14" : "h-8 w-8";
   const iconSizeClass = size === "lg" ? "h-7 w-7" : "h-4 w-4";
 
-  if (avatarUrl) {
+  if (avatarUrl && avatarUrl !== failedUrl) {
     return (
       <img
         src={avatarUrl}
@@ -26,6 +27,7 @@ function ChildAvatar({ child, active = false, size = "sm" }) {
         className={`${sizeClass} rounded-full object-cover ring-2 ${
           active ? "ring-indigo-200" : "ring-white"
         }`}
+        onError={() => setFailedUrl(avatarUrl)}
       />
     );
   }
@@ -1963,6 +1965,11 @@ function WorkspaceGate({ session, onLogout }) {
                           />
                         </label>
                       </div>
+                      {childEditForm.avatarUrl ? (
+                        <p className="break-all rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
+                          Photo URL: {childEditForm.avatarUrl}
+                        </p>
+                      ) : null}
                       <div className="grid gap-3 sm:grid-cols-2">
                         <input
                           className={`${inputClass} mt-0`}
