@@ -37,9 +37,11 @@ export function createApp() {
   );
   app.use(cookieParser());
   app.use("/api/stripe", express.raw({ type: "application/json" }), stripeRouter);
+  app.use("/stripe", express.raw({ type: "application/json" }), stripeRouter);
   app.use(express.json({ limit: "1mb" }));
 
   app.use("/api", apiRouter);
+  app.use("/", apiRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
