@@ -1,0 +1,17 @@
+{
+  "name": "FamilyTrack",
+  "short_name": "FamilyTrack",
+  "description": "Tracking what matters",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#312e81",
+  "icons": [
+    {
+      "src": "/kaylen-diary-home-icon.png",
+      "sizes": "180x180",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

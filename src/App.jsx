@@ -1,5 +1,5 @@
-import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
+import SaasApp from "./SaasApp";
 
 export default function App() {
-  return <KaylenCareMonitorDashboard />;
+  return <SaasApp />;
 }

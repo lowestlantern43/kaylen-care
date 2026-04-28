@@ -2,3 +2,10 @@ node_modules
 dist
 .env
 .env.local
+.env.local.txt
+*.log
+*.tmp
+*.bak
+Thumbs.db
+Desktop.ini
+.DS_Store
