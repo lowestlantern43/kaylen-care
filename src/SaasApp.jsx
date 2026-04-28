@@ -478,6 +478,9 @@ function WorkspaceGate({ session, onLogout }) {
   const [isSavingChild, setIsSavingChild] = useState(false);
   const [isSavingChildProfile, setIsSavingChildProfile] = useState(false);
   const [isUploadingChildPhoto, setIsUploadingChildPhoto] = useState(false);
+  const [newRegularFood, setNewRegularFood] = useState("");
+  const [newSavedLocation, setNewSavedLocation] = useState("");
+  const [isSavingCareOption, setIsSavingCareOption] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPlatformAdmin, setShowPlatformAdmin] = useState(false);
   const [settingsTab, setSettingsTab] = useState("account");
@@ -1029,6 +1032,34 @@ function WorkspaceGate({ session, onLogout }) {
     ]);
 
     return option;
+  };
+
+  const addSavedCareOption = async (event, category) => {
+    event.preventDefault();
+    const label = category === "food" ? newRegularFood : newSavedLocation;
+    if (!label.trim()) return;
+
+    setIsSavingCareOption(true);
+    setError("");
+
+    try {
+      await addCareOptionFromDiary({
+        category,
+        label,
+        defaultValue: "",
+      });
+      if (category === "food") {
+        setNewRegularFood("");
+        setAccountMessage("Regular food saved.");
+      } else {
+        setNewSavedLocation("");
+        setAccountMessage("Location saved.");
+      }
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsSavingCareOption(false);
+    }
   };
 
   const startCheckout = async () => {
@@ -2261,30 +2292,122 @@ function WorkspaceGate({ session, onLogout }) {
               ) : null}
 
               {settingsTab === "preferences" ? (
-                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
-                  <h3 className="font-bold text-slate-900">App Preferences</h3>
-                  <p className="mt-1 text-sm text-slate-600">
-                    Dashboard card order is saved automatically when you drag
-                    cards on the main diary screen.
-                  </p>
-                  <label className="mt-4 block text-sm font-semibold text-slate-700">
-                    Time zone
-                    <select
-                      className={inputClass}
-                      value={timeZonePreference}
-                      onChange={(event) => setTimeZonePreference(event.target.value)}
-                    >
-                      <option value="auto">Auto-detect ({detectedTimeZone})</option>
-                      <option value="Europe/London">Europe/London</option>
-                      <option value="Europe/Dublin">Europe/Dublin</option>
-                      <option value="UTC">UTC</option>
-                    </select>
-                  </label>
-                  <p className="mt-2 text-xs font-medium text-slate-500">
-                    Dates shown in account settings use {activeTimeZone}. Diary
-                    entries keep their saved date and time values.
-                  </p>
-                </section>
+                <>
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
+                    <h3 className="font-bold text-slate-900">App Preferences</h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Dashboard card order is saved automatically when you drag
+                      cards on the main diary screen.
+                    </p>
+                    <label className="mt-4 block text-sm font-semibold text-slate-700">
+                      Time zone
+                      <select
+                        className={inputClass}
+                        value={timeZonePreference}
+                        onChange={(event) => setTimeZonePreference(event.target.value)}
+                      >
+                        <option value="auto">Auto-detect ({detectedTimeZone})</option>
+                        <option value="Europe/London">Europe/London</option>
+                        <option value="Europe/Dublin">Europe/Dublin</option>
+                        <option value="UTC">UTC</option>
+                      </select>
+                    </label>
+                    <p className="mt-2 text-xs font-medium text-slate-500">
+                      Dates shown in account settings use {activeTimeZone}. Diary
+                      entries keep their saved date and time values.
+                    </p>
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
+                    <h3 className="font-bold text-slate-900">
+                      Saved foods and locations
+                    </h3>
+                    <p className="mt-1 text-sm text-slate-600">
+                      These appear in the food and drink form for the selected child.
+                    </p>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <form
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                        onSubmit={(event) => addSavedCareOption(event, "food")}
+                      >
+                        <label className="text-sm font-semibold text-slate-700">
+                          Regular food or drink
+                        </label>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={newRegularFood}
+                            onChange={(event) => setNewRegularFood(event.target.value)}
+                            placeholder="e.g. pasta, toast, apple juice"
+                          />
+                          <button
+                            className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isSavingCareOption || !newRegularFood.trim()}
+                          >
+                            Save
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {groupedCareOptions.food.length ? (
+                            groupedCareOptions.food.map((option) => (
+                              <span
+                                key={option.id}
+                                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
+                              >
+                                {option.label}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">
+                              No regular foods saved yet.
+                            </p>
+                          )}
+                        </div>
+                      </form>
+
+                      <form
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                        onSubmit={(event) => addSavedCareOption(event, "location")}
+                      >
+                        <label className="text-sm font-semibold text-slate-700">
+                          Saved location
+                        </label>
+                        <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={newSavedLocation}
+                            onChange={(event) => setNewSavedLocation(event.target.value)}
+                            placeholder="e.g. Nan's house, respite, nursery"
+                          />
+                          <button
+                            className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                            disabled={isSavingCareOption || !newSavedLocation.trim()}
+                          >
+                            Save
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {groupedCareOptions.locations.length ? (
+                            groupedCareOptions.locations.map((option) => (
+                              <span
+                                key={option.id}
+                                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
+                              >
+                                {option.label}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-sm text-slate-500">
+                              No extra locations saved yet. Home, School and Other
+                              are always available.
+                            </p>
+                          )}
+                        </div>
+                      </form>
+                    </div>
+                  </section>
+                </>
               ) : null}
 
               {settingsTab === "privacy" ? (
