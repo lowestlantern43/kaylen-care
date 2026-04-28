@@ -3163,17 +3163,18 @@ export default function KaylenCareMonitorDashboard({
   );
 
   const renderFoodForm = () => {
-    const showOtherLocation = foodForm.location === "Other";
     const typedFood = foodForm.otherItem?.trim() || "";
     const selectedFood = typedFood || foodForm.item || foodValue;
-    const selectedLocation = showOtherLocation
-      ? foodForm.otherLocation || "Other"
-      : foodForm.location || "Not set";
+    const typedLocation = foodForm.otherLocation?.trim() || "";
+    const selectedLocation = typedLocation || foodForm.location || "Not set";
     const canSaveTypedFood =
       !!typedFood &&
       !["drink", "breakfast", "lunch", "dinner", "dessert", "snack", "other"].includes(
         typedFood.toLowerCase(),
       );
+    const canSaveTypedLocation =
+      !!typedLocation &&
+      !["home", "school", "other"].includes(typedLocation.toLowerCase());
 
     const isDrink =
       foodValue?.toLowerCase() === "drink" ||
@@ -3209,7 +3210,7 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Location
+            Quick pick location
           </label>
           <select
             className={`${inputClassName} min-h-[48px]`}
@@ -3219,7 +3220,10 @@ export default function KaylenCareMonitorDashboard({
                 ...foodForm,
                 location: e.target.value,
                 otherLocation:
-                  e.target.value === "Other" ? foodForm.otherLocation : "",
+                  e.target.value &&
+                  !["Home", "School", "Other"].includes(e.target.value)
+                    ? e.target.value
+                    : foodForm.otherLocation || "",
               })
             }
           >
@@ -3232,35 +3236,36 @@ export default function KaylenCareMonitorDashboard({
           </select>
         </div>
 
-        {showOtherLocation ? (
-          <>
-            <div className={`${cardClassName} md:col-span-2`}>
-              <label className="text-sm font-semibold text-slate-700">
-                Other location
-              </label>
-              <input
-                type="text"
-                placeholder="Type location"
-                className={`${inputClassName} min-h-[48px] border-dashed`}
-                value={foodForm.otherLocation}
-                onChange={(e) =>
-                  setFoodForm({ ...foodForm, otherLocation: e.target.value })
-                }
-              />
-            </div>
-            <div className={`${cardClassName} md:col-span-2`}>
-              <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={saveLocationForFuture}
-                  onChange={(e) => setSaveLocationForFuture(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Save this location for future
-              </label>
-            </div>
-          </>
-        ) : null}
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Location name
+          </label>
+          <input
+            type="text"
+            placeholder="Type location, e.g. Nan's house, respite, nursery"
+            className={`${inputClassName} min-h-[48px]`}
+            value={foodForm.otherLocation}
+            onChange={(e) =>
+              setFoodForm({ ...foodForm, otherLocation: e.target.value })
+            }
+          />
+          <label className="mt-3 flex items-center gap-3 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={saveLocationForFuture}
+              onChange={(e) => setSaveLocationForFuture(e.target.checked)}
+              disabled={!canSaveTypedLocation}
+              className="h-4 w-4 rounded border-slate-300 disabled:opacity-50"
+            />
+            Save this location for later
+          </label>
+          {!canSaveTypedLocation ? (
+            <p className="mt-2 text-xs font-medium text-slate-500">
+              Home and School are always available. Type another place to save it
+              for next time.
+            </p>
+          ) : null}
+        </div>
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -3461,11 +3466,11 @@ export default function KaylenCareMonitorDashboard({
                   );
                 }
 
-                if (showOtherLocation && saveLocationForFuture) {
+                if (saveLocationForFuture && canSaveTypedLocation) {
                   if (onCreateCareOption) {
                     await onCreateCareOption({
                       category: "location",
-                      label: foodForm.otherLocation,
+                      label: typedLocation,
                       defaultValue: "",
                     });
                   }
