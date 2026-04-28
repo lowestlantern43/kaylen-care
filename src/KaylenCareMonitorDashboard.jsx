@@ -754,7 +754,7 @@ export default function KaylenCareMonitorDashboard({
   }, [medicationScheduleStorageKey]);
 
   const inputClassName =
-    "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+    "mt-2 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
   const cardClassName =
     "rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm";
@@ -1726,6 +1726,7 @@ export default function KaylenCareMonitorDashboard({
     if (!isUnlocked) return;
 
     const handleTouchStart = (e) => {
+      if (!window.matchMedia("(max-width: 767px)").matches) return;
       if (window.scrollY > 0 || activeSection) return;
       touchStartY.current = e.touches[0].clientY;
       touchCurrentY.current = e.touches[0].clientY;
@@ -1733,6 +1734,7 @@ export default function KaylenCareMonitorDashboard({
     };
 
     const handleTouchMove = (e) => {
+      if (!window.matchMedia("(max-width: 767px)").matches) return;
       if (!isPullingRef.current) return;
       touchCurrentY.current = e.touches[0].clientY;
     };
@@ -6045,9 +6047,10 @@ export default function KaylenCareMonitorDashboard({
               </div>
 
               <div className="mt-6 w-full rounded-2xl border border-sky-100 bg-sky-50 px-6 py-4 shadow-md">
-                <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-sky-300 md:text-2xl">
-                  FamilyTrack - {childName}
+                <h1 className="text-center text-xl font-black tracking-tight text-slate-950 md:text-2xl">
+                  FamilyTrack
                 </h1>
+                <p className="mt-1 text-sm font-bold text-sky-700">{childName}</p>
               </div>
 
               <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
@@ -6138,11 +6141,11 @@ export default function KaylenCareMonitorDashboard({
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
         {isRefreshing ? (
-          <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700">
+          <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 md:hidden">
             Refreshing diary...
           </div>
         ) : (
-          <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600">
+          <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 md:hidden">
             Pull down from the top to refresh. Sync: {syncState}
           </div>
         )}
@@ -6195,45 +6198,8 @@ export default function KaylenCareMonitorDashboard({
                 </div>
               </div>
             </div>
-
-            <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-1">
-              {orderedSections
-                .filter((section) => section.title !== "Reports")
-                .map((section) => (
-                  <button
-                    key={`shortcut-${section.title}`}
-                    type="button"
-                    onClick={() => openSection(section)}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 text-xl shadow-sm transition hover:bg-white"
-                    aria-label={`Open ${section.title}`}
-                  >
-                    {renderDashboardIcon(section, "h-5 w-5", "text-xl")}
-                  </button>
-                ))}
-            </div>
           </div>
         </section>
-
-        <div className="mt-6 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-slate-900">Dashboard order</p>
-            <p className="text-xs font-medium text-slate-500">
-              {isReorderMode
-                ? "Drag cards or use Earlier/Later on mobile."
-                : "Open reorder mode to arrange the cards."}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setIsReorderMode((current) => !current);
-              setDraggingCardTitle("");
-            }}
-            className="w-fit rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
-          >
-            {isReorderMode ? "Done" : "Reorder cards"}
-          </button>
-        </div>
 
         <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
@@ -6353,24 +6319,50 @@ export default function KaylenCareMonitorDashboard({
             );
           })}
         </section>
+
+        <div className="mt-8 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-slate-900">Dashboard order</p>
+            <p className="text-xs font-medium text-slate-500">
+              {isReorderMode
+                ? "Drag cards or use Earlier/Later on mobile."
+                : "Open reorder mode to arrange the cards."}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsReorderMode((current) => !current);
+              setDraggingCardTitle("");
+            }}
+            className="w-fit rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
+          >
+            {isReorderMode ? "Done" : "Reorder cards"}
+          </button>
+        </div>
       </div>
 
       <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:hidden">
         {quickAddOpen ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+          <div className="w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
             {[
-              ["Food", "Food Diary", ""],
-              ["Drink", "Food Diary", "Drink"],
-              ["Medication", "Medication", ""],
-              ["Sleep", "Sleep", ""],
-            ].map(([label, title, preset]) => (
+              ["Food", "Food Diary", "", "🍽"],
+              ["Drink", "Food Diary", "Drink", "🥤"],
+              ["Medication", "Medication", "", "💊"],
+              ["Sleep", "Sleep", "", "🌙"],
+              ["Toileting", "Toileting", "", "🚽"],
+              ["Health", "Health", "", "✚"],
+            ].map(([label, title, preset, icon]) => (
               <button
                 key={label}
                 type="button"
                 onClick={() => openQuickAdd(title, preset)}
-                className="block w-full rounded-xl px-4 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
               >
-                {label}
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-base">
+                  {icon}
+                </span>
+                <span>{label}</span>
               </button>
             ))}
           </div>

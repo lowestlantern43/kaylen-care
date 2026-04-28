@@ -10,6 +10,12 @@ export const config = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripePriceId: process.env.STRIPE_PRICE_ID || "",
+  spacesKey: process.env.DO_SPACES_KEY || "",
+  spacesSecret: process.env.DO_SPACES_SECRET || "",
+  spacesBucket: process.env.DO_SPACES_BUCKET || "",
+  spacesRegion: process.env.DO_SPACES_REGION || "",
+  spacesEndpoint: process.env.DO_SPACES_ENDPOINT || "",
+  spacesPublicUrl: process.env.DO_SPACES_PUBLIC_URL || "",
   nodeEnv: process.env.NODE_ENV || "development",
   isProduction: process.env.NODE_ENV === "production",
 };

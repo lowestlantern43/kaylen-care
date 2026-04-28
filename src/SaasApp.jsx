@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
-import { isSupabaseConfigured, supabase } from "./Supabase";
+import {
+  createChildPhotoObjectKey,
+  getSpacesUploadNotReadyMessage,
+} from "./storage/spaces";
 
 const inputClass =
-  "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const buttonClass =
   "flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 px-5 py-4 text-base font-semibold text-white shadow-md transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60";
@@ -82,8 +85,171 @@ const emptyImportantEvent = {
   outcome: "",
 };
 
-function AuthScreen({ onAuthenticated }) {
-  const [mode, setMode] = useState("signup");
+function LandingPage({ onStartFree, onLogin }) {
+  const features = [
+    [
+      "Daily care logging",
+      "Record food, drink, toileting, health notes and important changes quickly from your phone.",
+    ],
+    [
+      "Medication and routines",
+      "Keep everyday care tasks clear without mixing routines into medication records.",
+    ],
+    [
+      "Reports and PDF export",
+      "Create readable summaries for EHCP reviews, school meetings, hospital visits and carers.",
+    ],
+    [
+      "Care Snapshot",
+      "Prepare a compact view of key information for professionals when time matters.",
+    ],
+    [
+      "Calendar and trends",
+      "Look back over days and weeks to spot patterns in sleep, health, food and care activity.",
+    ],
+  ];
+
+  return (
+    <main className="min-h-screen bg-slate-50 text-slate-950">
+      <section className="overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-5 py-5">
+        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+          <div>
+            <p className="text-xl font-black tracking-tight text-slate-950">
+              FamilyTrack
+            </p>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
+              Tracking what matters
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onLogin}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm"
+          >
+            Log in
+          </button>
+        </nav>
+
+        <div className="mx-auto grid max-w-6xl gap-8 py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
+              Parent-led care diary
+            </p>
+            <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
+              Track your child&apos;s care, health, and routines in one place
+            </h1>
+            <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
+              FamilyTrack helps families record food, sleep, medication,
+              toileting, health, routines and reports, then share clear updates
+              with schools, hospitals, carers and professionals.
+            </p>
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={onStartFree} className={buttonClass}>
+                Start free
+              </button>
+              <button
+                type="button"
+                onClick={onLogin}
+                className={secondaryButtonClass}
+              >
+                Log in
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl">
+            <div className="rounded-[1.5rem] bg-slate-950 p-4 text-white">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-black">FamilyTrack</p>
+                  <p className="text-xs text-slate-300">Today at a glance</p>
+                </div>
+                <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-200">
+                  Synced
+                </span>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {[
+                  ["Food", "Lunch logged - reduced appetite"],
+                  ["Medication", "Keppra 5ml at 08:00"],
+                  ["Sleep", "9h 15m - good quality"],
+                  ["Health", "No new health notes today"],
+                ].map(([title, copy]) => (
+                  <div
+                    key={title}
+                    className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
+                  >
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-200">
+                      {title}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-white">{copy}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-10">
+        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {features.map(([title, copy]) => (
+            <article
+              key={title}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h2 className="text-lg font-black text-slate-950">{title}</h2>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                {copy}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white px-5 py-12">
+        <div className="mx-auto max-w-4xl">
+          <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
+            Built from real family life
+          </p>
+          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+            Created by Martin, Kaylen&apos;s dad
+          </h2>
+          <p className="mt-4 text-base font-medium leading-8 text-slate-600">
+            Kaylen is autistic and non-verbal. Managing his care involves
+            tracking many daily things including food, drink, medication, sleep,
+            toileting, routines, health notes and important changes.
+            FamilyTrack was built from real family need, to make it easier to
+            record important information, spot patterns and share clear updates
+            with schools, hospitals, carers and professionals.
+          </p>
+        </div>
+      </section>
+
+      <section className="px-5 py-12">
+        <div className="mx-auto max-w-6xl rounded-[2rem] border border-indigo-100 bg-indigo-50 p-6 shadow-sm md:p-8">
+          <h2 className="text-2xl font-black text-slate-950">Simple pricing</h2>
+          <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-700">
+            Start free with basic logging. Pro unlocks reports, PDFs, Care
+            Snapshot, sharing, multiple children and advanced features as the
+            platform grows.
+          </p>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={onStartFree} className={buttonClass}>
+              Start free
+            </button>
+            <button type="button" onClick={onLogin} className={secondaryButtonClass}>
+              Log in
+            </button>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
+  const [mode, setMode] = useState(initialMode);
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -123,17 +289,17 @@ function AuthScreen({ onAuthenticated }) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white via-slate-50 to-slate-100 px-6 py-10 text-slate-900 md:py-16">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-slate-100 px-6 py-10 text-slate-900 md:py-16">
       <div className="mx-auto max-w-md">
         <div className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl md:p-10">
           <div className="text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-400 to-purple-500 text-3xl text-white shadow-lg">
-              K
-            </div>
-            <div className="mt-6 w-full rounded-2xl border border-sky-100 bg-sky-50 px-6 py-4 shadow-md">
-              <h1 className="text-center text-xl font-bold uppercase tracking-[0.18em] text-sky-300 md:text-2xl">
+            <div className="w-full rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-6 py-4 shadow-sm">
+              <h1 className="text-center text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                 FamilyTrack
               </h1>
+              <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
+                Tracking what matters
+              </p>
             </div>
             <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
               {isSignup
@@ -238,6 +404,15 @@ function AuthScreen({ onAuthenticated }) {
               ? "Already have an account? Log in"
               : "Need a family workspace? Sign up"}
           </button>
+          {onBack ? (
+            <button
+              type="button"
+              className="ml-4 mt-4 text-sm font-semibold text-slate-500 underline decoration-slate-300 underline-offset-4"
+              onClick={onBack}
+            >
+              Back to website
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
@@ -599,56 +774,17 @@ function WorkspaceGate({ session, onLogout }) {
     const file = event.target.files?.[0];
     if (!file || !selectedFamilyId || !selectedChildId) return;
 
-    if (!isSupabaseConfigured) {
-      setError(
-        "Child photo upload is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or switch this feature to DigitalOcean Spaces.",
-      );
-      event.target.value = "";
-      return;
-    }
+    const objectKey = createChildPhotoObjectKey({
+      familyId: selectedFamilyId,
+      childId: selectedChildId,
+      fileName: file.name,
+    });
 
-    setIsUploadingChildPhoto(true);
-    setError("");
-
-    try {
-      const extension = file.name.split(".").pop() || "jpg";
-      const path = `${selectedFamilyId}/${selectedChildId}-${Date.now()}.${extension}`;
-      const { error: uploadError } = await supabase.storage
-        .from("child-avatars")
-        .upload(path, file, {
-          cacheControl: "3600",
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw uploadError;
-      }
-
-      const { data } = supabase.storage.from("child-avatars").getPublicUrl(path);
-      const avatarUrl = data.publicUrl;
-      const updated = await api.updateChild(selectedFamilyId, selectedChildId, {
-        firstName: childEditForm.firstName,
-        lastName: childEditForm.lastName,
-        dateOfBirth: childEditForm.dateOfBirth,
-        nhsNumber: childEditForm.nhsNumber,
-        avatarUrl,
-        notes: childEditForm.notes,
-      });
-
-      setChildEditForm((current) => ({ ...current, avatarUrl }));
-      setChildren((current) =>
-        current.map((child) => (child.id === updated.id ? updated : child)),
-      );
-      setAccountMessage("Child photo updated.");
-    } catch (caughtError) {
-      setError(
-        caughtError.message ||
-          "Photo upload failed. Check the child-avatars Supabase Storage bucket exists.",
-      );
-    } finally {
-      setIsUploadingChildPhoto(false);
-      event.target.value = "";
-    }
+    setError(
+      `${getSpacesUploadNotReadyMessage()} Prepared object path: ${objectKey}`,
+    );
+    setIsUploadingChildPhoto(false);
+    event.target.value = "";
   };
 
   const loadAdmin = async () => {
@@ -2026,7 +2162,7 @@ function WorkspaceGate({ session, onLogout }) {
                       ],
                       [
                         "Storage",
-                        "Diary data is stored in the app database. Child photos are stored separately in Supabase Storage for this existing app version.",
+                        "Diary data is stored in the app database. Child photo uploads are prepared for DigitalOcean Spaces using a secure backend signed-upload flow.",
                       ],
                     ].map(([title, copy]) => (
                       <div
@@ -3196,6 +3332,7 @@ function WorkspaceGate({ session, onLogout }) {
 export default function SaasApp() {
   const [session, setSession] = useState(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
+  const [publicView, setPublicView] = useState("landing");
 
   useEffect(() => {
     let ignore = false;
@@ -3233,7 +3370,32 @@ export default function SaasApp() {
   }
 
   if (!session) {
-    return <AuthScreen onAuthenticated={setSession} />;
+    if (publicView === "auth") {
+      return (
+        <AuthScreen
+          initialMode="signup"
+          onAuthenticated={setSession}
+          onBack={() => setPublicView("landing")}
+        />
+      );
+    }
+
+    if (publicView === "login") {
+      return (
+        <AuthScreen
+          initialMode="login"
+          onAuthenticated={setSession}
+          onBack={() => setPublicView("landing")}
+        />
+      );
+    }
+
+    return (
+      <LandingPage
+        onStartFree={() => setPublicView("auth")}
+        onLogin={() => setPublicView("login")}
+      />
+    );
   }
 
   return <WorkspaceGate session={session} onLogout={logout} />;

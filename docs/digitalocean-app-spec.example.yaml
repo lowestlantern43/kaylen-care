@@ -89,11 +89,19 @@ static_sites:
         value: /api
         scope: BUILD_TIME
         type: GENERAL
-      - key: VITE_SUPABASE_URL
-        value: REPLACE_IN_DIGITALOCEAN
+      - key: VITE_DO_SPACES_ENDPOINT
+        value: https://REGION.digitaloceanspaces.com
         scope: BUILD_TIME
-        type: SECRET
-      - key: VITE_SUPABASE_ANON_KEY
-        value: REPLACE_IN_DIGITALOCEAN
+        type: GENERAL
+      - key: VITE_DO_SPACES_BUCKET
+        value: REPLACE_WITH_SPACES_BUCKET
         scope: BUILD_TIME
-        type: SECRET
+        type: GENERAL
+      - key: VITE_DO_SPACES_REGION
+        value: REPLACE_WITH_SPACES_REGION
+        scope: BUILD_TIME
+        type: GENERAL
+      - key: VITE_DO_SPACES_PUBLIC_URL
+        value: https://REPLACE_WITH_SPACES_BUCKET.REGION.digitaloceanspaces.com
+        scope: BUILD_TIME
+        type: GENERAL

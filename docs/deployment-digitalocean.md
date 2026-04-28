@@ -68,8 +68,14 @@ Build-time environment variables:
 | Key | Scope | Secret? | Notes |
 | --- | --- | --- | --- |
 | `VITE_API_BASE_URL` | Build time | No | `/api` |
-| `VITE_SUPABASE_URL` | Build time | Yes | Used for existing child photo upload |
-| `VITE_SUPABASE_ANON_KEY` | Build time | Yes | Used for existing child photo upload |
+| `VITE_DO_SPACES_ENDPOINT` | Build time | No | Example: `https://lon1.digitaloceanspaces.com` |
+| `VITE_DO_SPACES_BUCKET` | Build time | No | Spaces bucket name |
+| `VITE_DO_SPACES_REGION` | Build time | No | Spaces region |
+| `VITE_DO_SPACES_PUBLIC_URL` | Build time | No | Public CDN or bucket URL |
+
+Do not expose DigitalOcean Spaces secret keys in frontend variables. Profile
+photo uploads need a backend signed-upload endpoint before they can upload
+directly to Spaces.
 
 ## First Deploy Test
 

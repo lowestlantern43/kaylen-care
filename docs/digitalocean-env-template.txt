@@ -17,6 +17,12 @@ FRONTEND_URL=https://replace-with-your-digitalocean-app-url
 STRIPE_SECRET_KEY=replace-with-your-stripe-secret-key
 STRIPE_WEBHOOK_SECRET=replace-with-your-stripe-webhook-secret
 STRIPE_PRICE_ID=replace-with-your-stripe-price-id
+DO_SPACES_KEY=replace-with-your-spaces-access-key
+DO_SPACES_SECRET=replace-with-your-spaces-secret-key
+DO_SPACES_BUCKET=replace-with-your-spaces-bucket
+DO_SPACES_REGION=replace-with-your-spaces-region
+DO_SPACES_ENDPOINT=https://REGION.digitaloceanspaces.com
+DO_SPACES_PUBLIC_URL=https://replace-with-your-public-spaces-url
 
 ==============================
 FRONTEND / STATIC SITE
@@ -25,5 +31,7 @@ Scope: Build Time
 ==============================
 
 VITE_API_BASE_URL=/api
-VITE_SUPABASE_URL=replace-with-your-supabase-url
-VITE_SUPABASE_ANON_KEY=replace-with-your-supabase-anon-key
+VITE_DO_SPACES_ENDPOINT=https://REGION.digitaloceanspaces.com
+VITE_DO_SPACES_BUCKET=replace-with-your-spaces-bucket
+VITE_DO_SPACES_REGION=replace-with-your-spaces-region
+VITE_DO_SPACES_PUBLIC_URL=https://replace-with-your-public-spaces-url
