@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
-import { supabase } from "./Supabase";
+import { isSupabaseConfigured, supabase } from "./Supabase";
 
 const inputClass =
   "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -598,6 +598,14 @@ function WorkspaceGate({ session, onLogout }) {
   const uploadSelectedChildPhoto = async (event) => {
     const file = event.target.files?.[0];
     if (!file || !selectedFamilyId || !selectedChildId) return;
+
+    if (!isSupabaseConfigured) {
+      setError(
+        "Child photo upload is not configured yet. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY, or switch this feature to DigitalOcean Spaces.",
+      );
+      event.target.value = "";
+      return;
+    }
 
     setIsUploadingChildPhoto(true);
     setError("");

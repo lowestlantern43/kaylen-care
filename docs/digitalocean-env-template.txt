@@ -1,0 +1,29 @@
+# FamilyTrack DigitalOcean environment variables
+#
+# Copy these into DigitalOcean App Platform.
+# Do not commit real secret values to GitHub.
+
+==============================
+BACKEND / API WEB SERVICE
+Component: familytrack
+Scope: Runtime
+==============================
+
+NODE_ENV=production
+PORT=4000
+DATABASE_URL=postgresql://USERNAME:PASSWORD@HOST:PORT/DATABASE?sslmode=require
+SESSION_SECRET=replace-with-a-long-random-secret
+FRONTEND_URL=https://replace-with-your-digitalocean-app-url
+STRIPE_SECRET_KEY=replace-with-your-stripe-secret-key
+STRIPE_WEBHOOK_SECRET=replace-with-your-stripe-webhook-secret
+STRIPE_PRICE_ID=replace-with-your-stripe-price-id
+
+==============================
+FRONTEND / STATIC SITE
+Component: web
+Scope: Build Time
+==============================
+
+VITE_API_BASE_URL=/api
+VITE_SUPABASE_URL=replace-with-your-supabase-url
+VITE_SUPABASE_ANON_KEY=replace-with-your-supabase-anon-key
