@@ -42,16 +42,24 @@ const parseMedicationProfile = (value = "") =>
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => {
+      if (line.includes("|")) {
+        const [name = "", dose = "", notes = ""] = line
+          .split("|")
+          .map((part) => part.trim());
+        return { name, dose, notes };
+      }
+
       const separator = [" - ", " – ", " — ", ":"].find((item) =>
         line.includes(item),
       );
       if (!separator) {
-        return { name: line, dose: "" };
+        return { name: line, dose: "", notes: "" };
       }
       const [name, ...doseParts] = line.split(separator);
       return {
         name: name.trim(),
         dose: doseParts.join(separator).trim(),
+        notes: "",
       };
     })
     .filter((item) => item.name);
@@ -5294,7 +5302,6 @@ export default function KaylenCareMonitorDashboard({
       hour: "2-digit",
       minute: "2-digit",
     });
-    const meds = childProfile.currentMedications || "Not added";
     const allergies = childProfile.allergies || "Not added";
 
     return (
@@ -5368,7 +5375,22 @@ export default function KaylenCareMonitorDashboard({
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-rose-800">
               Medications
             </h4>
-            <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{meds}</p>
+            {profileMedicationOptions.length ? (
+              <div className="mt-2 space-y-2">
+                {profileMedicationOptions.map((medicine, index) => (
+                  <div
+                    key={`${medicine.name}-${index}`}
+                    className="rounded-xl border border-rose-100 bg-white/85 px-2.5 py-2 text-sm text-slate-700"
+                  >
+                    <p className="font-bold text-slate-900">{medicine.name}</p>
+                    {medicine.dose ? <p>Dose: {medicine.dose}</p> : null}
+                    {medicine.notes ? <p>Notes: {medicine.notes}</p> : null}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-700">Not added</p>
+            )}
           </div>
         </section>
 

@@ -13,6 +13,46 @@ const secondaryButtonClass =
 
 const avatarUrlForChild = (child) => child?.avatarUrl || child?.avatar_url || "";
 
+const parseCareMedicationRows = (value = "") =>
+  String(value)
+    .split(/\n|;/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      if (line.includes("|")) {
+        const [name = "", dose = "", notes = ""] = line
+          .split("|")
+          .map((part) => part.trim());
+        return { name, dose, notes };
+      }
+
+      const separator = [" - ", " – ", " — ", ":"].find((item) =>
+        line.includes(item),
+      );
+      if (!separator) {
+        return { name: line, dose: "", notes: "" };
+      }
+
+      const [name, ...doseParts] = line.split(separator);
+      return {
+        name: name.trim(),
+        dose: doseParts.join(separator).trim(),
+        notes: "",
+      };
+    })
+    .filter((item) => item.name || item.dose || item.notes);
+
+const serializeCareMedicationRows = (rows) =>
+  rows
+    .map((row) => ({
+      name: (row.name || "").trim(),
+      dose: (row.dose || "").trim(),
+      notes: (row.notes || "").trim(),
+    }))
+    .filter((row) => row.name || row.dose || row.notes)
+    .map((row) => [row.name, row.dose, row.notes].filter(Boolean).join(" | "))
+    .join("\n");
+
 function ChildAvatar({ child, active = false, size = "sm" }) {
   const avatarUrl = avatarUrlForChild(child);
   const [failedUrl, setFailedUrl] = useState("");
@@ -559,6 +599,10 @@ function WorkspaceGate({ session, onLogout }) {
     }),
     [childCareOptions],
   );
+  const careMedicationRows = useMemo(() => {
+    const rows = parseCareMedicationRows(childProfile.currentMedications);
+    return rows.length ? rows : [{ name: "", dose: "", notes: "" }];
+  }, [childProfile.currentMedications]);
 
   const detectedTimeZone =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";
@@ -970,6 +1014,33 @@ function WorkspaceGate({ session, onLogout }) {
     } finally {
       setIsSavingProfile(false);
     }
+  };
+
+  const updateCareMedicationRow = (index, field, value) => {
+    const rows = [...careMedicationRows];
+    rows[index] = { ...rows[index], [field]: value };
+    setChildProfile({
+      ...childProfile,
+      currentMedications: serializeCareMedicationRows(rows),
+    });
+  };
+
+  const addCareMedicationRow = () => {
+    setChildProfile({
+      ...childProfile,
+      currentMedications: serializeCareMedicationRows([
+        ...careMedicationRows,
+        { name: "", dose: "", notes: "" },
+      ]),
+    });
+  };
+
+  const removeCareMedicationRow = (index) => {
+    const rows = careMedicationRows.filter((_, rowIndex) => rowIndex !== index);
+    setChildProfile({
+      ...childProfile,
+      currentMedications: serializeCareMedicationRows(rows),
+    });
   };
 
   const addImportantEvent = async (event) => {
@@ -2227,12 +2298,92 @@ function WorkspaceGate({ session, onLogout }) {
                 </p>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
+                  <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-900">
+                          Regular medication setup
+                        </h4>
+                        <p className="mt-1 text-sm text-slate-600">
+                          These medicines appear in the Medication card and in
+                          the Care Snapshot. Doses prefill but can still be
+                          changed when logging.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addCareMedicationRow}
+                        className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 shadow-sm"
+                      >
+                        Add medication
+                      </button>
+                    </div>
+
+                    <div className="mt-4 space-y-3">
+                      {careMedicationRows.map((row, index) => (
+                        <div
+                          key={index}
+                          className="grid gap-2 rounded-2xl border border-rose-100 bg-white p-3 md:grid-cols-[1fr_0.8fr_1fr_auto]"
+                        >
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={row.name || ""}
+                            onChange={(event) =>
+                              updateCareMedicationRow(
+                                index,
+                                "name",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Medication name"
+                          />
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={row.dose || ""}
+                            onChange={(event) =>
+                              updateCareMedicationRow(
+                                index,
+                                "dose",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Dose, e.g. 5ml"
+                          />
+                          <input
+                            className={`${inputClass} mt-0`}
+                            value={row.notes || ""}
+                            onChange={(event) =>
+                              updateCareMedicationRow(
+                                index,
+                                "notes",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="When / notes, optional"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeCareMedicationRow(index)}
+                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 disabled:opacity-50"
+                            disabled={
+                              careMedicationRows.length === 1 &&
+                              !row.name &&
+                              !row.dose &&
+                              !row.notes
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+
                   <div className="grid gap-3 md:grid-cols-2">
                     {[
                       ["diagnosisNeeds", "Diagnosis / needs"],
                       ["communicationStyle", "Communication style"],
                       ["keyNeeds", "Key needs"],
-                      ["currentMedications", "Current medications and doses"],
                       ["allergies", "Known allergies"],
                       ["emergencyNotes", "Emergency notes"],
                       ["sensoryNeeds", "Sensory needs / calming strategies"],
@@ -2248,14 +2399,8 @@ function WorkspaceGate({ session, onLogout }) {
                     ].map(([field, label]) => (
                       <label key={field} className="text-sm font-semibold text-slate-700">
                         {label}
-                        {field === "currentMedications" ? (
-                          <span className="mt-1 block text-xs font-medium text-slate-500">
-                            Add one per line, for example: Keppra - 5ml. These
-                            will appear in the Medication card and Care Snapshot.
-                          </span>
-                        ) : null}
                         <textarea
-                          rows={field === "currentMedications" ? 5 : 3}
+                          rows={3}
                           className={inputClass}
                           value={childProfile[field] || ""}
                           onChange={(event) =>
