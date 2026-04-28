@@ -85,7 +85,6 @@ childrenRouter.get(
           date_of_birth::text AS "dateOfBirth",
           nhs_number AS "nhsNumber",
           avatar_url AS "avatarUrl",
-          avatar_object_key AS "avatarObjectKey",
           notes,
           created_at AS "createdAt",
           updated_at AS "updatedAt"
@@ -109,7 +108,6 @@ childrenRouter.post(
     const dateOfBirth = optionalDate(req.body, "dateOfBirth");
     const nhsNumber = optionalString(req.body, "nhsNumber");
     const avatarUrl = optionalString(req.body, "avatarUrl");
-    const avatarObjectKey = optionalString(req.body, "avatarObjectKey");
     const notes = optionalString(req.body, "notes");
 
     const { rows } = await query(
@@ -121,11 +119,10 @@ childrenRouter.post(
           date_of_birth,
           nhs_number,
           avatar_url,
-          avatar_object_key,
           notes,
           created_by_user_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING
           id,
           first_name AS "firstName",
@@ -133,7 +130,6 @@ childrenRouter.post(
           date_of_birth::text AS "dateOfBirth",
           nhs_number AS "nhsNumber",
           avatar_url AS "avatarUrl",
-          avatar_object_key AS "avatarObjectKey",
           notes,
           created_at AS "createdAt"
       `,
@@ -144,7 +140,6 @@ childrenRouter.post(
         dateOfBirth,
         nhsNumber,
         avatarUrl,
-        avatarObjectKey,
         notes,
         req.user.id,
       ],
@@ -164,7 +159,6 @@ childrenRouter.patch(
     const dateOfBirth = optionalDate(req.body, "dateOfBirth");
     const nhsNumber = optionalString(req.body, "nhsNumber");
     const avatarUrl = optionalString(req.body, "avatarUrl");
-    const avatarObjectKey = optionalString(req.body, "avatarObjectKey");
     const notes = optionalString(req.body, "notes");
 
     const { rows } = await query(
@@ -175,10 +169,9 @@ childrenRouter.patch(
             date_of_birth = $3,
             nhs_number = $4,
             avatar_url = $5,
-            avatar_object_key = $6,
-            notes = $7
-        WHERE id = $8
-          AND family_id = $9
+            notes = $6
+        WHERE id = $7
+          AND family_id = $8
           AND deleted_at IS NULL
         RETURNING
           id,
@@ -187,7 +180,6 @@ childrenRouter.patch(
           date_of_birth::text AS "dateOfBirth",
           nhs_number AS "nhsNumber",
           avatar_url AS "avatarUrl",
-          avatar_object_key AS "avatarObjectKey",
           notes,
           updated_at AS "updatedAt"
       `,
@@ -197,7 +189,6 @@ childrenRouter.patch(
         dateOfBirth,
         nhsNumber,
         avatarUrl,
-        avatarObjectKey,
         notes,
         childId,
         req.familyMember.family_id,

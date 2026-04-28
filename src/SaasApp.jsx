@@ -756,7 +756,6 @@ function WorkspaceGate({ session, onLogout }) {
         dateOfBirth: childEditForm.dateOfBirth,
         nhsNumber: childEditForm.nhsNumber,
         avatarUrl: childEditForm.avatarUrl,
-        avatarObjectKey: childEditForm.avatarObjectKey,
         notes: childEditForm.notes,
       });
       setChildren((current) =>
@@ -793,7 +792,6 @@ function WorkspaceGate({ session, onLogout }) {
         dateOfBirth: childEditForm.dateOfBirth,
         nhsNumber: childEditForm.nhsNumber,
         avatarUrl: upload.publicUrl,
-        avatarObjectKey: upload.objectKey,
         notes: childEditForm.notes,
       });
 
