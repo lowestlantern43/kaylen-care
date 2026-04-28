@@ -3163,16 +3163,21 @@ export default function KaylenCareMonitorDashboard({
   );
 
   const renderFoodForm = () => {
-    const showOtherFood = foodValue === "Other";
     const showOtherLocation = foodForm.location === "Other";
-    const selectedFood = showOtherFood
-      ? foodForm.otherItem
-      : foodForm.item || foodValue;
+    const typedFood = foodForm.otherItem?.trim() || "";
+    const selectedFood = typedFood || foodForm.item || foodValue;
     const selectedLocation = showOtherLocation
       ? foodForm.otherLocation || "Other"
       : foodForm.location || "Not set";
+    const canSaveTypedFood =
+      !!typedFood &&
+      !["drink", "breakfast", "lunch", "dinner", "dessert", "snack", "other"].includes(
+        typedFood.toLowerCase(),
+      );
 
-    const isDrink = selectedFood?.toLowerCase() === "drink";
+    const isDrink =
+      foodValue?.toLowerCase() === "drink" ||
+      selectedFood?.toLowerCase() === "drink";
     const canSaveFood =
       !!foodForm.date.trim() &&
       !!foodForm.time.trim() &&
@@ -3259,7 +3264,7 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Food or drink
+            Quick pick / meal type
           </label>
           <select
             className={`${inputClassName} min-h-[48px]`}
@@ -3267,11 +3272,13 @@ export default function KaylenCareMonitorDashboard({
             onChange={(e) => {
               const value = e.target.value;
               const recalledNote = getFoodDefaultNote(value);
+              const isDefaultMealType = defaultFoodOptions.includes(value);
               setFoodValue(value);
               setFoodForm({
                 ...foodForm,
                 item: value === "Other" ? "" : value,
-                otherItem: value === "Other" ? foodForm.otherItem : "",
+                otherItem:
+                  value && !isDefaultMealType ? value : foodForm.otherItem || "",
                 description:
                   value !== "Other" &&
                   recalledNote &&
@@ -3290,35 +3297,35 @@ export default function KaylenCareMonitorDashboard({
           </select>
         </div>
 
-        {showOtherFood ? (
-          <>
-            <div className={`${cardClassName} md:col-span-2`}>
-              <label className="text-sm font-semibold text-slate-700">
-                Other food or drink
-              </label>
-              <input
-                type="text"
-                placeholder="Type another food or drink"
-                className={`${inputClassName} min-h-[48px] border-dashed`}
-                value={foodForm.otherItem}
-                onChange={(e) =>
-                  setFoodForm({ ...foodForm, otherItem: e.target.value })
-                }
-              />
-            </div>
-            <div className={`${cardClassName} md:col-span-2`}>
-              <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
-                <input
-                  type="checkbox"
-                  checked={saveFoodForFuture}
-                  onChange={(e) => setSaveFoodForFuture(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Save this food or drink for future
-              </label>
-            </div>
-          </>
-        ) : null}
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Food or drink name
+          </label>
+          <input
+            type="text"
+            placeholder="Type food or drink, e.g. toast, pasta, juice"
+            className={`${inputClassName} min-h-[48px]`}
+            value={foodForm.otherItem}
+            onChange={(e) =>
+              setFoodForm({ ...foodForm, otherItem: e.target.value })
+            }
+          />
+          <label className="mt-3 flex items-center gap-3 text-sm font-semibold text-slate-700">
+            <input
+              type="checkbox"
+              checked={saveFoodForFuture}
+              onChange={(e) => setSaveFoodForFuture(e.target.checked)}
+              disabled={!canSaveTypedFood}
+              className="h-4 w-4 rounded border-slate-300 disabled:opacity-50"
+            />
+            Save this food or drink for later
+          </label>
+          {!canSaveTypedFood ? (
+            <p className="mt-2 text-xs font-medium text-slate-500">
+              Type a specific food or drink name to save it for next time.
+            </p>
+          ) : null}
+        </div>
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -3441,16 +3448,16 @@ export default function KaylenCareMonitorDashboard({
 
                 await loadEntriesFromSupabase();
 
-                if (showOtherFood && saveFoodForFuture) {
+                if (saveFoodForFuture && canSaveTypedFood) {
                   if (onCreateCareOption) {
                     await onCreateCareOption({
                       category: "food",
-                      label: foodForm.otherItem,
+                      label: typedFood,
                       defaultValue: foodForm.description || foodForm.notes,
                     });
                   }
                   setSavedFoodOptions((current) =>
-                    dedupeAppend(current, foodForm.otherItem),
+                    dedupeAppend(current, typedFood),
                   );
                 }
 
