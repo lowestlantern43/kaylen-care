@@ -3196,6 +3196,7 @@ export default function KaylenCareMonitorDashboard({
       .toLowerCase()
       .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`,
   ) => {
+    const adjustedNodes = [];
     try {
       setIsExportingPdf(true);
 
@@ -3207,6 +3208,26 @@ export default function KaylenCareMonitorDashboard({
         return;
       }
 
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 8;
+      const usableWidth = pdfWidth - margin * 2;
+      const usableHeight = pdfHeight - margin * 2;
+      const pageHeightPx = exportNode.offsetWidth * (usableHeight / usableWidth);
+      Array.from(exportNode.querySelectorAll(".pdf-avoid-break")).forEach(
+        (node) => {
+          const top = node.offsetTop;
+          const height = node.offsetHeight;
+          const pageOffset = top % pageHeightPx;
+
+          if (pageOffset > 0 && pageOffset + height > pageHeightPx) {
+            const spacer = pageHeightPx - pageOffset + 12;
+            node.style.marginTop = `${spacer}px`;
+            adjustedNodes.push(node);
+          }
+        },
+      );
+
       const canvas = await html2canvas(exportNode, {
         scale: 2,
         useCORS: true,
@@ -3215,14 +3236,12 @@ export default function KaylenCareMonitorDashboard({
         windowWidth: 794,
       });
 
+      adjustedNodes.forEach((node) => {
+        node.style.marginTop = "";
+      });
+
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF("p", "mm", "a4");
-
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const margin = 8;
-      const usableWidth = pdfWidth - margin * 2;
-      const usableHeight = pdfHeight - margin * 2;
 
       const imgWidth = usableWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
@@ -3245,6 +3264,9 @@ export default function KaylenCareMonitorDashboard({
       console.error("PDF export failed", error);
       alert("PDF export failed - check console");
     } finally {
+      adjustedNodes.forEach((node) => {
+        node.style.marginTop = "";
+      });
       setIsExportingPdf(false);
     }
   };
@@ -3280,18 +3302,6 @@ export default function KaylenCareMonitorDashboard({
           Now
         </button>
       </div>
-    </div>
-  );
-
-  const renderUseLastButton = (sectionTitle) => (
-    <div className="md:col-span-2">
-      <button
-        type="button"
-        onClick={() => useLastEntry(sectionTitle)}
-        className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
-      >
-        Use last entry
-      </button>
     </div>
   );
 
@@ -3336,7 +3346,6 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {renderUseLastButton("Food Diary")}
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
@@ -3704,38 +3713,32 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-        {renderUseLastButton("Medication")}
         {profileMedicationOptions.length ? (
-          <div className={`${cardClassName} md:col-span-2`}>
-            <h4 className="font-bold text-slate-900">Regular medication</h4>
-            <p className="mt-1 text-sm text-slate-600">
-              Tap a medicine to prefill the form. You can edit everything before
-              saving.
-            </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
+            <h4 className="text-sm font-bold text-slate-900">
+              Regular medication
+            </h4>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
               {profileMedicationOptions.map((medicine) => (
                 <button
                   key={medicine.name}
                   type="button"
                   onClick={() => prefillMedicationFromProfile(medicine)}
-                  className={`rounded-2xl border px-3 py-3 text-left transition ${
+                  className={`rounded-xl border px-3 py-2 text-left transition ${
                     selectedMedicationShortcut === medicine.name
                       ? "border-rose-300 bg-rose-50 shadow-sm"
                       : "border-slate-200 bg-white hover:border-rose-200"
                   }`}
                 >
-                  <p className="font-bold text-slate-900">{medicine.name}</p>
-                  <p className="mt-1 text-sm font-semibold text-slate-600">
-                    {medicine.dose || "Dose not set"}
+                  <p className="truncate text-sm font-bold text-slate-900">
+                    {medicine.name}
                   </p>
-                  {medicine.times?.length ? (
-                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-rose-700">
-                      {medicine.times.join(", ")}
-                    </p>
-                  ) : null}
-                  {medicine.notes ? (
-                    <p className="mt-1 text-xs text-slate-500">{medicine.notes}</p>
-                  ) : null}
+                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-600">
+                    {medicine.dose || "Dose not set"}
+                    {medicine.times?.length
+                      ? ` • ${medicine.times.join(", ")}`
+                      : ""}
+                  </p>
                 </button>
               ))}
             </div>
@@ -3781,17 +3784,6 @@ export default function KaylenCareMonitorDashboard({
               )
             ))}
           </select>
-          {profileMedicationLabels.length ? (
-            <p className="mt-2 text-xs font-medium text-slate-500">
-              Profile medicines are pulled from Settings &gt; Children &gt; Care
-              profile.
-            </p>
-          ) : (
-            <p className="mt-2 text-xs font-medium text-slate-500">
-              Add regular medication in Settings &gt; Children &gt; Care profile
-              to prefill this list.
-            </p>
-          )}
         </div>
 
         {showOtherMedication ? (
@@ -4284,71 +4276,6 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </div>
     );
-  };
-
-  const useLastEntry = (sectionTitle) => {
-    const latest = sharedLog.find((entry) => entry.section === sectionTitle);
-    if (!latest) {
-      alert("No previous entry found for this section.");
-      return;
-    }
-
-    if (sectionTitle === "Food Diary") {
-      const summaryItem = latest.summary?.split(" - ")[0] || "";
-      const lastWasDrink = !!latest.isMilk;
-      setFoodValue(lastWasDrink ? "Drink" : "");
-      setFoodForm((current) => ({
-        ...current,
-        date: todayValue(),
-        time: nowTimeValue(),
-        entryType: lastWasDrink ? "Drink" : "Food",
-        item: "",
-        otherItem: summaryItem,
-        amount: latest.amount || latest.amountOz || "",
-        description:
-          latest.details
-            ?.find((detail) => detail.startsWith("Description:"))
-            ?.replace("Description:", "")
-            .trim() || "",
-        notes: latest.notes || "",
-      }));
-    }
-
-    if (sectionTitle === "Medication") {
-      const medicine = latest.medicine || latest.summary?.split(" - ")[0] || "";
-      setMedicationValue(medicationOptions.includes(medicine) ? medicine : "Other");
-      setMedicationForm((current) => ({
-        ...current,
-        medicine: medicationOptions.includes(medicine) ? medicine : "",
-        otherMedicine: medicationOptions.includes(medicine) ? "" : medicine,
-        dose: latest.dose || getMedicationDefaultDose(medicine),
-        date: todayValue(),
-        time: nowTimeValue(),
-        status: "given",
-      }));
-    }
-
-    if (sectionTitle === "Toileting") {
-      setToiletingForm((current) => ({
-        ...current,
-        date: todayValue(),
-        time: nowTimeValue(),
-        entry: latest.summary || "",
-      }));
-    }
-
-    if (sectionTitle === "Sleep") {
-      setSleepForm((current) => ({
-        ...current,
-        date: todayValue(),
-        wakeDate: todayValue(),
-        quality: latest.quality || "Good",
-        bedtime: nowTimeValue(),
-        wakeTime: "",
-        nightWakings: latest.nightWakings || "",
-        notes: latest.notes || "",
-      }));
-    }
   };
 
   const saveMedicationSchedules = (nextSchedules) => {
@@ -5366,7 +5293,7 @@ export default function KaylenCareMonitorDashboard({
     <div className="fixed left-[-99999px] top-0 z-[-1]">
       <div
         id="report-pdf-export"
-        className="w-[794px] bg-white p-4 text-slate-900"
+        className="pdf-export-document w-[794px] bg-white p-4 text-slate-900"
       >
         {renderShareableCareReport({ mode: "pdf" })}
       </div>
@@ -5374,14 +5301,14 @@ export default function KaylenCareMonitorDashboard({
   );
 
   const renderSnapshotList = (title, entries, tone = "slate", limit = 5) => (
-    <section className={`rounded-2xl border border-${tone}-200 bg-${tone}-50 p-3`}>
+    <section className={`pdf-avoid-break rounded-2xl border border-${tone}-200 bg-${tone}-50 p-3`}>
       <h4 className={`text-xs font-bold uppercase tracking-[0.14em] text-${tone}-700`}>
         {title}
       </h4>
       {entries.length ? (
         <div className="mt-2 space-y-2">
           {entries.slice(0, limit).map((entry) => (
-            <div key={entry.id} className="rounded-xl bg-white/85 px-3 py-2 text-sm">
+            <div key={entry.id} className="pdf-avoid-break rounded-xl bg-white/85 px-3 py-2 text-sm">
               <p className="font-bold text-slate-900">
                 {entry.date}
                 {entry.time ? ` ${entry.time}` : ""} - {entry.summary}
@@ -5421,7 +5348,7 @@ export default function KaylenCareMonitorDashboard({
             : "space-y-3 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-3"
         }
       >
-        <section className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+        <section className="pdf-avoid-break rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-700">
             Care Snapshot - last 72 hours
           </p>
@@ -5439,7 +5366,7 @@ export default function KaylenCareMonitorDashboard({
         </section>
 
         <section className="grid gap-2 md:grid-cols-2">
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3">
+          <div className="pdf-avoid-break rounded-2xl border border-amber-200 bg-amber-50 p-3">
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
               Emergency details
             </h4>
@@ -5480,7 +5407,7 @@ export default function KaylenCareMonitorDashboard({
               <span className="font-bold">Allergies:</span> {allergies}
             </p>
           </div>
-          <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3">
+          <div className="pdf-avoid-break rounded-2xl border border-rose-200 bg-rose-50 p-3">
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-rose-800">
               Medications
             </h4>
@@ -5533,7 +5460,7 @@ export default function KaylenCareMonitorDashboard({
   const renderCareSnapshotForm = () => (
     <>
       <div className="fixed left-[-99999px] top-0 z-[-1]">
-        <div id="snapshot-pdf-export" className="w-[794px] bg-white p-4 text-slate-900">
+        <div id="snapshot-pdf-export" className="pdf-export-document w-[794px] bg-white p-3 text-slate-900">
           {renderCareSnapshotDocument({ mode: "pdf" })}
         </div>
       </div>

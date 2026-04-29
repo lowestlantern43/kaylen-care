@@ -33,14 +33,31 @@ textarea {
 input[type="date"],
 input[type="time"],
 input[type="month"] {
+  display: block;
   width: 100%;
   inline-size: 100%;
   max-width: 100%;
   max-inline-size: 100%;
   min-width: 0;
   min-inline-size: 0;
+  overflow: hidden;
   appearance: none;
   -webkit-appearance: none;
+}
+
+input[type="date"]::-webkit-date-and-time-value,
+input[type="time"]::-webkit-date-and-time-value,
+input[type="month"]::-webkit-date-and-time-value {
+  max-width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+  flex-shrink: 0;
+  margin-left: 0.25rem;
 }
 
 .grid,
@@ -71,5 +88,52 @@ input[type="month"] {
   select {
     width: 100%;
     max-width: 100%;
+  }
+
+  input[type="date"],
+  input[type="time"],
+  input[type="month"] {
+    min-height: 2.75rem;
+  }
+}
+
+.pdf-export-document {
+  width: 794px;
+  max-width: 794px;
+  overflow: visible;
+}
+
+.pdf-export-document,
+.pdf-export-document * {
+  box-sizing: border-box;
+}
+
+.pdf-export-document section,
+.pdf-export-document article,
+.pdf-avoid-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.pdf-export-document .pdf-avoid-break {
+  overflow: hidden;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+
+  .pdf-export-document {
+    width: 190mm;
+    max-width: 190mm;
+  }
+
+  .pdf-export-document section,
+  .pdf-export-document article,
+  .pdf-avoid-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
   }
 }
