@@ -94,6 +94,20 @@ const serializeCareMedicationRows = (rows) =>
     )
     .join("\n");
 
+const emptyCareMedicationRow = () => ({
+  name: "",
+  doseAmount: "",
+  doseUnit: "ml",
+  times: [""],
+  active: true,
+  notes: "",
+});
+
+const careMedicationRowsFromProfile = (value = "") => {
+  const rows = parseCareMedicationRows(value);
+  return rows.length ? rows : [emptyCareMedicationRow()];
+};
+
 function ChildAvatar({ child, active = false, size = "sm" }) {
   const avatarUrl = avatarUrlForChild(child);
   const [failedUrl, setFailedUrl] = useState("");
@@ -574,6 +588,9 @@ function WorkspaceGate({ session, onLogout }) {
   const [isBillingPortalLoading, setIsBillingPortalLoading] = useState(false);
   const [childCareOptions, setChildCareOptions] = useState([]);
   const [childProfile, setChildProfile] = useState(emptyChildProfile);
+  const [careMedicationRows, setCareMedicationRows] = useState([
+    emptyCareMedicationRow(),
+  ]);
   const [importantEvents, setImportantEvents] = useState([]);
   const [importantEventForm, setImportantEventForm] =
     useState(emptyImportantEvent);
@@ -640,11 +657,6 @@ function WorkspaceGate({ session, onLogout }) {
     }),
     [childCareOptions],
   );
-  const careMedicationRows = useMemo(() => {
-    const rows = parseCareMedicationRows(childProfile.currentMedications);
-    return rows.length ? rows : [{ name: "", dose: "", notes: "" }];
-  }, [childProfile.currentMedications]);
-
   const detectedTimeZone =
     Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London";
   const activeTimeZone =
@@ -759,6 +771,7 @@ function WorkspaceGate({ session, onLogout }) {
       if (!selectedFamilyId || !selectedChildId) {
         setChildCareOptions([]);
         setChildProfile(emptyChildProfile);
+        setCareMedicationRows([emptyCareMedicationRow()]);
         setImportantEvents([]);
         return;
       }
@@ -770,7 +783,12 @@ function WorkspaceGate({ session, onLogout }) {
           api.listImportantEvents(selectedFamilyId, selectedChildId),
         ]);
         if (!ignore) setChildCareOptions(options);
-        if (!ignore) setChildProfile({ ...emptyChildProfile, ...profile });
+        if (!ignore) {
+          setChildProfile({ ...emptyChildProfile, ...profile });
+          setCareMedicationRows(
+            careMedicationRowsFromProfile(profile?.currentMedications),
+          );
+        }
         if (!ignore) setImportantEvents(events);
       } catch (caughtError) {
         if (!ignore) setError(caughtError.message);
@@ -1044,12 +1062,19 @@ function WorkspaceGate({ session, onLogout }) {
     setError("");
 
     try {
+      const profileToSave = {
+        ...childProfile,
+        currentMedications: serializeCareMedicationRows(careMedicationRows),
+      };
       const profile = await api.updateChildProfile(
         selectedFamilyId,
         selectedChildId,
-        childProfile,
+        profileToSave,
       );
       setChildProfile({ ...emptyChildProfile, ...profile });
+      setCareMedicationRows(
+        careMedicationRowsFromProfile(profile?.currentMedications),
+      );
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -1060,10 +1085,7 @@ function WorkspaceGate({ session, onLogout }) {
   const updateCareMedicationRow = (index, field, value) => {
     const rows = [...careMedicationRows];
     rows[index] = { ...rows[index], [field]: value };
-    setChildProfile({
-      ...childProfile,
-      currentMedications: serializeCareMedicationRows(rows),
-    });
+    setCareMedicationRows(rows);
   };
 
   const addCareMedicationTime = (index) => {
@@ -1078,28 +1100,21 @@ function WorkspaceGate({ session, onLogout }) {
   };
 
   const addCareMedicationRow = () => {
-    setChildProfile({
-      ...childProfile,
-      currentMedications: serializeCareMedicationRows([
-        ...careMedicationRows,
-        { name: "", doseAmount: "", doseUnit: "ml", times: [""], active: true, notes: "" },
-      ]),
-    });
+    setCareMedicationRows((current) => [...current, emptyCareMedicationRow()]);
   };
 
   const removeCareMedicationRow = (index) => {
     const rows = careMedicationRows.filter((_, rowIndex) => rowIndex !== index);
-    setChildProfile({
-      ...childProfile,
-      currentMedications: serializeCareMedicationRows(rows),
-    });
+    setCareMedicationRows(rows.length ? rows : [emptyCareMedicationRow()]);
   };
 
   const addRegularMedicationFromDiary = async ({ name, dose }) => {
     if (!selectedFamilyId || !selectedChildId || !name?.trim()) return null;
 
     const rows = [
-      ...parseCareMedicationRows(childProfile.currentMedications),
+      ...careMedicationRows.filter(
+        (row) => row.name || row.doseAmount || row.notes,
+      ),
       {
         name: name.trim(),
         doseAmount: dose || "",
@@ -1119,6 +1134,7 @@ function WorkspaceGate({ session, onLogout }) {
       nextProfile,
     );
     setChildProfile({ ...emptyChildProfile, ...profile });
+    setCareMedicationRows(careMedicationRowsFromProfile(profile?.currentMedications));
     return profile;
   };
 
