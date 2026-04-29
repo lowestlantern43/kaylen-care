@@ -11,14 +11,21 @@
 html,
 body,
 #root {
+  width: 100%;
   max-width: 100%;
   overflow-x: hidden;
 }
 
-input,
+body {
+  position: relative;
+}
+
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
 select,
 textarea {
   box-sizing: border-box;
+  display: block;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
 }
@@ -27,8 +34,42 @@ input[type="date"],
 input[type="time"],
 input[type="month"] {
   width: 100%;
+  inline-size: 100%;
   max-width: 100%;
+  max-inline-size: 100%;
   min-width: 0;
+  min-inline-size: 0;
   appearance: none;
   -webkit-appearance: none;
+}
+
+.grid,
+.flex {
+  max-width: 100%;
+}
+
+.grid > *,
+.flex > * {
+  min-width: 0;
+}
+
+@supports (-webkit-touch-callout: none) {
+  input[type="date"],
+  input[type="time"],
+  input[type="month"] {
+    font-size: 16px;
+    line-height: 1.25;
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+}
+
+@media (max-width: 640px) {
+  input[type="date"],
+  input[type="time"],
+  input[type="month"],
+  select {
+    width: 100%;
+    max-width: 100%;
+  }
 }

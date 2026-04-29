@@ -116,6 +116,9 @@ const careMedicationRowsFromProfile = (value = "") => {
   return rows.length ? rows : [emptyCareMedicationRow()];
 };
 
+const savedCareMedicationRows = (rows) =>
+  rows.filter((row) => row.name || row.doseAmount || row.notes);
+
 function ChildAvatar({ child, active = false, size = "sm" }) {
   const avatarUrl = avatarUrlForChild(child);
   const [failedUrl, setFailedUrl] = useState("");
@@ -599,6 +602,11 @@ function WorkspaceGate({ session, onLogout }) {
   const [careMedicationRows, setCareMedicationRows] = useState([
     emptyCareMedicationRow(),
   ]);
+  const [regularMedicationDraft, setRegularMedicationDraft] = useState(
+    emptyCareMedicationRow(),
+  );
+  const [editingCareMedicationIndex, setEditingCareMedicationIndex] =
+    useState(null);
   const [importantEvents, setImportantEvents] = useState([]);
   const [importantEventForm, setImportantEventForm] =
     useState(emptyImportantEvent);
@@ -780,6 +788,7 @@ function WorkspaceGate({ session, onLogout }) {
         setChildCareOptions([]);
         setChildProfile(emptyChildProfile);
         setCareMedicationRows([emptyCareMedicationRow()]);
+        resetRegularMedicationDraft();
         setImportantEvents([]);
         return;
       }
@@ -796,6 +805,7 @@ function WorkspaceGate({ session, onLogout }) {
           setCareMedicationRows(
             careMedicationRowsFromProfile(profile?.currentMedications),
           );
+          resetRegularMedicationDraft();
         }
         if (!ignore) setImportantEvents(events);
       } catch (caughtError) {
@@ -1096,33 +1106,122 @@ function WorkspaceGate({ session, onLogout }) {
     setCareMedicationRows(rows);
   };
 
-  const addCareMedicationTime = (index) => {
-    const row = careMedicationRows[index] || {};
-    updateCareMedicationRow(index, "times", [...(row.times || []), ""]);
+  const updateRegularMedicationDraft = (field, value) => {
+    setRegularMedicationDraft((current) => ({ ...current, [field]: value }));
   };
 
-  const removeCareMedicationTime = (index, timeIndex) => {
-    const row = careMedicationRows[index] || {};
-    const times = (row.times || []).filter((_, indexToRemove) => indexToRemove !== timeIndex);
-    updateCareMedicationRow(index, "times", times.length ? times : [""]);
+  const addRegularMedicationDraftTime = () => {
+    setRegularMedicationDraft((current) => ({
+      ...current,
+      times: [...(current.times || []), ""],
+    }));
   };
 
-  const addCareMedicationRow = () => {
-    setCareMedicationRows((current) => [...current, emptyCareMedicationRow()]);
+  const removeRegularMedicationDraftTime = (timeIndex) => {
+    setRegularMedicationDraft((current) => {
+      const times = (current.times || []).filter(
+        (_, indexToRemove) => indexToRemove !== timeIndex,
+      );
+      return { ...current, times: times.length ? times : [""] };
+    });
   };
 
-  const removeCareMedicationRow = (index) => {
-    const rows = careMedicationRows.filter((_, rowIndex) => rowIndex !== index);
-    setCareMedicationRows(rows.length ? rows : [emptyCareMedicationRow()]);
+  const resetRegularMedicationDraft = () => {
+    setRegularMedicationDraft(emptyCareMedicationRow());
+    setEditingCareMedicationIndex(null);
+  };
+
+  const persistRegularMedicationRows = async (rows) => {
+    if (!selectedFamilyId || !selectedChildId) return null;
+
+    setIsSavingProfile(true);
+    setError("");
+
+    try {
+      const nextProfile = {
+        ...childProfile,
+        currentMedications: serializeCareMedicationRows(rows),
+      };
+      const profile = await api.updateChildProfile(
+        selectedFamilyId,
+        selectedChildId,
+        nextProfile,
+      );
+      const nextRows = careMedicationRowsFromProfile(profile?.currentMedications);
+      setChildProfile({ ...emptyChildProfile, ...profile });
+      setCareMedicationRows(nextRows);
+      return profile;
+    } catch (caughtError) {
+      setError(caughtError.message);
+      return null;
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const saveRegularMedication = async () => {
+    const medicineName = cleanFormText(regularMedicationDraft.name);
+    if (!medicineName) {
+      setError("Add a medication name before saving.");
+      return;
+    }
+
+    const draft = {
+      ...regularMedicationDraft,
+      name: medicineName,
+      doseAmount: cleanFormText(regularMedicationDraft.doseAmount),
+      doseUnit: cleanFormText(regularMedicationDraft.doseUnit) || "ml",
+      times: (regularMedicationDraft.times || [])
+        .map((time) => cleanFormText(time))
+        .filter(Boolean),
+      active: regularMedicationDraft.active !== false,
+      notes: cleanFormText(regularMedicationDraft.notes),
+    };
+    const rows = savedCareMedicationRows(careMedicationRows);
+    const nextRows =
+      editingCareMedicationIndex === null
+        ? [...rows, draft]
+        : rows.map((row, index) =>
+            index === editingCareMedicationIndex ? draft : row,
+          );
+
+    const profile = await persistRegularMedicationRows(nextRows);
+    if (profile) resetRegularMedicationDraft();
+  };
+
+  const editRegularMedication = (index) => {
+    const row = savedCareMedicationRows(careMedicationRows)[index];
+    if (!row) return;
+    setRegularMedicationDraft({
+      ...emptyCareMedicationRow(),
+      ...row,
+      times: row.times?.length ? row.times : [""],
+    });
+    setEditingCareMedicationIndex(index);
+  };
+
+  const removeCareMedicationRow = async (index) => {
+    const rows = savedCareMedicationRows(careMedicationRows).filter(
+      (_, rowIndex) => rowIndex !== index,
+    );
+    const profile = await persistRegularMedicationRows(rows);
+    if (profile && editingCareMedicationIndex === index) {
+      resetRegularMedicationDraft();
+    }
+  };
+
+  const toggleRegularMedicationActive = async (index) => {
+    const rows = savedCareMedicationRows(careMedicationRows).map((row, rowIndex) =>
+      rowIndex === index ? { ...row, active: row.active === false } : row,
+    );
+    await persistRegularMedicationRows(rows);
   };
 
   const addRegularMedicationFromDiary = async ({ name, dose }) => {
     if (!selectedFamilyId || !selectedChildId || !name?.trim()) return null;
 
     const rows = [
-      ...careMedicationRows.filter(
-        (row) => row.name || row.doseAmount || row.notes,
-      ),
+      ...savedCareMedicationRows(careMedicationRows),
       {
         name: name.trim(),
         doseAmount: dose || "",
@@ -2413,139 +2512,219 @@ function WorkspaceGate({ session, onLogout }) {
                           changed when logging.
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={addCareMedicationRow}
-                        className="rounded-xl border border-rose-200 bg-white px-4 py-2.5 text-sm font-bold text-rose-700 shadow-sm"
-                      >
-                        Add medication
-                      </button>
                     </div>
 
-                    <div className="mt-4 space-y-3">
-                      {careMedicationRows.map((row, index) => (
-                        <div
-                          key={index}
-                          className="grid gap-2 rounded-2xl border border-rose-100 bg-white p-3 md:grid-cols-[1fr_0.65fr_0.75fr_auto]"
+                    <div className="mt-4 rounded-2xl border border-rose-100 bg-white p-3">
+                      <div className="grid min-w-0 gap-2 md:grid-cols-[1fr_0.65fr_0.75fr_auto]">
+                        <input
+                          className={`${inputClass} mt-0`}
+                          value={regularMedicationDraft.name || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "name",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="e.g. Vitamin D"
+                        />
+                        <input
+                          className={`${inputClass} mt-0`}
+                          value={regularMedicationDraft.doseAmount || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "doseAmount",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Dose amount"
+                        />
+                        <select
+                          className={`${inputClass} mt-0`}
+                          value={regularMedicationDraft.doseUnit || "ml"}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "doseUnit",
+                              event.target.value,
+                            )
+                          }
                         >
-                          <input
-                            className={`${inputClass} mt-0`}
-                            value={row.name || ""}
-                            onChange={(event) =>
-                              updateCareMedicationRow(
-                                index,
-                                "name",
-                                event.target.value,
-                              )
-                            }
-                            placeholder="Medication name"
-                          />
-                          <input
-                            className={`${inputClass} mt-0`}
-                            value={row.doseAmount || ""}
-                            onChange={(event) =>
-                              updateCareMedicationRow(
-                                index,
-                                "doseAmount",
-                                event.target.value,
-                              )
-                            }
-                            placeholder="Dose amount"
-                          />
-                          <select
-                            className={`${inputClass} mt-0`}
-                            value={row.doseUnit || "ml"}
-                            onChange={(event) =>
-                              updateCareMedicationRow(
-                                index,
-                                "doseUnit",
-                                event.target.value,
-                              )
-                            }
-                          >
-                            <option value="ml">ml</option>
-                            <option value="tablet">tablet</option>
-                            <option value="drops">drops</option>
-                            <option value="syringe">syringe</option>
-                            <option value="injection">injection</option>
-                            <option value="other">other</option>
-                          </select>
-                          <select
-                            className={`${inputClass} mt-0`}
-                            value={row.active === false ? "inactive" : "active"}
-                            onChange={(event) =>
-                              updateCareMedicationRow(
-                                index,
-                                "active",
-                                event.target.value === "active",
-                              )
-                            }
-                          >
-                            <option value="active">Active</option>
-                            <option value="inactive">Inactive</option>
-                          </select>
-                          <div className="md:col-span-3">
-                            <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                              Rough scheduled times
-                            </p>
-                            <div className="space-y-2">
-                              {(row.times?.length ? row.times : [""]).map((time, timeIndex) => (
-                                <div key={timeIndex} className="flex min-w-0 gap-2">
-                                  <input
-                                    type="time"
-                                    className={`${inputClass} mt-0`}
-                                    value={time || ""}
-                                    onChange={(event) => {
-                                      const times = [...(row.times || [])];
-                                      times[timeIndex] = event.target.value;
-                                      updateCareMedicationRow(index, "times", times);
-                                    }}
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => removeCareMedicationTime(index, timeIndex)}
-                                    className="shrink-0 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600"
-                                  >
-                                    Remove
-                                  </button>
-                                </div>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => addCareMedicationTime(index)}
-                                className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700"
+                          <option value="ml">ml</option>
+                          <option value="tablet">tablet</option>
+                          <option value="drops">drops</option>
+                          <option value="syringe">syringe</option>
+                          <option value="injection">injection</option>
+                          <option value="other">other</option>
+                        </select>
+                        <select
+                          className={`${inputClass} mt-0`}
+                          value={
+                            regularMedicationDraft.active === false
+                              ? "inactive"
+                              : "active"
+                          }
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "active",
+                              event.target.value === "active",
+                            )
+                          }
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                        <div className="min-w-0 md:col-span-3">
+                          <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                            Rough scheduled times
+                          </p>
+                          <div className="space-y-2">
+                            {(regularMedicationDraft.times?.length
+                              ? regularMedicationDraft.times
+                              : [""]
+                            ).map((time, timeIndex) => (
+                              <div
+                                key={timeIndex}
+                                className="flex min-w-0 flex-col gap-2 sm:flex-row"
                               >
-                                + Add time
-                              </button>
-                            </div>
+                                <input
+                                  type="time"
+                                  className={`${inputClass} mt-0`}
+                                  value={time || ""}
+                                  onChange={(event) => {
+                                    const times = [
+                                      ...(regularMedicationDraft.times || []),
+                                    ];
+                                    times[timeIndex] = event.target.value;
+                                    updateRegularMedicationDraft("times", times);
+                                  }}
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    removeRegularMedicationDraftTime(timeIndex)
+                                  }
+                                  className="shrink-0 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                            <button
+                              type="button"
+                              onClick={addRegularMedicationDraftTime}
+                              className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700"
+                            >
+                              + Add time
+                            </button>
                           </div>
-                          <input
-                            className={`${inputClass} mt-0 md:col-span-3`}
-                            value={row.notes || ""}
-                            onChange={(event) =>
-                              updateCareMedicationRow(
-                                index,
-                                "notes",
-                                event.target.value,
-                              )
-                            }
-                            placeholder="When / notes, optional"
-                          />
+                        </div>
+                        <input
+                          className={`${inputClass} mt-0 md:col-span-3`}
+                          value={regularMedicationDraft.notes || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "notes",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="When / notes, optional"
+                        />
+                        <div className="flex min-w-0 flex-col gap-2 sm:flex-row md:col-span-4">
                           <button
                             type="button"
-                            onClick={() => removeCareMedicationRow(index)}
-                            className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-bold text-slate-600 disabled:opacity-50"
+                            onClick={saveRegularMedication}
+                            className="rounded-xl bg-rose-600 px-4 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                             disabled={
-                              careMedicationRows.length === 1 &&
-                              !row.name &&
-                              !row.doseAmount &&
-                              !row.notes
+                              isSavingProfile ||
+                              !cleanFormText(regularMedicationDraft.name)
                             }
                           >
-                            Remove
+                            {isSavingProfile
+                              ? "Saving..."
+                              : editingCareMedicationIndex === null
+                                ? "Save medication"
+                                : "Update medication"}
                           </button>
+                          {editingCareMedicationIndex !== null ? (
+                            <button
+                              type="button"
+                              onClick={resetRegularMedicationDraft}
+                              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-600"
+                            >
+                              Cancel edit
+                            </button>
+                          ) : null}
                         </div>
-                      ))}
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <h5 className="text-sm font-bold text-slate-900">
+                        Saved regular medication
+                      </h5>
+                      {savedCareMedicationRows(careMedicationRows).length ? (
+                        <div className="mt-3 space-y-2">
+                          {savedCareMedicationRows(careMedicationRows).map(
+                            (row, index) => (
+                              <div
+                                key={`${row.name}-${index}`}
+                                className="rounded-2xl border border-rose-100 bg-white px-3 py-3"
+                              >
+                                <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0">
+                                    <p className="break-words text-sm font-bold text-slate-900">
+                                      {row.name}
+                                      {row.active === false ? (
+                                        <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                                          Inactive
+                                        </span>
+                                      ) : null}
+                                    </p>
+                                    <p className="mt-1 text-sm font-semibold text-slate-600">
+                                      {[row.doseAmount, row.doseUnit]
+                                        .filter(Boolean)
+                                        .join(" ") || "Dose not set"}
+                                    </p>
+                                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-rose-700">
+                                      {row.times?.length
+                                        ? row.times.join(", ")
+                                        : "No times set"}
+                                    </p>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() => editRegularMedication(index)}
+                                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        toggleRegularMedicationActive(index)
+                                      }
+                                      className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700"
+                                    >
+                                      {row.active === false ? "Active" : "Pause"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => removeCareMedicationRow(index)}
+                                      className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      ) : (
+                        <p className="mt-2 rounded-xl border border-dashed border-rose-200 bg-white/70 px-3 py-3 text-sm font-medium text-slate-600">
+                          No regular medication saved yet.
+                        </p>
+                      )}
                     </div>
                   </section>
 
