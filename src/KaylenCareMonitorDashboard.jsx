@@ -36,11 +36,18 @@ const dedupeAppend = (items, value) => {
 const uniqueList = (items) =>
   Array.from(new Set(items.map((item) => (item || "").trim()).filter(Boolean)));
 
-const parseMedicationProfile = (value = "") =>
-  String(value)
+const cleanFormText = (value) => {
+  const text = String(value ?? "").trim();
+  return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
+};
+
+const parseMedicationProfile = (value = "") => {
+  if (value === null || value === undefined) return [];
+
+  return String(value)
     .split(/\n|;/)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line && line.toLowerCase() !== "null")
     .map((line) => {
       if (line.includes("|")) {
         const [
@@ -52,7 +59,7 @@ const parseMedicationProfile = (value = "") =>
           notes = "",
         ] = line
           .split("|")
-          .map((part) => part.trim());
+          .map((part) => cleanFormText(part));
         const dose = [doseAmount, doseUnit].filter(Boolean).join(" ");
         return {
           name,
@@ -72,13 +79,14 @@ const parseMedicationProfile = (value = "") =>
         line.includes(item),
       );
       if (!separator) {
-        return { name: line, dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "" };
+        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "" };
       }
       const [name, ...doseParts] = line.split(separator);
+      const dose = cleanFormText(doseParts.join(separator));
       return {
-        name: name.trim(),
-        dose: doseParts.join(separator).trim(),
-        doseAmount: doseParts.join(separator).trim(),
+        name: cleanFormText(name),
+        dose,
+        doseAmount: dose,
         doseUnit: "",
         times: [],
         active: true,
@@ -86,6 +94,7 @@ const parseMedicationProfile = (value = "") =>
       };
     })
     .filter((item) => item.name && item.active !== false);
+};
 
 const medicationStatusLabel = (status) => {
   switch (status) {
@@ -265,7 +274,7 @@ const getStoredDrinkUnit = () => {
 };
 
 const dateTimeInputClass =
-  "mt-2 block w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const smallActionButtonClass =
   "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
@@ -415,6 +424,8 @@ export default function KaylenCareMonitorDashboard({
     time: nowTimeValue(),
     location: "",
     otherLocation: "",
+    entryType: "Food",
+    mealContext: "",
     item: "",
     otherItem: "",
     amount: "",
@@ -845,7 +856,7 @@ export default function KaylenCareMonitorDashboard({
   }, [medicationScheduleStorageKey]);
 
   const inputClassName =
-    "mt-2 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+    "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
   const cardClassName =
     "rounded-2xl border border-slate-300 bg-slate-50/80 p-4 shadow-sm";
@@ -892,7 +903,10 @@ export default function KaylenCareMonitorDashboard({
       setFoodValue(preset);
       setFoodForm((current) => ({
         ...current,
-        item: preset,
+        entryType: preset === "Drink" ? "Drink" : "Food",
+        mealContext: preset === "Drink" ? "" : preset,
+        item: "",
+        otherItem: preset === "Drink" ? "" : current.otherItem,
         unit: getStoredDrinkUnit(),
       }));
     }
@@ -981,6 +995,8 @@ export default function KaylenCareMonitorDashboard({
       time: nowTimeValue(),
       location: "",
       otherLocation: "",
+      entryType: "Food",
+      mealContext: "",
       item: "",
       otherItem: "",
       amount: "",
@@ -2674,6 +2690,8 @@ export default function KaylenCareMonitorDashboard({
     selectedLocation,
     isDrink,
   }) => {
+    const mealContext = foodForm.mealContext || "";
+
     if (useSaasApi) {
       if (!familyId || !childId) {
         alert("Choose a family and child before saving.");
@@ -2696,6 +2714,7 @@ export default function KaylenCareMonitorDashboard({
             data: {
             type: isDrink ? "drink" : "food",
             item: selectedFood || (isDrink ? "Drink" : "Food entry"),
+            meal_context: mealContext,
             amount: isDrink ? Number(foodForm.amount || 0) : foodForm.amount || "",
             unit: isDrink ? foodForm.unit || "oz" : "",
             description: foodForm.description || "",
@@ -2722,6 +2741,7 @@ export default function KaylenCareMonitorDashboard({
           `Date: ${foodForm.date}`,
           `Time: ${foodForm.time}`,
           `Location: ${selectedLocation}`,
+          mealContext ? `Meal: ${mealContext}` : null,
           `Item: ${selectedFood || "Drink"}`,
           foodForm.description ? `Description: ${foodForm.description}` : null,
           foodForm.notes ? `Notes: ${foodForm.notes}` : null,
@@ -2749,6 +2769,7 @@ export default function KaylenCareMonitorDashboard({
         `Date: ${foodForm.date}`,
         `Time: ${foodForm.time}`,
         `Location: ${selectedLocation}`,
+        mealContext ? `Meal: ${mealContext}` : null,
         foodForm.description ? `Description: ${foodForm.description}` : null,
         foodForm.notes ? `Notes: ${foodForm.notes}` : null,
       ]
@@ -3276,7 +3297,22 @@ export default function KaylenCareMonitorDashboard({
 
   const renderFoodForm = () => {
     const typedFood = foodForm.otherItem?.trim() || "";
-    const selectedFood = typedFood || foodForm.item || foodValue;
+    const entryType = foodForm.entryType === "Drink" ? "Drink" : "Food";
+    const isDrink = entryType === "Drink";
+    const selectedFood = typedFood || foodForm.item || (isDrink ? "Drink" : "");
+    const mealContextOptions = [
+      "Breakfast",
+      "Lunch",
+      "Dinner",
+      "Dessert",
+      "Snack",
+      "Other",
+    ];
+    const savedFoodSuggestions = uniqueList([
+      ...customFoodLabels,
+      ...savedFoodOptions,
+      ...(useSaasApi ? [] : ["Cottage pie", "Weetabix", "Heinz Fruit Custard"]),
+    ]);
     const showOtherLocation = foodForm.location === "Other";
     const typedLocation = foodForm.otherLocation?.trim() || "";
     const selectedLocation = showOtherLocation
@@ -3291,9 +3327,6 @@ export default function KaylenCareMonitorDashboard({
       !!typedLocation &&
       !["home", "school", "other"].includes(typedLocation.toLowerCase());
 
-    const isDrink =
-      foodValue?.toLowerCase() === "drink" ||
-      selectedFood?.toLowerCase() === "drink";
     const canSaveFood =
       !!foodForm.date.trim() &&
       !!foodForm.time.trim() &&
@@ -3382,38 +3415,56 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Quick pick / meal type
+            Entry type
           </label>
-          <select
-            className={`${inputClassName} min-h-[48px]`}
-            value={foodValue}
-            onChange={(e) => {
-              const value = e.target.value;
-              const recalledNote = getFoodDefaultNote(value);
-              const isDefaultMealType = defaultFoodOptions.includes(value);
-              setFoodValue(value);
-              setFoodForm({
-                ...foodForm,
-                item: value === "Other" ? "" : value,
-                otherItem:
-                  value && !isDefaultMealType ? value : foodForm.otherItem || "",
-                description:
-                  value !== "Other" &&
-                  recalledNote &&
-                  !foodForm.description.trim()
-                    ? recalledNote
-                    : foodForm.description,
-              });
-            }}
-          >
-            <option value="">Select food or drink</option>
-            {foodOptions.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            {["Food", "Drink"].map((type) => (
+              <button
+                key={type}
+                type="button"
+                onClick={() => {
+                  setFoodValue(type === "Drink" ? "Drink" : "");
+                  setFoodForm({
+                    ...foodForm,
+                    entryType: type,
+                    mealContext:
+                      type === "Drink" ? "" : foodForm.mealContext || "",
+                    item: "",
+                  });
+                }}
+                className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                  entryType === type
+                    ? "border-amber-300 bg-amber-50 text-amber-800"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                {type}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
+
+        {entryType === "Food" ? (
+          <div className={`${cardClassName} md:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">
+              Meal / context
+            </label>
+            <select
+              className={`${inputClassName} min-h-[48px]`}
+              value={foodForm.mealContext || ""}
+              onChange={(e) =>
+                setFoodForm({ ...foodForm, mealContext: e.target.value })
+              }
+            >
+              <option value="">Select meal or context</option>
+              {mealContextOptions.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : null}
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -3421,13 +3472,42 @@ export default function KaylenCareMonitorDashboard({
           </label>
           <input
             type="text"
-            placeholder="Type food or drink, e.g. toast, pasta, juice"
+            placeholder={
+              isDrink
+                ? "Type drink, e.g. water, juice, milk"
+                : "Type food, e.g. toast, pasta, Weetabix"
+            }
             className={`${inputClassName} min-h-[48px]`}
             value={foodForm.otherItem}
             onChange={(e) =>
-              setFoodForm({ ...foodForm, otherItem: e.target.value })
+              setFoodForm({ ...foodForm, otherItem: e.target.value, item: "" })
             }
           />
+          {savedFoodSuggestions.length ? (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {savedFoodSuggestions.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => {
+                    const recalledNote = getFoodDefaultNote(item);
+                    setFoodForm({
+                      ...foodForm,
+                      item,
+                      otherItem: item,
+                      description:
+                        recalledNote && !foodForm.description.trim()
+                          ? recalledNote
+                          : foodForm.description,
+                    });
+                  }}
+                  className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800"
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <label className="mt-3 flex items-center gap-3 text-sm font-semibold text-slate-700">
             <input
               type="checkbox"
@@ -4215,13 +4295,15 @@ export default function KaylenCareMonitorDashboard({
 
     if (sectionTitle === "Food Diary") {
       const summaryItem = latest.summary?.split(" - ")[0] || "";
-      setFoodValue(foodOptions.includes(summaryItem) ? summaryItem : "Other");
+      const lastWasDrink = !!latest.isMilk;
+      setFoodValue(lastWasDrink ? "Drink" : "");
       setFoodForm((current) => ({
         ...current,
         date: todayValue(),
         time: nowTimeValue(),
-        item: foodOptions.includes(summaryItem) ? summaryItem : "",
-        otherItem: foodOptions.includes(summaryItem) ? "" : summaryItem,
+        entryType: lastWasDrink ? "Drink" : "Food",
+        item: "",
+        otherItem: summaryItem,
         amount: latest.amount || latest.amountOz || "",
         description:
           latest.details

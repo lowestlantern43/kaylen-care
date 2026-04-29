@@ -3,7 +3,7 @@ import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 
 const inputClass =
-  "mt-2 w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const buttonClass =
   "flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-indigo-500 to-purple-500 px-5 py-4 text-base font-semibold text-white shadow-md transition hover:scale-[1.01] disabled:cursor-not-allowed disabled:opacity-60";
@@ -13,11 +13,18 @@ const secondaryButtonClass =
 
 const avatarUrlForChild = (child) => child?.avatarUrl || child?.avatar_url || "";
 
-const parseCareMedicationRows = (value = "") =>
-  String(value)
+const cleanFormText = (value) => {
+  const text = String(value ?? "").trim();
+  return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
+};
+
+const parseCareMedicationRows = (value = "") => {
+  if (value === null || value === undefined) return [];
+
+  return String(value)
     .split(/\n|;/)
     .map((line) => line.trim())
-    .filter(Boolean)
+    .filter((line) => line && line.toLowerCase() !== "null")
     .map((line) => {
       if (line.includes("|")) {
         const [
@@ -29,7 +36,7 @@ const parseCareMedicationRows = (value = "") =>
           notes = "",
         ] = line
           .split("|")
-          .map((part) => part.trim());
+          .map((part) => cleanFormText(part));
         return {
           name,
           doseAmount,
@@ -48,7 +55,7 @@ const parseCareMedicationRows = (value = "") =>
       );
       if (!separator) {
         return {
-          name: line,
+        name: cleanFormText(line),
           doseAmount: "",
           doseUnit: "ml",
           times: [""],
@@ -59,8 +66,8 @@ const parseCareMedicationRows = (value = "") =>
 
       const [name, ...doseParts] = line.split(separator);
       return {
-        name: name.trim(),
-        doseAmount: doseParts.join(separator).trim(),
+      name: cleanFormText(name),
+      doseAmount: cleanFormText(doseParts.join(separator)),
         doseUnit: "ml",
         times: [""],
         active: true,
@@ -68,18 +75,19 @@ const parseCareMedicationRows = (value = "") =>
       };
     })
     .filter((item) => item.name || item.doseAmount || item.notes);
+};
 
 const serializeCareMedicationRows = (rows) =>
   rows
     .map((row) => ({
-      name: (row.name || "").trim(),
-      doseAmount: (row.doseAmount || row.dose || "").trim(),
-      doseUnit: (row.doseUnit || "ml").trim(),
+      name: cleanFormText(row.name),
+      doseAmount: cleanFormText(row.doseAmount || row.dose),
+      doseUnit: cleanFormText(row.doseUnit) || "ml",
       times: (row.times || [])
         .map((time) => String(time || "").trim())
         .filter(Boolean),
       active: row.active === false ? "inactive" : "active",
-      notes: (row.notes || "").trim(),
+      notes: cleanFormText(row.notes),
     }))
     .filter((row) => row.name || row.doseAmount || row.notes)
     .map((row) =>
