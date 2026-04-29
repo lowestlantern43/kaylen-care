@@ -3448,23 +3448,23 @@ function WorkspaceGate({ session, onLogout }) {
       ) : null}
 
       {showPlatformAdmin ? (
-        <div className="min-h-screen bg-indigo-50 px-4 py-5">
-          <div className="mx-auto max-w-6xl">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600">
+        <div className="min-h-screen bg-indigo-50 px-3 py-3 sm:px-4 sm:py-5">
+          <div className="mx-auto max-w-5xl">
+            <div className="flex items-start justify-between gap-3 rounded-2xl border border-indigo-100 bg-white/90 px-3 py-3 shadow-sm backdrop-blur sm:px-4">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">
                   Platform admin
                 </p>
-                <h2 className="text-lg font-bold text-slate-900">
+                <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
                   FamilyTrack SaaS
                 </h2>
               </div>
               <button
                 type="button"
                 onClick={() => setShowPlatformAdmin(false)}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
+                className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-white"
               >
-                Back to diary
+                Back
               </button>
             </div>
 
@@ -3481,47 +3481,59 @@ function WorkspaceGate({ session, onLogout }) {
             ) : null}
 
             {isPlatformLoading ? (
-              <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 text-sm font-semibold text-slate-600">
+              <div className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 text-sm font-semibold text-slate-600">
                 Loading platform dashboard...
               </div>
             ) : (
               <>
-                <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
-                  <label className="text-sm font-bold text-slate-700">
+                <div className="mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
+                  <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                     Search platform data
                   </label>
                   <input
-                    className={inputClass}
+                    className="mt-1.5 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                     value={platformSearch}
                     onChange={(event) => setPlatformSearch(event.target.value)}
                     placeholder="Search family, owner, user, email, subscription"
                   />
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
                   {[
-                    ["Families", platformData.overview?.families],
-                    ["Users", platformData.overview?.users],
-                    ["Children", platformData.overview?.children],
-                    ["Logs", platformData.overview?.careLogs],
-                    ["Active subs", platformData.overview?.activeSubscriptions],
-                    ["Inactive subs", platformData.overview?.inactiveSubscriptions],
-                  ].map(([label, value]) => (
+                    ["Families", platformData.overview?.families, "bg-indigo-500"],
+                    ["Users", platformData.overview?.users, "bg-sky-500"],
+                    ["Children", platformData.overview?.children, "bg-violet-500"],
+                    ["Logs", platformData.overview?.careLogs, "bg-emerald-500"],
+                    [
+                      "Active subs",
+                      platformData.overview?.activeSubscriptions,
+                      "bg-teal-500",
+                    ],
+                    [
+                      "Inactive subs",
+                      platformData.overview?.inactiveSubscriptions,
+                      "bg-amber-500",
+                    ],
+                  ].map(([label, value, accentClass]) => (
                     <div
                       key={label}
-                      className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm"
+                      className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm"
                     >
-                      <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">
+                      <span
+                        className={`absolute left-0 top-0 h-full w-1 ${accentClass}`}
+                      />
+                      <p className="pl-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
                         {label}
                       </p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                      <p className="mt-0.5 pl-1 text-xl font-black leading-tight text-slate-900 sm:text-2xl">
                         {value ?? 0}
                       </p>
                     </div>
                   ))}
                 </div>
 
-                <div className="mt-4 flex gap-2 overflow-x-auto rounded-2xl border border-indigo-100 bg-white p-2 shadow-sm">
+                <div className="mt-3 overflow-x-auto rounded-2xl border border-indigo-100 bg-white p-1.5 shadow-sm">
+                  <div className="flex min-w-max gap-1.5">
                   {[
                     ["overview", "Overview"],
                     ["accounts", "Accounts"],
@@ -3533,29 +3545,30 @@ function WorkspaceGate({ session, onLogout }) {
                       type="button"
                       key={tabId}
                       onClick={() => setPlatformAdminTab(tabId)}
-                      className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
+                      className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition sm:px-4 sm:text-sm ${
                         platformAdminTab === tabId
-                          ? "bg-indigo-600 text-white"
+                          ? "bg-indigo-600 text-white shadow-sm"
                           : "bg-slate-50 text-slate-700 hover:bg-indigo-50"
                       }`}
                     >
                       {label}
                     </button>
                   ))}
+                  </div>
                 </div>
 
                 {platformAdminTab === "overview" ? (
-                  <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                  <section className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm sm:p-4">
                     <h3 className="font-bold text-slate-900">Platform overview</h3>
                     <p className="mt-1 text-sm text-slate-600">
                       Use the tabs above to manage accounts, families and billing
                       separately.
                     </p>
-                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <div className="mt-3 grid gap-2 md:grid-cols-3">
                       <button
                         type="button"
                         onClick={() => setPlatformAdminTab("accounts")}
-                        className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
                       >
                         <p className="font-bold text-slate-900">Manage accounts</p>
                         <p className="mt-1 text-sm text-slate-600">
@@ -3566,7 +3579,7 @@ function WorkspaceGate({ session, onLogout }) {
                       <button
                         type="button"
                         onClick={() => setPlatformAdminTab("families")}
-                        className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
                       >
                         <p className="font-bold text-slate-900">Manage families</p>
                         <p className="mt-1 text-sm text-slate-600">
@@ -3577,7 +3590,7 @@ function WorkspaceGate({ session, onLogout }) {
                       <button
                         type="button"
                         onClick={() => setPlatformAdminTab("issues")}
-                        className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
                       >
                         <p className="font-bold text-slate-900">Review tester issues</p>
                         <p className="mt-1 text-sm text-slate-600">
