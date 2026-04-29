@@ -43,26 +43,50 @@ const parseMedicationProfile = (value = "") =>
     .filter(Boolean)
     .map((line) => {
       if (line.includes("|")) {
-        const [name = "", dose = "", notes = ""] = line
+        const [
+          name = "",
+          doseAmount = "",
+          doseUnit = "",
+          times = "",
+          active = "active",
+          notes = "",
+        ] = line
           .split("|")
           .map((part) => part.trim());
-        return { name, dose, notes };
+        const dose = [doseAmount, doseUnit].filter(Boolean).join(" ");
+        return {
+          name,
+          doseAmount,
+          doseUnit,
+          dose,
+          times: times
+            .split(",")
+            .map((time) => time.trim())
+            .filter(Boolean)
+            .slice(0, 4),
+          active: active !== "inactive",
+          notes,
+        };
       }
 
       const separator = [" - ", " – ", " — ", ":"].find((item) =>
         line.includes(item),
       );
       if (!separator) {
-        return { name: line, dose: "", notes: "" };
+        return { name: line, dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "" };
       }
       const [name, ...doseParts] = line.split(separator);
       return {
         name: name.trim(),
         dose: doseParts.join(separator).trim(),
+        doseAmount: doseParts.join(separator).trim(),
+        doseUnit: "",
+        times: [],
+        active: true,
         notes: "",
       };
     })
-    .filter((item) => item.name);
+    .filter((item) => item.name && item.active !== false);
 
 const medicationStatusLabel = (status) => {
   switch (status) {
@@ -242,7 +266,7 @@ const getStoredDrinkUnit = () => {
 };
 
 const dateTimeInputClass =
-  "mt-2 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 block w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const smallActionButtonClass =
   "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
@@ -306,6 +330,9 @@ export default function KaylenCareMonitorDashboard({
   childName = "Child",
   childDetails = {},
   familyDetails = {},
+  children = [],
+  selectedChildId = "",
+  onSelectChild,
   customFoodOptions = [],
   customMedicationOptions = [],
   customGivenByOptions = [],
@@ -421,6 +448,21 @@ export default function KaylenCareMonitorDashboard({
     dose: "",
     time: "08:00",
   });
+  const profileMedicationSchedules = useMemo(() => {
+    const schedules = [];
+    parseMedicationProfile(childProfile.currentMedications).forEach((medicine) => {
+      medicine.times.forEach((time) => {
+        schedules.push({
+          id: `profile-${medicine.name}-${time}`,
+          medicine: medicine.name,
+          dose: medicine.dose,
+          time,
+          profile: true,
+        });
+      });
+    });
+    return schedules;
+  }, [childProfile.currentMedications]);
 
   const [toiletingForm, setToiletingForm] = useState({
     date: todayValue(),
@@ -457,6 +499,7 @@ export default function KaylenCareMonitorDashboard({
   const [isLoadingSleepDraft, setIsLoadingSleepDraft] = useState(false);
   const [isSavingSleep, setIsSavingSleep] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [selectedMedicationShortcut, setSelectedMedicationShortcut] = useState("");
   const [draggingCardTitle, setDraggingCardTitle] = useState("");
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [dashboardOrder, setDashboardOrder] = useState(() => {
@@ -962,6 +1005,7 @@ export default function KaylenCareMonitorDashboard({
       notes: "",
     });
     setMedicationValue("");
+    setSelectedMedicationShortcut("");
     setSaveMedicationForFuture(false);
     setSaveGivenByForFuture(false);
   };
@@ -2433,6 +2477,22 @@ export default function KaylenCareMonitorDashboard({
   }, [measurementEntries]);
 
   const tileStatusText = (sectionTitle) => {
+    if (sectionTitle === "Growth / Measurements") {
+      const latest = latestTwoBySection.measurements[0];
+      if (!latest) return ["No entries today"];
+      const parsedDate = parseDisplayDate(latest.date);
+      const dateLabel = parsedDate
+        ? parsedDate.toLocaleDateString("en-GB", {
+            day: "numeric",
+            month: "short",
+            year: "numeric",
+          })
+        : latest.date || "Date not set";
+      if (latest.weightKg) return [`Weight: ${latest.weightKg}kg`, `Date: ${dateLabel}`];
+      if (latest.heightCm) return [`Height: ${latest.heightCm}cm`, `Date: ${dateLabel}`];
+      return [`Date: ${dateLabel}`];
+    }
+
     const formatList = (entries) => {
       if (!entries.length) return ["No entries today"];
       return entries.map(
@@ -3214,8 +3274,11 @@ export default function KaylenCareMonitorDashboard({
   const renderFoodForm = () => {
     const typedFood = foodForm.otherItem?.trim() || "";
     const selectedFood = typedFood || foodForm.item || foodValue;
+    const showOtherLocation = foodForm.location === "Other";
     const typedLocation = foodForm.otherLocation?.trim() || "";
-    const selectedLocation = typedLocation || foodForm.location || "Not set";
+    const selectedLocation = showOtherLocation
+      ? typedLocation || "Other"
+      : foodForm.location || "Not set";
     const canSaveTypedFood =
       !!typedFood &&
       !["drink", "breakfast", "lunch", "dinner", "dessert", "snack", "other"].includes(
@@ -3268,11 +3331,7 @@ export default function KaylenCareMonitorDashboard({
               setFoodForm({
                 ...foodForm,
                 location: e.target.value,
-                otherLocation:
-                  e.target.value &&
-                  !["Home", "School", "Other"].includes(e.target.value)
-                    ? e.target.value
-                    : foodForm.otherLocation || "",
+                otherLocation: e.target.value === "Other" ? foodForm.otherLocation : "",
               })
             }
           >
@@ -3285,6 +3344,7 @@ export default function KaylenCareMonitorDashboard({
           </select>
         </div>
 
+        {showOtherLocation ? (
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Location name
@@ -3315,6 +3375,7 @@ export default function KaylenCareMonitorDashboard({
             </p>
           ) : null}
         </div>
+        ) : null}
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
@@ -3561,6 +3622,42 @@ export default function KaylenCareMonitorDashboard({
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
         {renderUseLastButton("Medication")}
+        {profileMedicationOptions.length ? (
+          <div className={`${cardClassName} md:col-span-2`}>
+            <h4 className="font-bold text-slate-900">Regular medication</h4>
+            <p className="mt-1 text-sm text-slate-600">
+              Tap a medicine to prefill the form. You can edit everything before
+              saving.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {profileMedicationOptions.map((medicine) => (
+                <button
+                  key={medicine.name}
+                  type="button"
+                  onClick={() => prefillMedicationFromProfile(medicine)}
+                  className={`rounded-2xl border px-3 py-3 text-left transition ${
+                    selectedMedicationShortcut === medicine.name
+                      ? "border-rose-300 bg-rose-50 shadow-sm"
+                      : "border-slate-200 bg-white hover:border-rose-200"
+                  }`}
+                >
+                  <p className="font-bold text-slate-900">{medicine.name}</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-600">
+                    {medicine.dose || "Dose not set"}
+                  </p>
+                  {medicine.times?.length ? (
+                    <p className="mt-1 text-xs font-bold uppercase tracking-[0.12em] text-rose-700">
+                      {medicine.times.join(", ")}
+                    </p>
+                  ) : null}
+                  {medicine.notes ? (
+                    <p className="mt-1 text-xs text-slate-500">{medicine.notes}</p>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className={`${cardClassName} md:col-span-2`}>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -3614,9 +3711,9 @@ export default function KaylenCareMonitorDashboard({
             Add reminder
           </button>
 
-          {medicationSchedules.length ? (
+          {[...profileMedicationSchedules, ...medicationSchedules].length ? (
             <div className="mt-3 space-y-2">
-              {medicationSchedules.map((schedule) => {
+              {[...profileMedicationSchedules, ...medicationSchedules].map((schedule) => {
                 const status = medicationScheduleStatus(schedule);
                 return (
                   <div
@@ -3639,19 +3736,21 @@ export default function KaylenCareMonitorDashboard({
                       >
                         Mark as given
                       </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          saveMedicationSchedules(
-                            medicationSchedules.filter(
-                              (item) => item.id !== schedule.id,
-                            ),
-                          )
-                        }
-                        className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
-                      >
-                        Remove
-                      </button>
+                      {schedule.profile ? null : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            saveMedicationSchedules(
+                              medicationSchedules.filter(
+                                (item) => item.id !== schedule.id,
+                              ),
+                            )
+                          }
+                          className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
+                        >
+                          Remove
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -4321,6 +4420,24 @@ export default function KaylenCareMonitorDashboard({
       status: "given",
       date: todayValue(),
       time: nowTimeValue(),
+    }));
+  };
+
+  const prefillMedicationFromProfile = (medicine) => {
+    if (!medicine?.name) return;
+    setSelectedMedicationShortcut(medicine.name);
+    setMedicationValue(
+      medicationOptions.includes(medicine.name) ? medicine.name : "Other",
+    );
+    setMedicationForm((current) => ({
+      ...current,
+      medicine: medicationOptions.includes(medicine.name) ? medicine.name : "",
+      otherMedicine: medicationOptions.includes(medicine.name) ? "" : medicine.name,
+      dose: medicine.dose || getMedicationDefaultDose(medicine.name) || current.dose,
+      time: medicine.times?.[0] || current.time || nowTimeValue(),
+      notes: medicine.notes || current.notes,
+      status: "given",
+      date: todayValue(),
     }));
   };
 
@@ -5384,6 +5501,9 @@ export default function KaylenCareMonitorDashboard({
                   >
                     <p className="font-bold text-slate-900">{medicine.name}</p>
                     {medicine.dose ? <p>Dose: {medicine.dose}</p> : null}
+                    {medicine.times?.length ? (
+                      <p>Times: {medicine.times.join(", ")}</p>
+                    ) : null}
                     {medicine.notes ? <p>Notes: {medicine.notes}</p> : null}
                   </div>
                 ))}
@@ -5577,7 +5697,7 @@ export default function KaylenCareMonitorDashboard({
         : reportCategoryFilter;
 
     const reportInputClassName =
-      "mt-2 min-h-[44px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+      "mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
     const invalidCustomRange =
       reportDays === "custom" &&
@@ -5957,7 +6077,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderShareableReportsForm = () => {
     const reportInputClassName =
-      "mt-2 min-h-[44px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+      "mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
     const invalidCustomRange =
       reportDays === "custom" &&
       reportRangeStart &&
@@ -6506,7 +6626,27 @@ export default function KaylenCareMonitorDashboard({
 
       <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:hidden">
         {quickAddOpen ? (
-          <div className="w-48 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+          <div className="w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
+            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+              Adding for
+            </p>
+            <p className="mt-1 truncate text-sm font-black text-slate-900">
+              {childName}
+            </p>
+            {children.length > 1 && onSelectChild ? (
+              <select
+                className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"
+                value={selectedChildId || childId}
+                onChange={(event) => onSelectChild(event.target.value)}
+              >
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.firstName || child.first_name || "Child"}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <div className="mt-2 border-t border-slate-100 pt-2">
             {[
               ["Food", "Food Diary", "", "🍽"],
               ["Drink", "Food Diary", "Drink", "🥤"],
@@ -6527,6 +6667,7 @@ export default function KaylenCareMonitorDashboard({
                 <span>{label}</span>
               </button>
             ))}
+            </div>
           </div>
         ) : null}
         <button

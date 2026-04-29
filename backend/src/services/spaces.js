@@ -108,7 +108,7 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
   const host = uploadUrl.host;
   const { amzDate, dateStamp } = buildAmzDates();
   const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
-  const signedHeaders = "content-type;host";
+  const signedHeaders = "content-type;host;x-amz-acl";
 
   const queryParams = new URLSearchParams({
     "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
@@ -130,7 +130,7 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
     )
     .join("&");
 
-  const canonicalHeaders = `content-type:${fileType}\nhost:${host}\n`;
+  const canonicalHeaders = `content-type:${fileType}\nhost:${host}\nx-amz-acl:public-read\n`;
   const canonicalRequest = [
     "PUT",
     uploadUrl.pathname,

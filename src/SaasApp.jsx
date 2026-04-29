@@ -20,37 +20,80 @@ const parseCareMedicationRows = (value = "") =>
     .filter(Boolean)
     .map((line) => {
       if (line.includes("|")) {
-        const [name = "", dose = "", notes = ""] = line
+        const [
+          name = "",
+          doseAmount = "",
+          doseUnit = "ml",
+          times = "",
+          active = "active",
+          notes = "",
+        ] = line
           .split("|")
           .map((part) => part.trim());
-        return { name, dose, notes };
+        return {
+          name,
+          doseAmount,
+          doseUnit: doseUnit || "ml",
+          times: times
+            .split(",")
+            .map((time) => time.trim())
+            .filter(Boolean)
+            .slice(0, 4),
+          active: active !== "inactive",
+          notes,
+        };
       }
 
       const separator = [" - ", " – ", " — ", ":"].find((item) =>
         line.includes(item),
       );
       if (!separator) {
-        return { name: line, dose: "", notes: "" };
+        return {
+          name: line,
+          doseAmount: "",
+          doseUnit: "ml",
+          times: [""],
+          active: true,
+          notes: "",
+        };
       }
 
       const [name, ...doseParts] = line.split(separator);
       return {
         name: name.trim(),
-        dose: doseParts.join(separator).trim(),
+        doseAmount: doseParts.join(separator).trim(),
+        doseUnit: "ml",
+        times: [""],
+        active: true,
         notes: "",
       };
     })
-    .filter((item) => item.name || item.dose || item.notes);
+    .filter((item) => item.name || item.doseAmount || item.notes);
 
 const serializeCareMedicationRows = (rows) =>
   rows
     .map((row) => ({
       name: (row.name || "").trim(),
-      dose: (row.dose || "").trim(),
+      doseAmount: (row.doseAmount || row.dose || "").trim(),
+      doseUnit: (row.doseUnit || "ml").trim(),
+      times: (row.times || [])
+        .map((time) => String(time || "").trim())
+        .filter(Boolean)
+        .slice(0, 4),
+      active: row.active === false ? "inactive" : "active",
       notes: (row.notes || "").trim(),
     }))
-    .filter((row) => row.name || row.dose || row.notes)
-    .map((row) => [row.name, row.dose, row.notes].filter(Boolean).join(" | "))
+    .filter((row) => row.name || row.doseAmount || row.notes)
+    .map((row) =>
+      [
+        row.name,
+        row.doseAmount,
+        row.doseUnit,
+        row.times.join(", "),
+        row.active,
+        row.notes,
+      ].join(" | "),
+    )
     .join("\n");
 
 function ChildAvatar({ child, active = false, size = "sm" }) {
@@ -1030,7 +1073,7 @@ function WorkspaceGate({ session, onLogout }) {
       ...childProfile,
       currentMedications: serializeCareMedicationRows([
         ...careMedicationRows,
-        { name: "", dose: "", notes: "" },
+        { name: "", doseAmount: "", doseUnit: "ml", times: [""], active: true, notes: "" },
       ]),
     });
   };
@@ -2323,7 +2366,7 @@ function WorkspaceGate({ session, onLogout }) {
                       {careMedicationRows.map((row, index) => (
                         <div
                           key={index}
-                          className="grid gap-2 rounded-2xl border border-rose-100 bg-white p-3 md:grid-cols-[1fr_0.8fr_1fr_auto]"
+                          className="grid gap-2 rounded-2xl border border-rose-100 bg-white p-3 md:grid-cols-[1fr_0.65fr_0.75fr_auto]"
                         >
                           <input
                             className={`${inputClass} mt-0`}
@@ -2339,18 +2382,70 @@ function WorkspaceGate({ session, onLogout }) {
                           />
                           <input
                             className={`${inputClass} mt-0`}
-                            value={row.dose || ""}
+                            value={row.doseAmount || ""}
                             onChange={(event) =>
                               updateCareMedicationRow(
                                 index,
-                                "dose",
+                                "doseAmount",
                                 event.target.value,
                               )
                             }
-                            placeholder="Dose, e.g. 5ml"
+                            placeholder="Dose amount"
                           />
-                          <input
+                          <select
                             className={`${inputClass} mt-0`}
+                            value={row.doseUnit || "ml"}
+                            onChange={(event) =>
+                              updateCareMedicationRow(
+                                index,
+                                "doseUnit",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="ml">ml</option>
+                            <option value="tablet">tablet</option>
+                            <option value="drops">drops</option>
+                            <option value="syringe">syringe</option>
+                            <option value="injection">injection</option>
+                            <option value="other">other</option>
+                          </select>
+                          <select
+                            className={`${inputClass} mt-0`}
+                            value={row.active === false ? "inactive" : "active"}
+                            onChange={(event) =>
+                              updateCareMedicationRow(
+                                index,
+                                "active",
+                                event.target.value === "active",
+                              )
+                            }
+                          >
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                          </select>
+                          <div className="md:col-span-3">
+                            <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                              Rough scheduled times
+                            </p>
+                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                              {[0, 1, 2, 3].map((timeIndex) => (
+                                <input
+                                  key={timeIndex}
+                                  type="time"
+                                  className={`${inputClass} mt-0`}
+                                  value={row.times?.[timeIndex] || ""}
+                                  onChange={(event) => {
+                                    const times = [...(row.times || [])];
+                                    times[timeIndex] = event.target.value;
+                                    updateCareMedicationRow(index, "times", times);
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                          <input
+                            className={`${inputClass} mt-0 md:col-span-3`}
                             value={row.notes || ""}
                             onChange={(event) =>
                               updateCareMedicationRow(
@@ -2368,7 +2463,7 @@ function WorkspaceGate({ session, onLogout }) {
                             disabled={
                               careMedicationRows.length === 1 &&
                               !row.name &&
-                              !row.dose &&
+                              !row.doseAmount &&
                               !row.notes
                             }
                           >
@@ -3732,6 +3827,9 @@ function WorkspaceGate({ session, onLogout }) {
         childName={selectedChild.firstName || selectedChild.first_name}
         childDetails={selectedChild}
         familyDetails={selectedFamily}
+        children={children}
+        selectedChildId={selectedChildId}
+        onSelectChild={selectChild}
         customFoodOptions={groupedCareOptions.food}
         customMedicationOptions={groupedCareOptions.medication}
         customGivenByOptions={groupedCareOptions.givenBy}

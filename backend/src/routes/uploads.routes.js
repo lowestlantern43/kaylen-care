@@ -124,6 +124,7 @@ uploadsRouter.post(
         method: "PUT",
         headers: {
           "Content-Type": fileType,
+          "x-amz-acl": "public-read",
         },
         body: req.body,
       },

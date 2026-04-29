@@ -35,6 +35,7 @@ async function uploadToSignedUrl(signedUploadUrl, file) {
       method: "PUT",
       headers: {
         "Content-Type": file.type,
+        "x-amz-acl": "public-read",
       },
       body: file,
     });
