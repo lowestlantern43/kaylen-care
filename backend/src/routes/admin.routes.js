@@ -4,6 +4,7 @@ import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
+import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
 import { listStripeCustomerSubscriptions } from "../services/stripe.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
@@ -47,6 +48,7 @@ async function getFeedbackSettings() {
   let rows = [];
 
   try {
+    await ensureIssueReportingSchema();
     const result = await query(
       `
         SELECT value
@@ -198,6 +200,7 @@ adminRouter.patch(
     let rows = [];
 
     try {
+      await ensureIssueReportingSchema();
       const result = await query(
         `
           INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
@@ -244,6 +247,7 @@ adminRouter.get(
     let rows = [];
 
     try {
+      await ensureIssueReportingSchema();
       const result = await query(
         `
           SELECT
@@ -293,6 +297,7 @@ adminRouter.patch(
     let rows = [];
 
     try {
+      await ensureIssueReportingSchema();
       const result = await query(
         `
           UPDATE issue_reports

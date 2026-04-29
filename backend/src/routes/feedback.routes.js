@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
+import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
 import { optionalString, requireEnum, requireString, requireUuid } from "../validators/simple.js";
@@ -17,6 +18,7 @@ async function getFeedbackSettings() {
   let rows = [];
 
   try {
+    await ensureIssueReportingSchema();
     const result = await query(
       `
         SELECT value
@@ -141,6 +143,7 @@ feedbackRouter.post(
     let rows = [];
 
     try {
+      await ensureIssueReportingSchema();
       const result = await query(
         `
           INSERT INTO issue_reports (
