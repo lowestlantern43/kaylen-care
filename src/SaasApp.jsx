@@ -1,3 +1,4 @@
+import html2canvas from "html2canvas";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -16,6 +17,19 @@ const avatarUrlForChild = (child) => child?.avatarUrl || child?.avatar_url || ""
 const cleanFormText = (value) => {
   const text = String(value ?? "").trim();
   return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
+};
+
+const issueStatusLabels = {
+  open: "Open",
+  reviewing: "Reviewing",
+  fixed: "Fixed",
+  closed: "Closed",
+};
+
+const issueSeverityLabels = {
+  small: "Small issue",
+  annoying: "Annoying",
+  blocking: "Blocking",
 };
 
 const parseCareMedicationRows = (value = "") => {
@@ -523,6 +537,343 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
   );
 }
 
+function ReportIssueWidget({
+  enabled,
+  selectedChild,
+  selectedFamily,
+  selectedChildId,
+  selectedFamilyId,
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [message, setMessage] = useState("");
+  const [severity, setSeverity] = useState("small");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [error, setError] = useState("");
+
+  if (!enabled) return null;
+
+  const childName =
+    selectedChild?.firstName ||
+    selectedChild?.first_name ||
+    selectedChild?.name ||
+    "selected child";
+
+  const captureScreenshot = async () => {
+    try {
+      const canvas = await html2canvas(document.body, {
+        backgroundColor: "#ffffff",
+        logging: false,
+        scale: Math.min(window.devicePixelRatio || 1, 1.25),
+        useCORS: true,
+        ignoreElements: (element) =>
+          element?.dataset?.feedbackUi === "true" ||
+          element?.closest?.("[data-feedback-ui='true']"),
+      });
+
+      const maxWidth = 1000;
+      const ratio = Math.min(1, maxWidth / canvas.width);
+      const output = document.createElement("canvas");
+      output.width = Math.max(1, Math.round(canvas.width * ratio));
+      output.height = Math.max(1, Math.round(canvas.height * ratio));
+      const context = output.getContext("2d");
+      context.drawImage(canvas, 0, 0, output.width, output.height);
+
+      const dataUrl = output.toDataURL("image/jpeg", 0.55);
+      return dataUrl.length <= 1_100_000 ? dataUrl : "";
+    } catch {
+      return "";
+    }
+  };
+
+  const submitIssue = async (event) => {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+
+    if (!message.trim()) {
+      setError("Please tell us what went wrong.");
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const screenshotUrl = await captureScreenshot();
+      await api.submitIssue({
+        familyId: selectedFamilyId || null,
+        childId: selectedChildId || null,
+        route:
+          window.location.pathname +
+          window.location.search +
+          window.location.hash,
+        message,
+        severity,
+        browserInfo: {
+          userAgent: navigator.userAgent,
+          language: navigator.language,
+          platform: navigator.platform,
+          viewport: `${window.innerWidth}x${window.innerHeight}`,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          familyName: selectedFamily?.familyName || selectedFamily?.name || "",
+          childName,
+        },
+        appVersion:
+          import.meta.env.VITE_APP_VERSION ||
+          import.meta.env.VITE_APP_BUILD ||
+          import.meta.env.MODE ||
+          "",
+        screenshotUrl,
+      });
+
+      setMessage("");
+      setSeverity("small");
+      setIsOpen(false);
+      setNotice("Thanks — your issue has been sent.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div data-feedback-ui="true">
+      <button
+        type="button"
+        onClick={() => {
+          setIsOpen(true);
+          setError("");
+        }}
+        className="fixed bottom-5 left-4 z-40 rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow-lg backdrop-blur transition hover:bg-indigo-50 hover:text-indigo-700"
+      >
+        Report issue
+      </button>
+
+      {notice ? (
+        <div className="fixed bottom-16 left-4 z-40 max-w-[18rem] rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg">
+          {notice}
+        </div>
+      ) : null}
+
+      {isOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/40 p-4 sm:items-center sm:justify-center">
+          <form
+            className="w-full rounded-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:max-w-md"
+            onSubmit={submitIssue}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Report an issue
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  We will include the current page and device details.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="rounded-full border border-slate-200 px-3 py-1 text-sm font-bold text-slate-600"
+              >
+                Close
+              </button>
+            </div>
+
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              What went wrong?
+            </label>
+            <textarea
+              className={inputClass}
+              rows={4}
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Tell us what happened"
+              required
+            />
+
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Severity
+            </label>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {Object.entries(issueSeverityLabels).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSeverity(value)}
+                  className={`rounded-xl border px-2 py-2 text-xs font-bold transition ${
+                    severity === value
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+              Adding for {childName}. Route:{" "}
+              {window.location.pathname || "/"}
+            </div>
+
+            {error ? (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                {error}
+              </p>
+            ) : null}
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {isSubmitting ? "Sending..." : "Submit"}
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function IssueAdminPanel({
+  issues,
+  settings,
+  isSaving,
+  onRefresh,
+  onToggleEnabled,
+  onStatusChange,
+}) {
+  return (
+    <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="font-bold text-slate-900">Tester issue reports</h3>
+          <p className="mt-1 text-sm text-slate-600">
+            New reports appear here with page, child, account and device context.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700">
+            <input
+              type="checkbox"
+              checked={settings.enabled}
+              onChange={(event) => onToggleEnabled(event.target.checked)}
+              disabled={isSaving}
+            />
+            Report button enabled
+          </label>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-700"
+          >
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {issues.length ? (
+          issues.map((issue) => (
+            <article
+              key={issue.id}
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-white px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
+                      {issueSeverityLabels[issue.severity] || issue.severity}
+                    </span>
+                    <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-indigo-700">
+                      {issueStatusLabels[issue.status] || issue.status}
+                    </span>
+                    <span className="text-xs font-semibold text-slate-500">
+                      {issue.createdAt
+                        ? new Date(issue.createdAt).toLocaleString()
+                        : "Unknown time"}
+                    </span>
+                  </div>
+                  <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-900">
+                    {issue.message}
+                  </p>
+                  <p className="mt-2 break-all text-xs font-semibold text-slate-500">
+                    {issue.route || "No route captured"}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-600">
+                    {issue.userName || issue.userEmail || "Unknown user"} -{" "}
+                    {issue.familyName || "No family"} -{" "}
+                    {[
+                      issue.childFirstName,
+                      issue.childLastName,
+                    ]
+                      .filter(Boolean)
+                      .join(" ") || "No child"}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                    {issue.browserInfo?.platform || "Unknown platform"} -{" "}
+                    {issue.browserInfo?.viewport || "unknown viewport"}
+                  </p>
+                </div>
+
+                <div className="flex w-full flex-col gap-2 lg:w-48">
+                  <select
+                    className={inputClass}
+                    value={issue.status}
+                    disabled={isSaving}
+                    onChange={(event) =>
+                      onStatusChange(issue.id, event.target.value)
+                    }
+                  >
+                    {Object.entries(issueStatusLabels).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  {issue.screenshotUrl ? (
+                    <a
+                      href={issue.screenshotUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block overflow-hidden rounded-xl border border-slate-200 bg-white"
+                    >
+                      <img
+                        src={issue.screenshotUrl}
+                        alt="Issue screenshot"
+                        className="h-28 w-full object-cover"
+                      />
+                    </a>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-slate-300 bg-white px-3 py-4 text-center text-xs font-semibold text-slate-500">
+                      No screenshot
+                    </div>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-600">
+            No issue reports yet.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function WorkspaceGate({ session, onLogout }) {
   const normalizeFamily = (family) => ({
     familyId: family.familyId || family.id,
@@ -635,6 +986,10 @@ function WorkspaceGate({ session, onLogout }) {
     families: [],
     users: [],
   });
+  const [platformIssues, setPlatformIssues] = useState([]);
+  const [feedbackSettings, setFeedbackSettings] = useState({ enabled: true });
+  const [isFeedbackEnabled, setIsFeedbackEnabled] = useState(true);
+  const [isIssueAdminLoading, setIsIssueAdminLoading] = useState(false);
   const [platformSearch, setPlatformSearch] = useState("");
   const [selectedPlatformFamily, setSelectedPlatformFamily] = useState(null);
   const [selectedPlatformUser, setSelectedPlatformUser] = useState(null);
@@ -698,6 +1053,29 @@ function WorkspaceGate({ session, onLogout }) {
       // Local display preference only.
     }
   }, [timeZonePreference]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadFeedbackConfig() {
+      try {
+        const config = await api.feedbackConfig();
+        if (!ignore) {
+          setFeedbackSettings({ enabled: config.enabled });
+          setIsFeedbackEnabled(config.enabled);
+        }
+      } catch {
+        if (!ignore) {
+          setIsFeedbackEnabled(false);
+        }
+      }
+    }
+
+    loadFeedbackConfig();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const selectChild = (childIdToSelect) => {
     setSelectedChildId(childIdToSelect);
@@ -1404,18 +1782,85 @@ function WorkspaceGate({ session, onLogout }) {
     setPlatformActionMessage("");
 
     try {
-      const [overview, families, users] = await Promise.all([
+      const [overview, families, users, issues, settings] = await Promise.all([
         api.adminOverview(),
         api.adminFamilies(),
         api.adminUsers(),
+        api.adminIssues(),
+        api.adminFeedbackSettings(),
       ]);
       setPlatformData({ overview, families, users });
+      setPlatformIssues(issues);
+      setFeedbackSettings(settings);
+      setIsFeedbackEnabled(settings.enabled);
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
       setIsPlatformLoading(false);
+    }
+  };
+
+  const refreshPlatformIssues = async () => {
+    setIsIssueAdminLoading(true);
+    setError("");
+
+    try {
+      const [issues, settings] = await Promise.all([
+        api.adminIssues(),
+        api.adminFeedbackSettings(),
+      ]);
+      setPlatformIssues(issues);
+      setFeedbackSettings(settings);
+      setIsFeedbackEnabled(settings.enabled);
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsIssueAdminLoading(false);
+    }
+  };
+
+  const updateFeedbackEnabled = async (enabled) => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const settings = await api.adminUpdateFeedbackSettings({ enabled });
+      setFeedbackSettings(settings);
+      setIsFeedbackEnabled(settings.enabled);
+      setPlatformActionMessage(
+        settings.enabled
+          ? "Report Issue button enabled."
+          : "Report Issue button disabled for normal users.",
+      );
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updateIssueStatus = async (issueId, status) => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updated = await api.adminUpdateIssueStatus(issueId, status);
+      setPlatformIssues((current) =>
+        current.map((issue) =>
+          issue.id === issueId
+            ? { ...issue, status: updated.status, updatedAt: updated.updatedAt }
+            : issue,
+        ),
+      );
+      setPlatformActionMessage("Issue status updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
     }
   };
 
@@ -1666,6 +2111,24 @@ function WorkspaceGate({ session, onLogout }) {
     return haystack.includes(platformSearch.toLowerCase());
   });
 
+  const filteredPlatformIssues = platformIssues.filter((issue) => {
+    const haystack = [
+      issue.message,
+      issue.route,
+      issue.severity,
+      issue.status,
+      issue.userName,
+      issue.userEmail,
+      issue.familyName,
+      issue.childFirstName,
+      issue.childLastName,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(platformSearch.toLowerCase());
+  });
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-slate-50 px-6 py-10 text-slate-700">
@@ -1898,6 +2361,12 @@ function WorkspaceGate({ session, onLogout }) {
             {error ? (
               <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
                 {error}
+              </p>
+            ) : null}
+
+            {platformActionMessage ? (
+              <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                {platformActionMessage}
               </p>
             ) : null}
 
@@ -3005,6 +3474,12 @@ function WorkspaceGate({ session, onLogout }) {
               </p>
             ) : null}
 
+            {platformActionMessage ? (
+              <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                {platformActionMessage}
+              </p>
+            ) : null}
+
             {isPlatformLoading ? (
               <div className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 text-sm font-semibold text-slate-600">
                 Loading platform dashboard...
@@ -3051,6 +3526,7 @@ function WorkspaceGate({ session, onLogout }) {
                     ["overview", "Overview"],
                     ["accounts", "Accounts"],
                     ["families", "Families"],
+                    ["issues", "Issues"],
                     ["billing", "Billing"],
                   ].map(([tabId, label]) => (
                     <button
@@ -3098,8 +3574,30 @@ function WorkspaceGate({ session, onLogout }) {
                           inspect family activity.
                         </p>
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlatformAdminTab("issues")}
+                        className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                      >
+                        <p className="font-bold text-slate-900">Review tester issues</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          See reports from families, check screenshots and update
+                          support status.
+                        </p>
+                      </button>
                     </div>
                   </section>
+                ) : null}
+
+                {platformAdminTab === "issues" ? (
+                  <IssueAdminPanel
+                    issues={filteredPlatformIssues}
+                    settings={feedbackSettings}
+                    isSaving={isPlatformSaving || isIssueAdminLoading}
+                    onRefresh={refreshPlatformIssues}
+                    onToggleEnabled={updateFeedbackEnabled}
+                    onStatusChange={updateIssueStatus}
+                  />
                 ) : null}
 
                 {platformAdminTab === "billing" ? (
@@ -4075,6 +4573,7 @@ function WorkspaceGate({ session, onLogout }) {
       ) : null}
 
       {!showAdmin && !showPlatformAdmin ? (
+      <>
       <KaylenCareMonitorDashboard
         familyId={selectedFamily.familyId}
         childId={selectedChild.id}
@@ -4094,6 +4593,14 @@ function WorkspaceGate({ session, onLogout }) {
         importantEvents={importantEvents}
         useSaasApi
       />
+      <ReportIssueWidget
+        enabled={isFeedbackEnabled}
+        selectedChild={selectedChild}
+        selectedFamily={selectedFamily}
+        selectedChildId={selectedChildId}
+        selectedFamilyId={selectedFamilyId}
+      />
+      </>
       ) : null}
     </div>
   );

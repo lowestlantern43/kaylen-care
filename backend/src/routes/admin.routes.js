@@ -22,6 +22,7 @@ export const adminRouter = Router();
 adminRouter.use(requireAuth, requirePlatformAdmin);
 
 const memberRoles = ["owner", "parent", "carer", "viewer"];
+const issueStatuses = ["open", "reviewing", "fixed", "closed"];
 
 function stripeDashboardUrl(type, id) {
   if (!id) return null;
@@ -36,6 +37,21 @@ async function writeAudit(req, { familyId = null, entityType, entityId, action, 
     `,
     [familyId, req.user.id, action, entityType, entityId, JSON.stringify(metadata)],
   );
+}
+
+async function getFeedbackSettings() {
+  const { rows } = await query(
+    `
+      SELECT value
+      FROM platform_settings
+      WHERE key = 'feedback'
+      LIMIT 1
+    `,
+  );
+
+  return {
+    enabled: rows[0]?.value?.enabled !== false,
+  };
 }
 
 function normalisePeriodEnd(timestamp) {
@@ -146,6 +162,120 @@ adminRouter.get(
       },
       error: null,
     });
+  }),
+);
+
+adminRouter.get(
+  "/feedback-settings",
+  asyncHandler(async (req, res) => {
+    res.json({ data: await getFeedbackSettings(), error: null });
+  }),
+);
+
+adminRouter.patch(
+  "/feedback-settings",
+  asyncHandler(async (req, res) => {
+    const enabled = Boolean(req.body?.enabled);
+
+    const { rows } = await query(
+      `
+        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+        VALUES ('feedback', $1, now(), $2)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = now(),
+          updated_by_user_id = EXCLUDED.updated_by_user_id
+        RETURNING value
+      `,
+      [JSON.stringify({ enabled }), req.user.id],
+    );
+
+    await writeAudit(req, {
+      entityType: "platform_setting",
+      entityId: null,
+      action: "platform_feedback_setting_updated",
+      metadata: { enabled },
+    });
+
+    res.json({
+      data: {
+        enabled: rows[0]?.value?.enabled !== false,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.get(
+  "/issues",
+  asyncHandler(async (req, res) => {
+    const { rows } = await query(
+      `
+        SELECT
+          ir.id,
+          ir.user_id AS "userId",
+          u.full_name AS "userName",
+          u.email AS "userEmail",
+          ir.family_id AS "familyId",
+          f.name AS "familyName",
+          ir.child_id AS "childId",
+          c.first_name AS "childFirstName",
+          c.last_name AS "childLastName",
+          ir.route,
+          ir.message,
+          ir.severity,
+          ir.browser_info AS "browserInfo",
+          ir.app_version AS "appVersion",
+          ir.screenshot_url AS "screenshotUrl",
+          ir.status,
+          ir.created_at AS "createdAt",
+          ir.updated_at AS "updatedAt"
+        FROM issue_reports ir
+        LEFT JOIN users u ON u.id = ir.user_id
+        LEFT JOIN families f ON f.id = ir.family_id
+        LEFT JOIN children c ON c.id = ir.child_id
+        ORDER BY ir.created_at DESC
+        LIMIT 200
+      `,
+    );
+
+    res.json({ data: rows, error: null });
+  }),
+);
+
+adminRouter.patch(
+  "/issues/:issueId",
+  asyncHandler(async (req, res) => {
+    const issueId = requireUuid(req.params.issueId, "Issue ID");
+    const status = requireEnum(req.body, "status", issueStatuses, "Status");
+
+    const { rows } = await query(
+      `
+        UPDATE issue_reports
+        SET status = $1,
+            updated_at = now()
+        WHERE id = $2
+        RETURNING
+          id,
+          status,
+          updated_at AS "updatedAt"
+      `,
+      [status, issueId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Issue report not found.");
+    }
+
+    await writeAudit(req, {
+      entityType: "issue_report",
+      entityId: issueId,
+      action: "platform_issue_status_updated",
+      metadata: { status },
+    });
+
+    res.json({ data: rows[0], error: null });
   }),
 );
 

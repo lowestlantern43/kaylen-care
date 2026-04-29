@@ -219,6 +219,12 @@ export const api = {
       body: JSON.stringify({ email, role }),
     }),
   getSubscription: (familyId) => request(`/families/${familyId}/subscription`),
+  feedbackConfig: () => request("/feedback/config"),
+  submitIssue: (payload) =>
+    request("/feedback/issues", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createCheckoutSession: (familyId) =>
     request(`/families/${familyId}/subscription/checkout`, {
       method: "POST",
@@ -263,6 +269,18 @@ export const api = {
   adminResetUserPassword: (userId, payload) =>
     request(`/admin/users/${userId}/password`, {
       method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  adminIssues: () => request("/admin/issues"),
+  adminUpdateIssueStatus: (issueId, status) =>
+    request(`/admin/issues/${issueId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+  adminFeedbackSettings: () => request("/admin/feedback-settings"),
+  adminUpdateFeedbackSettings: (payload) =>
+    request("/admin/feedback-settings", {
+      method: "PATCH",
       body: JSON.stringify(payload),
     }),
 };
