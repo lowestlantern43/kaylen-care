@@ -645,7 +645,7 @@ function ReportIssueWidget({
           setIsOpen(true);
           setError("");
         }}
-        className="fixed bottom-5 left-4 z-40 rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow-lg backdrop-blur transition hover:bg-indigo-50 hover:text-indigo-700"
+        className="fixed bottom-5 left-4 z-[9999] rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow-lg backdrop-blur transition hover:bg-indigo-50 hover:text-indigo-700"
       >
         Report issue
       </button>
@@ -4593,6 +4593,8 @@ function WorkspaceGate({ session, onLogout }) {
         importantEvents={importantEvents}
         useSaasApi
       />
+      </>
+      ) : null}
       <ReportIssueWidget
         enabled={isFeedbackEnabled}
         selectedChild={selectedChild}
@@ -4600,8 +4602,6 @@ function WorkspaceGate({ session, onLogout }) {
         selectedChildId={selectedChildId}
         selectedFamilyId={selectedFamilyId}
       />
-      </>
-      ) : null}
     </div>
   );
 }
