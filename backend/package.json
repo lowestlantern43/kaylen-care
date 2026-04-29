@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch src/server.js",
+    "install-issue-reporting": "node src/scripts/install-issue-reporting.js",
     "make-admin": "node src/scripts/make-platform-admin.js",
     "migrate": "node src/scripts/migrate.js",
     "start": "node src/server.js"
