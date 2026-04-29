@@ -24,6 +24,10 @@ adminRouter.use(requireAuth, requirePlatformAdmin);
 const memberRoles = ["owner", "parent", "carer", "viewer"];
 const issueStatuses = ["open", "reviewing", "fixed", "closed"];
 
+function isMissingFeedbackTable(error) {
+  return error?.code === "42P01";
+}
+
 function stripeDashboardUrl(type, id) {
   if (!id) return null;
   return `https://dashboard.stripe.com/${type}/${id}`;
@@ -40,17 +44,31 @@ async function writeAudit(req, { familyId = null, entityType, entityId, action, 
 }
 
 async function getFeedbackSettings() {
-  const { rows } = await query(
-    `
-      SELECT value
-      FROM platform_settings
-      WHERE key = 'feedback'
-      LIMIT 1
-    `,
-  );
+  let rows = [];
+
+  try {
+    const result = await query(
+      `
+        SELECT value
+        FROM platform_settings
+        WHERE key = 'feedback'
+        LIMIT 1
+      `,
+    );
+    rows = result.rows;
+  } catch (error) {
+    if (isMissingFeedbackTable(error)) {
+      return {
+        enabled: false,
+        setupRequired: true,
+      };
+    }
+    throw error;
+  }
 
   return {
     enabled: rows[0]?.value?.enabled !== false,
+    setupRequired: false,
   };
 }
 
@@ -177,19 +195,31 @@ adminRouter.patch(
   asyncHandler(async (req, res) => {
     const enabled = Boolean(req.body?.enabled);
 
-    const { rows } = await query(
-      `
-        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
-        VALUES ('feedback', $1, now(), $2)
-        ON CONFLICT (key)
-        DO UPDATE SET
-          value = EXCLUDED.value,
-          updated_at = now(),
-          updated_by_user_id = EXCLUDED.updated_by_user_id
-        RETURNING value
-      `,
-      [JSON.stringify({ enabled }), req.user.id],
-    );
+    let rows = [];
+
+    try {
+      const result = await query(
+        `
+          INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+          VALUES ('feedback', $1, now(), $2)
+          ON CONFLICT (key)
+          DO UPDATE SET
+            value = EXCLUDED.value,
+            updated_at = now(),
+            updated_by_user_id = EXCLUDED.updated_by_user_id
+          RETURNING value
+        `,
+        [JSON.stringify({ enabled }), req.user.id],
+      );
+      rows = result.rows;
+    } catch (error) {
+      if (isMissingFeedbackTable(error)) {
+        throw badRequest(
+          "Issue reporting tables are not installed yet. Run the database migrations.",
+        );
+      }
+      throw error;
+    }
 
     await writeAudit(req, {
       entityType: "platform_setting",
@@ -201,6 +231,7 @@ adminRouter.patch(
     res.json({
       data: {
         enabled: rows[0]?.value?.enabled !== false,
+        setupRequired: false,
       },
       error: null,
     });
@@ -210,35 +241,44 @@ adminRouter.patch(
 adminRouter.get(
   "/issues",
   asyncHandler(async (req, res) => {
-    const { rows } = await query(
-      `
-        SELECT
-          ir.id,
-          ir.user_id AS "userId",
-          u.full_name AS "userName",
-          u.email AS "userEmail",
-          ir.family_id AS "familyId",
-          f.name AS "familyName",
-          ir.child_id AS "childId",
-          c.first_name AS "childFirstName",
-          c.last_name AS "childLastName",
-          ir.route,
-          ir.message,
-          ir.severity,
-          ir.browser_info AS "browserInfo",
-          ir.app_version AS "appVersion",
-          ir.screenshot_url AS "screenshotUrl",
-          ir.status,
-          ir.created_at AS "createdAt",
-          ir.updated_at AS "updatedAt"
-        FROM issue_reports ir
-        LEFT JOIN users u ON u.id = ir.user_id
-        LEFT JOIN families f ON f.id = ir.family_id
-        LEFT JOIN children c ON c.id = ir.child_id
-        ORDER BY ir.created_at DESC
-        LIMIT 200
-      `,
-    );
+    let rows = [];
+
+    try {
+      const result = await query(
+        `
+          SELECT
+            ir.id,
+            ir.user_id AS "userId",
+            u.full_name AS "userName",
+            u.email AS "userEmail",
+            ir.family_id AS "familyId",
+            f.name AS "familyName",
+            ir.child_id AS "childId",
+            c.first_name AS "childFirstName",
+            c.last_name AS "childLastName",
+            ir.route,
+            ir.message,
+            ir.severity,
+            ir.browser_info AS "browserInfo",
+            ir.app_version AS "appVersion",
+            ir.screenshot_url AS "screenshotUrl",
+            ir.status,
+            ir.created_at AS "createdAt",
+            ir.updated_at AS "updatedAt"
+          FROM issue_reports ir
+          LEFT JOIN users u ON u.id = ir.user_id
+          LEFT JOIN families f ON f.id = ir.family_id
+          LEFT JOIN children c ON c.id = ir.child_id
+          ORDER BY ir.created_at DESC
+          LIMIT 200
+        `,
+      );
+      rows = result.rows;
+    } catch (error) {
+      if (!isMissingFeedbackTable(error)) {
+        throw error;
+      }
+    }
 
     res.json({ data: rows, error: null });
   }),
@@ -250,19 +290,31 @@ adminRouter.patch(
     const issueId = requireUuid(req.params.issueId, "Issue ID");
     const status = requireEnum(req.body, "status", issueStatuses, "Status");
 
-    const { rows } = await query(
-      `
-        UPDATE issue_reports
-        SET status = $1,
-            updated_at = now()
-        WHERE id = $2
-        RETURNING
-          id,
-          status,
-          updated_at AS "updatedAt"
-      `,
-      [status, issueId],
-    );
+    let rows = [];
+
+    try {
+      const result = await query(
+        `
+          UPDATE issue_reports
+          SET status = $1,
+              updated_at = now()
+          WHERE id = $2
+          RETURNING
+            id,
+            status,
+            updated_at AS "updatedAt"
+        `,
+        [status, issueId],
+      );
+      rows = result.rows;
+    } catch (error) {
+      if (isMissingFeedbackTable(error)) {
+        throw badRequest(
+          "Issue reporting tables are not installed yet. Run the database migrations.",
+        );
+      }
+      throw error;
+    }
 
     if (!rows[0]) {
       throw notFound("Issue report not found.");

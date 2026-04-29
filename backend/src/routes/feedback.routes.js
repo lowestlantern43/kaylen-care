@@ -9,18 +9,36 @@ export const feedbackRouter = Router();
 
 const severities = ["small", "annoying", "blocking"];
 
+function isMissingFeedbackTable(error) {
+  return error?.code === "42P01";
+}
+
 async function getFeedbackSettings() {
-  const { rows } = await query(
-    `
-      SELECT value
-      FROM platform_settings
-      WHERE key = 'feedback'
-      LIMIT 1
-    `,
-  );
+  let rows = [];
+
+  try {
+    const result = await query(
+      `
+        SELECT value
+        FROM platform_settings
+        WHERE key = 'feedback'
+        LIMIT 1
+      `,
+    );
+    rows = result.rows;
+  } catch (error) {
+    if (isMissingFeedbackTable(error)) {
+      return {
+        enabled: false,
+        setupRequired: true,
+      };
+    }
+    throw error;
+  }
 
   return {
     enabled: rows[0]?.value?.enabled !== false,
+    setupRequired: false,
   };
 }
 
@@ -77,6 +95,7 @@ feedbackRouter.get(
     res.json({
       data: {
         enabled: settings.enabled,
+        setupRequired: settings.setupRequired,
         isPlatformAdmin: Boolean(req.user.is_platform_admin),
       },
       error: null,
@@ -119,41 +138,53 @@ feedbackRouter.post(
 
     await assertFamilyContext(req, familyId, childId);
 
-    const { rows } = await query(
-      `
-        INSERT INTO issue_reports (
-          user_id,
-          family_id,
-          child_id,
+    let rows = [];
+
+    try {
+      const result = await query(
+        `
+          INSERT INTO issue_reports (
+            user_id,
+            family_id,
+            child_id,
+            route,
+            message,
+            severity,
+            browser_info,
+            app_version,
+            screenshot_url,
+            status
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open')
+          RETURNING
+            id,
+            route,
+            message,
+            severity,
+            status,
+            created_at AS "createdAt"
+        `,
+        [
+          req.user.id,
+          familyId,
+          childId,
           route,
           message,
           severity,
-          browser_info,
-          app_version,
-          screenshot_url,
-          status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open')
-        RETURNING
-          id,
-          route,
-          message,
-          severity,
-          status,
-          created_at AS "createdAt"
-      `,
-      [
-        req.user.id,
-        familyId,
-        childId,
-        route,
-        message,
-        severity,
-        JSON.stringify(browserInfo),
-        appVersion,
-        screenshotUrl,
-      ],
-    );
+          JSON.stringify(browserInfo),
+          appVersion,
+          screenshotUrl,
+        ],
+      );
+      rows = result.rows;
+    } catch (error) {
+      if (isMissingFeedbackTable(error)) {
+        throw badRequest(
+          "Issue reporting tables are not installed yet. Run the database migrations.",
+        );
+      }
+      throw error;
+    }
 
     res.status(201).json({ data: rows[0], error: null });
   }),

@@ -1782,19 +1782,30 @@ function WorkspaceGate({ session, onLogout }) {
     setPlatformActionMessage("");
 
     try {
-      const [overview, families, users, issues, settings] = await Promise.all([
+      const [overview, families, users] = await Promise.all([
         api.adminOverview(),
         api.adminFamilies(),
         api.adminUsers(),
-        api.adminIssues(),
-        api.adminFeedbackSettings(),
       ]);
       setPlatformData({ overview, families, users });
-      setPlatformIssues(issues);
-      setFeedbackSettings(settings);
-      setIsFeedbackEnabled(settings.enabled);
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
+
+      try {
+        const [issues, settings] = await Promise.all([
+          api.adminIssues(),
+          api.adminFeedbackSettings(),
+        ]);
+        setPlatformIssues(issues);
+        setFeedbackSettings(settings);
+        setIsFeedbackEnabled(settings.enabled);
+      } catch (issueError) {
+        setPlatformIssues([]);
+        setPlatformActionMessage(
+          issueError.message ||
+            "Platform stats loaded, but issue reporting needs database migrations.",
+        );
+      }
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {

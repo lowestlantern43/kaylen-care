@@ -33,7 +33,9 @@ export function errorHandler(error, req, res, next) {
     data: null,
     error: {
       code: "server_error",
-      message: "Something went wrong.",
+      message: req.user?.is_platform_admin
+        ? error.message || "Something went wrong."
+        : "Something went wrong.",
     },
   });
 }
