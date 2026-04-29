@@ -37,8 +37,7 @@ const parseCareMedicationRows = (value = "") =>
           times: times
             .split(",")
             .map((time) => time.trim())
-            .filter(Boolean)
-            .slice(0, 4),
+            .filter(Boolean),
           active: active !== "inactive",
           notes,
         };
@@ -78,8 +77,7 @@ const serializeCareMedicationRows = (rows) =>
       doseUnit: (row.doseUnit || "ml").trim(),
       times: (row.times || [])
         .map((time) => String(time || "").trim())
-        .filter(Boolean)
-        .slice(0, 4),
+        .filter(Boolean),
       active: row.active === false ? "inactive" : "active",
       notes: (row.notes || "").trim(),
     }))
@@ -1068,6 +1066,17 @@ function WorkspaceGate({ session, onLogout }) {
     });
   };
 
+  const addCareMedicationTime = (index) => {
+    const row = careMedicationRows[index] || {};
+    updateCareMedicationRow(index, "times", [...(row.times || []), ""]);
+  };
+
+  const removeCareMedicationTime = (index, timeIndex) => {
+    const row = careMedicationRows[index] || {};
+    const times = (row.times || []).filter((_, indexToRemove) => indexToRemove !== timeIndex);
+    updateCareMedicationRow(index, "times", times.length ? times : [""]);
+  };
+
   const addCareMedicationRow = () => {
     setChildProfile({
       ...childProfile,
@@ -1084,6 +1093,33 @@ function WorkspaceGate({ session, onLogout }) {
       ...childProfile,
       currentMedications: serializeCareMedicationRows(rows),
     });
+  };
+
+  const addRegularMedicationFromDiary = async ({ name, dose }) => {
+    if (!selectedFamilyId || !selectedChildId || !name?.trim()) return null;
+
+    const rows = [
+      ...parseCareMedicationRows(childProfile.currentMedications),
+      {
+        name: name.trim(),
+        doseAmount: dose || "",
+        doseUnit: "other",
+        times: [""],
+        active: true,
+        notes: "",
+      },
+    ];
+    const nextProfile = {
+      ...childProfile,
+      currentMedications: serializeCareMedicationRows(rows),
+    };
+    const profile = await api.updateChildProfile(
+      selectedFamilyId,
+      selectedChildId,
+      nextProfile,
+    );
+    setChildProfile({ ...emptyChildProfile, ...profile });
+    return profile;
   };
 
   const addImportantEvent = async (event) => {
@@ -2428,20 +2464,35 @@ function WorkspaceGate({ session, onLogout }) {
                             <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                               Rough scheduled times
                             </p>
-                            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                              {[0, 1, 2, 3].map((timeIndex) => (
-                                <input
-                                  key={timeIndex}
-                                  type="time"
-                                  className={`${inputClass} mt-0`}
-                                  value={row.times?.[timeIndex] || ""}
-                                  onChange={(event) => {
-                                    const times = [...(row.times || [])];
-                                    times[timeIndex] = event.target.value;
-                                    updateCareMedicationRow(index, "times", times);
-                                  }}
-                                />
+                            <div className="space-y-2">
+                              {(row.times?.length ? row.times : [""]).map((time, timeIndex) => (
+                                <div key={timeIndex} className="flex min-w-0 gap-2">
+                                  <input
+                                    type="time"
+                                    className={`${inputClass} mt-0`}
+                                    value={time || ""}
+                                    onChange={(event) => {
+                                      const times = [...(row.times || [])];
+                                      times[timeIndex] = event.target.value;
+                                      updateCareMedicationRow(index, "times", times);
+                                    }}
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => removeCareMedicationTime(index, timeIndex)}
+                                    className="shrink-0 rounded-xl border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600"
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
                               ))}
+                              <button
+                                type="button"
+                                onClick={() => addCareMedicationTime(index)}
+                                className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-bold text-rose-700"
+                              >
+                                + Add time
+                              </button>
                             </div>
                           </div>
                           <input
@@ -3830,6 +3881,7 @@ function WorkspaceGate({ session, onLogout }) {
         children={children}
         selectedChildId={selectedChildId}
         onSelectChild={selectChild}
+        onAddRegularMedication={addRegularMedicationFromDiary}
         customFoodOptions={groupedCareOptions.food}
         customMedicationOptions={groupedCareOptions.medication}
         customGivenByOptions={groupedCareOptions.givenBy}

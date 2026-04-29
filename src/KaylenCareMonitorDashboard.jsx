@@ -62,8 +62,7 @@ const parseMedicationProfile = (value = "") =>
           times: times
             .split(",")
             .map((time) => time.trim())
-            .filter(Boolean)
-            .slice(0, 4),
+            .filter(Boolean),
           active: active !== "inactive",
           notes,
         };
@@ -333,6 +332,7 @@ export default function KaylenCareMonitorDashboard({
   children = [],
   selectedChildId = "",
   onSelectChild,
+  onAddRegularMedication,
   customFoodOptions = [],
   customMedicationOptions = [],
   customGivenByOptions = [],
@@ -394,6 +394,8 @@ export default function KaylenCareMonitorDashboard({
   const [savedGivenByOptions, setSavedGivenByOptions] = useState([]);
   const [saveFoodForFuture, setSaveFoodForFuture] = useState(false);
   const [saveMedicationForFuture, setSaveMedicationForFuture] =
+    useState(false);
+  const [addOtherMedicationToProfile, setAddOtherMedicationToProfile] =
     useState(false);
   const [saveGivenByForFuture, setSaveGivenByForFuture] = useState(false);
   const [saveLocationForFuture, setSaveLocationForFuture] = useState(false);
@@ -1007,6 +1009,7 @@ export default function KaylenCareMonitorDashboard({
     setMedicationValue("");
     setSelectedMedicationShortcut("");
     setSaveMedicationForFuture(false);
+    setAddOtherMedicationToProfile(false);
     setSaveGivenByForFuture(false);
   };
 
@@ -3659,106 +3662,6 @@ export default function KaylenCareMonitorDashboard({
           </div>
         ) : null}
         <div className={`${cardClassName} md:col-span-2`}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <h4 className="font-bold text-slate-900">Medication reminders</h4>
-              <p className="mt-1 text-sm text-slate-600">
-                Local reminder times for this child. Use Mark as given to prefill the log.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_1fr_auto]">
-            <input
-              className={`${inputClassName} mt-0`}
-              value={medicationScheduleForm.medicine}
-              onChange={(event) =>
-                setMedicationScheduleForm({
-                  ...medicationScheduleForm,
-                  medicine: event.target.value,
-                })
-              }
-              placeholder="Medication name"
-            />
-            <input
-              className={`${inputClassName} mt-0`}
-              value={medicationScheduleForm.dose}
-              onChange={(event) =>
-                setMedicationScheduleForm({
-                  ...medicationScheduleForm,
-                  dose: event.target.value,
-                })
-              }
-              placeholder="Dose"
-            />
-            <input
-              type="time"
-              className={`${inputClassName} mt-0`}
-              value={medicationScheduleForm.time}
-              onChange={(event) =>
-                setMedicationScheduleForm({
-                  ...medicationScheduleForm,
-                  time: event.target.value,
-                })
-              }
-            />
-          </div>
-          <button
-            type="button"
-            onClick={addMedicationSchedule}
-            className="mt-3 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 shadow-sm"
-          >
-            Add reminder
-          </button>
-
-          {[...profileMedicationSchedules, ...medicationSchedules].length ? (
-            <div className="mt-3 space-y-2">
-              {[...profileMedicationSchedules, ...medicationSchedules].map((schedule) => {
-                const status = medicationScheduleStatus(schedule);
-                return (
-                  <div
-                    key={schedule.id}
-                    className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <p className="font-bold text-slate-900">
-                        {schedule.time} - {schedule.medicine}
-                      </p>
-                      <p className="text-slate-600">
-                        {schedule.dose || "Dose not set"} - {status}
-                      </p>
-                    </div>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => markScheduleAsGiven(schedule)}
-                        className="rounded-lg bg-slate-900 px-3 py-2 text-xs font-bold text-white"
-                      >
-                        Mark as given
-                      </button>
-                      {schedule.profile ? null : (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            saveMedicationSchedules(
-                              medicationSchedules.filter(
-                                (item) => item.id !== schedule.id,
-                              ),
-                            )
-                          }
-                          className="rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700"
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ) : null}
-        </div>
-        <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Medicine
           </label>
@@ -3835,15 +3738,17 @@ export default function KaylenCareMonitorDashboard({
               />
             </div>
             <div className={`${cardClassName} md:col-span-2`}>
+              {onAddRegularMedication ? (
               <label className="flex items-center gap-3 text-sm font-semibold text-slate-700">
                 <input
                   type="checkbox"
-                  checked={saveMedicationForFuture}
-                  onChange={(e) => setSaveMedicationForFuture(e.target.checked)}
+                  checked={addOtherMedicationToProfile}
+                  onChange={(e) => setAddOtherMedicationToProfile(e.target.checked)}
                   className="h-4 w-4 rounded border-slate-300"
                 />
-                Save this medicine for future
+                Add to regular medication
               </label>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -3983,10 +3888,15 @@ export default function KaylenCareMonitorDashboard({
 
                 await loadEntriesFromSupabase();
 
-                if (showOtherMedication && saveMedicationForFuture) {
-                  setSavedMedicationOptions((current) =>
-                    dedupeAppend(current, medicationForm.otherMedicine),
-                  );
+                if (
+                  showOtherMedication &&
+                  addOtherMedicationToProfile &&
+                  onAddRegularMedication
+                ) {
+                  await onAddRegularMedication({
+                    name: medicationForm.otherMedicine,
+                    dose: medicationForm.dose,
+                  });
                 }
 
                 if (showOtherGivenBy && saveGivenByForFuture) {
@@ -6572,6 +6482,7 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   ) : null}
 
+                  {!["Care Snapshot", "Calendar"].includes(section.title) ? (
                   <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Latest
@@ -6587,6 +6498,7 @@ export default function KaylenCareMonitorDashboard({
                       ))}
                     </div>
                   </div>
+                  ) : null}
                 </div>
 
                 <button
