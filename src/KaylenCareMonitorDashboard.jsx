@@ -5359,7 +5359,7 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className={`${isPdf ? "space-y-2" : "grid gap-2 md:grid-cols-2"}`}>
+        <section className={`${isPdf ? "grid grid-cols-2 gap-2" : "grid gap-2 md:grid-cols-2"}`}>
           <div className={`pdf-avoid-break border border-amber-200 bg-amber-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}>
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
               Emergency details
@@ -5427,7 +5427,7 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className={`${isPdf ? "space-y-2" : "grid gap-2 md:grid-cols-2"}`}>
+        <section className={`${isPdf ? "grid grid-cols-2 gap-2" : "grid gap-2 md:grid-cols-2"}`}>
           {shareSections.medication
             ? renderSnapshotList(
                 "Medication logs",
