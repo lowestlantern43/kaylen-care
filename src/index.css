@@ -14,6 +14,7 @@ body,
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
+  overscroll-behavior-x: none;
 }
 
 body {
@@ -43,6 +44,20 @@ input[type="month"] {
   overflow: hidden;
   appearance: none;
   -webkit-appearance: none;
+}
+
+input[type="date"]::-webkit-datetime-edit,
+input[type="time"]::-webkit-datetime-edit,
+input[type="month"]::-webkit-datetime-edit {
+  max-width: 100%;
+  min-width: 0;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="time"]::-webkit-datetime-edit-fields-wrapper,
+input[type="month"]::-webkit-datetime-edit-fields-wrapper {
+  max-width: 100%;
+  min-width: 0;
 }
 
 input[type="date"]::-webkit-date-and-time-value,
@@ -108,15 +123,13 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   box-sizing: border-box;
 }
 
-.pdf-export-document section,
-.pdf-export-document article,
 .pdf-avoid-break {
   break-inside: avoid;
   page-break-inside: avoid;
 }
 
 .pdf-export-document .pdf-avoid-break {
-  overflow: hidden;
+  overflow: visible;
 }
 
 @media print {
@@ -130,10 +143,9 @@ input[type="month"]::-webkit-calendar-picker-indicator {
     max-width: 190mm;
   }
 
-  .pdf-export-document section,
-  .pdf-export-document article,
   .pdf-avoid-break {
     break-inside: avoid;
     page-break-inside: avoid;
+    overflow: visible;
   }
 }

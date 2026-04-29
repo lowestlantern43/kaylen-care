@@ -3196,7 +3196,6 @@ export default function KaylenCareMonitorDashboard({
       .toLowerCase()
       .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`,
   ) => {
-    const adjustedNodes = [];
     try {
       setIsExportingPdf(true);
 
@@ -3213,31 +3212,12 @@ export default function KaylenCareMonitorDashboard({
       const margin = 8;
       const usableWidth = pdfWidth - margin * 2;
       const usableHeight = pdfHeight - margin * 2;
-      const pageHeightPx = exportNode.offsetWidth * (usableHeight / usableWidth);
-      Array.from(exportNode.querySelectorAll(".pdf-avoid-break")).forEach(
-        (node) => {
-          const top = node.offsetTop;
-          const height = node.offsetHeight;
-          const pageOffset = top % pageHeightPx;
-
-          if (pageOffset > 0 && pageOffset + height > pageHeightPx) {
-            const spacer = pageHeightPx - pageOffset + 12;
-            node.style.marginTop = `${spacer}px`;
-            adjustedNodes.push(node);
-          }
-        },
-      );
-
       const canvas = await html2canvas(exportNode, {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
         logging: false,
         windowWidth: 794,
-      });
-
-      adjustedNodes.forEach((node) => {
-        node.style.marginTop = "";
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -3264,9 +3244,6 @@ export default function KaylenCareMonitorDashboard({
       console.error("PDF export failed", error);
       alert("PDF export failed - check console");
     } finally {
-      adjustedNodes.forEach((node) => {
-        node.style.marginTop = "";
-      });
       setIsExportingPdf(false);
     }
   };
@@ -3281,7 +3258,7 @@ export default function KaylenCareMonitorDashboard({
   }) => (
     <div className={cardClassName}>
       <label className="text-sm font-semibold text-slate-700">{label}</label>
-      <div className="flex items-start gap-2">
+      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
         <input
           type="text"
           inputMode="numeric"
@@ -5300,15 +5277,28 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 
-  const renderSnapshotList = (title, entries, tone = "slate", limit = 5) => (
-    <section className={`pdf-avoid-break rounded-2xl border border-${tone}-200 bg-${tone}-50 p-3`}>
+  const renderSnapshotList = (
+    title,
+    entries,
+    tone = "slate",
+    limit = 5,
+    mode = "screen",
+  ) => (
+    <section
+      className={`${
+        mode === "pdf" ? "pdf-avoid-break rounded-xl p-2" : "rounded-2xl p-3"
+      } border border-${tone}-200 bg-${tone}-50`}
+    >
       <h4 className={`text-xs font-bold uppercase tracking-[0.14em] text-${tone}-700`}>
         {title}
       </h4>
       {entries.length ? (
         <div className="mt-2 space-y-2">
           {entries.slice(0, limit).map((entry) => (
-            <div key={entry.id} className="pdf-avoid-break rounded-xl bg-white/85 px-3 py-2 text-sm">
+            <div
+              key={entry.id}
+              className="pdf-avoid-break rounded-xl bg-white/85 px-3 py-2 text-sm"
+            >
               <p className="font-bold text-slate-900">
                 {entry.date}
                 {entry.time ? ` ${entry.time}` : ""} - {entry.summary}
@@ -5348,14 +5338,18 @@ export default function KaylenCareMonitorDashboard({
             : "space-y-3 rounded-[1.75rem] border border-slate-200 bg-slate-50 p-3"
         }
       >
-        <section className="pdf-avoid-break rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+        <section
+          className={`pdf-avoid-break border border-cyan-100 bg-cyan-50 ${
+            isPdf ? "rounded-xl p-3" : "rounded-2xl p-4"
+          }`}
+        >
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-cyan-700">
             Care Snapshot - last 72 hours
           </p>
-          <h2 className="mt-1 text-2xl font-extrabold text-slate-950">
+          <h2 className={`${isPdf ? "mt-0.5 text-xl" : "mt-1 text-2xl"} font-extrabold text-slate-950`}>
             {childName}
           </h2>
-          <div className="mt-3 grid gap-2 text-sm font-semibold text-slate-700 sm:grid-cols-2">
+          <div className={`${isPdf ? "mt-2" : "mt-3"} grid gap-2 text-sm font-semibold text-slate-700 sm:grid-cols-2`}>
             <p>DOB: {formatLongDateFromIso(childDob) || "Not added"}</p>
             <p>Age: {childAge || "Not added"}</p>
             {snapshotIncludeSensitive ? (
@@ -5365,8 +5359,8 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className="grid gap-2 md:grid-cols-2">
-          <div className="pdf-avoid-break rounded-2xl border border-amber-200 bg-amber-50 p-3">
+        <section className={`${isPdf ? "space-y-2" : "grid gap-2 md:grid-cols-2"}`}>
+          <div className={`pdf-avoid-break border border-amber-200 bg-amber-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}>
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
               Emergency details
             </h4>
@@ -5407,7 +5401,7 @@ export default function KaylenCareMonitorDashboard({
               <span className="font-bold">Allergies:</span> {allergies}
             </p>
           </div>
-          <div className="pdf-avoid-break rounded-2xl border border-rose-200 bg-rose-50 p-3">
+          <div className={`pdf-avoid-break border border-rose-200 bg-rose-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}>
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-rose-800">
               Medications
             </h4>
@@ -5433,24 +5427,48 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className="grid gap-2 md:grid-cols-2">
-          {shareSections.food
-            ? renderSnapshotList("Food / drink", snapshotBySection.food, "amber", 4)
-            : null}
+        <section className={`${isPdf ? "space-y-2" : "grid gap-2 md:grid-cols-2"}`}>
           {shareSections.medication
-            ? renderSnapshotList("Medication logs", snapshotBySection.medication, "rose", 5)
+            ? renderSnapshotList(
+                "Medication logs",
+                snapshotBySection.medication,
+                "rose",
+                5,
+                mode,
+              )
+            : null}
+          {shareSections.food
+            ? renderSnapshotList(
+                "Food / drink",
+                snapshotBySection.food,
+                "amber",
+                4,
+                mode,
+              )
             : null}
           {shareSections.sleep
-            ? renderSnapshotList("Sleep", snapshotBySection.sleep, "indigo", 3)
+            ? renderSnapshotList("Sleep", snapshotBySection.sleep, "indigo", 3, mode)
             : null}
           {shareSections.toileting
-            ? renderSnapshotList("Toileting", snapshotBySection.toileting, "sky", 4)
+            ? renderSnapshotList(
+                "Toileting",
+                snapshotBySection.toileting,
+                "sky",
+                4,
+                mode,
+              )
             : null}
           {shareSections.health
-            ? renderSnapshotList("Health events", snapshotBySection.health, "emerald", 5)
+            ? renderSnapshotList(
+                "Health events",
+                snapshotBySection.health,
+                "emerald",
+                5,
+                mode,
+              )
             : null}
           {shareSections.notes
-            ? renderSnapshotList("Key notes", snapshotBySection.notes, "slate", 3)
+            ? renderSnapshotList("Key notes", snapshotBySection.notes, "slate", 3, mode)
             : null}
         </section>
       </div>
