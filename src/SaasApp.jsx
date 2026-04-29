@@ -1077,6 +1077,11 @@ function WorkspaceGate({ session, onLogout }) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!showPlatformAdmin || platformAdminTab !== "issues") return;
+    refreshPlatformIssues();
+  }, [showPlatformAdmin, platformAdminTab]);
+
   const selectChild = (childIdToSelect) => {
     setSelectedChildId(childIdToSelect);
     if (selectedFamilyId && childIdToSelect) {
@@ -1790,22 +1795,6 @@ function WorkspaceGate({ session, onLogout }) {
       setPlatformData({ overview, families, users });
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
-
-      try {
-        const [issues, settings] = await Promise.all([
-          api.adminIssues(),
-          api.adminFeedbackSettings(),
-        ]);
-        setPlatformIssues(issues);
-        setFeedbackSettings(settings);
-        setIsFeedbackEnabled(settings.enabled);
-      } catch (issueError) {
-        setPlatformIssues([]);
-        setPlatformActionMessage(
-          issueError.message ||
-            "Platform stats loaded, but issue reporting needs database migrations.",
-        );
-      }
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
