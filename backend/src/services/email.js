@@ -4,12 +4,49 @@ function plainTextFromLines(lines) {
   return lines.filter(Boolean).join("\n");
 }
 
-export async function sendAppEmail({ to, subject, text, html, metadata = {} }) {
-  if (!to) return { sent: false, skipped: true };
+function normalizeRecipients(to) {
+  return Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
+}
 
+async function sendViaResend({ to, subject, text, html }) {
+  if (!config.resendApiKey) {
+    console.log(
+      `Email skipped because RESEND_API_KEY is not configured: ${subject} -> ${to.join(", ")}`,
+    );
+    return { sent: false, skipped: true };
+  }
+
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${config.resendApiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: config.emailFrom,
+      reply_to: config.supportEmail,
+      to,
+      subject,
+      text,
+      html,
+    }),
+  });
+
+  if (!response.ok) {
+    const details = await response.text().catch(() => "");
+    console.error(
+      `Email provider failed (${response.status}) for ${subject}: ${details}`,
+    );
+    return { sent: false, skipped: false };
+  }
+
+  return { sent: true, skipped: false };
+}
+
+async function sendViaWebhook({ to, subject, text, html, metadata }) {
   if (!config.emailWebhookUrl) {
     console.log(
-      `Email skipped because EMAIL_WEBHOOK_URL is not configured: ${subject} -> ${to}`,
+      `Email skipped because EMAIL_WEBHOOK_URL is not configured: ${subject} -> ${to.join(", ")}`,
     );
     return { sent: false, skipped: true };
   }
@@ -39,6 +76,17 @@ export async function sendAppEmail({ to, subject, text, html, metadata = {} }) {
   }
 
   return { sent: true, skipped: false };
+}
+
+export async function sendAppEmail({ to, subject, text, html, metadata = {} }) {
+  const recipients = normalizeRecipients(to);
+  if (!recipients.length) return { sent: false, skipped: true };
+
+  if (config.emailProvider === "resend") {
+    return sendViaResend({ to: recipients, subject, text, html });
+  }
+
+  return sendViaWebhook({ to: recipients, subject, text, html, metadata });
 }
 
 export function welcomeEmail({ fullName }) {
