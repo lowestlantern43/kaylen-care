@@ -374,6 +374,48 @@ function ChildPhotoPreview({ child, url }) {
   );
 }
 
+function Toast({ toast, onClose }) {
+  if (!toast) return null;
+
+  const tone = {
+    success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    error: "border-rose-200 bg-rose-50 text-rose-900",
+    warning: "border-amber-200 bg-amber-50 text-amber-900",
+    info: "border-indigo-200 bg-indigo-50 text-indigo-900",
+  }[toast.type || "info"];
+
+  return (
+    <div
+      className={`fixed bottom-4 left-1/2 z-[10000] w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 animate-[toast-in_180ms_ease-out] rounded-2xl border px-4 py-3 shadow-xl backdrop-blur sm:bottom-5 sm:left-auto sm:right-5 sm:w-auto sm:min-w-80 sm:translate-x-0 ${tone}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-bold">{toast.message}</p>
+        <div className="flex shrink-0 items-center gap-2">
+          {toast.onUndo ? (
+            <button
+              type="button"
+              onClick={toast.onUndo}
+              className="rounded-full bg-white/80 px-3 py-1 text-xs font-black shadow-sm"
+            >
+              {toast.undoLabel || "Undo"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white/70 px-2 py-1 text-xs font-black shadow-sm"
+            aria-label="Close notification"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const emptyChildProfile = {
   diagnosisNeeds: "",
   communicationStyle: "",
@@ -763,6 +805,7 @@ function ReportIssueWidget({
   selectedFamily,
   selectedChildId,
   selectedFamilyId,
+  showToast,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [message, setMessage] = useState("");
@@ -872,8 +915,16 @@ function ReportIssueWidget({
       setSeverity("small");
       setIsOpen(false);
       setNotice(`Thanks - your issue has been sent. Need us directly? ${SUPPORT_EMAIL}`);
+      showToast?.({
+        message: "Issue sent - thanks",
+        type: "success",
+      });
     } catch (caughtError) {
       setError(caughtError.message);
+      showToast?.({
+        message: "Issue report failed - please try again",
+        type: "error",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -1002,18 +1053,35 @@ function IssueAdminPanel({
   onRefresh,
   onToggleEnabled,
   onStatusChange,
+  showToast,
 }) {
   const [expanded, setExpanded] = useState({});
   const [notes, setNotes] = useState({});
+  const [filter, setFilter] = useState("active");
 
   const noteForIssue = (issue) =>
     notes[issue.id] ?? issue.internalNote ?? "";
 
-  const updateStatus = (issue, status) =>
+  const updateStatus = (issue, status) => {
+    const previousStatus = issue.status;
     onStatusChange(issue.id, {
       status,
       internalNote: noteForIssue(issue),
     });
+
+    if (status === "resolved") {
+      showToast?.({
+        message: "Issue archived",
+        type: "success",
+        undoLabel: "Undo",
+        onUndo: async () =>
+          onStatusChange(issue.id, {
+            status: previousStatus === "resolved" ? "new" : previousStatus,
+            internalNote: noteForIssue(issue),
+          }),
+      });
+    }
+  };
 
   const deviceLabel = (issue) =>
     issue.deviceType ||
@@ -1023,6 +1091,12 @@ function IssueAdminPanel({
 
   const sectionLabel = (issue) =>
     issue.contextSection || issue.browserInfo?.section || "Current page";
+
+  const visibleIssues = issues.filter((issue) =>
+    filter === "archived"
+      ? issue.status === "resolved" || issue.resolved
+      : issue.status !== "resolved" && !issue.resolved,
+  );
 
   return (
     <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
@@ -1054,8 +1128,27 @@ function IssueAdminPanel({
       </div>
 
       <div className="mt-4 space-y-3">
-        {issues.length ? (
-          issues.map((issue) => (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {[
+            ["active", "Active"],
+            ["archived", "Archived / Resolved"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setFilter(value)}
+              className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black ${
+                filter === value
+                  ? "bg-slate-900 text-white"
+                  : "border border-slate-200 bg-white text-slate-700"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {visibleIssues.length ? (
+          visibleIssues.map((issue) => (
             <article
               key={issue.id}
               className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
@@ -1069,11 +1162,16 @@ function IssueAdminPanel({
                     <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-indigo-700">
                       {issueStatusLabels[issue.status] || issue.status}
                     </span>
-                    <span className="text-xs font-semibold text-slate-500">
+                  <span className="text-xs font-semibold text-slate-500">
                       {issue.createdAt
                         ? new Date(issue.createdAt).toLocaleString()
                         : "Unknown time"}
                     </span>
+                    {issue.resolvedAt ? (
+                      <span className="text-xs font-semibold text-emerald-700">
+                        Resolved {new Date(issue.resolvedAt).toLocaleString()}
+                      </span>
+                    ) : null}
                   </div>
                   <p className="mt-2 text-sm font-bold text-slate-800">
                     Reported from: {sectionLabel(issue)} ({deviceLabel(issue)})
@@ -1185,7 +1283,9 @@ function IssueAdminPanel({
           ))
         ) : (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-600">
-            No issue reports yet.
+            {filter === "archived"
+              ? "No archived issue reports yet."
+              : "No active issue reports yet."}
           </div>
         )}
       </div>
@@ -1356,8 +1456,61 @@ function WorkspaceGate({ session, onLogout }) {
   });
   const [dismissedUpgradeBanners, setDismissedUpgradeBanners] = useState({});
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
+  const [toast, setToast] = useState(null);
+  const toastTimeoutRef = useRef(null);
+  const [isFloatingChildSwitcherOpen, setIsFloatingChildSwitcherOpen] =
+    useState(false);
+  const [adminIssueFilter, setAdminIssueFilter] = useState("active");
+  const [deleteUserConfirm, setDeleteUserConfirm] = useState({
+    isOpen: false,
+    user: null,
+    confirmText: "",
+  });
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
+
+  const clearToast = () => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+      toastTimeoutRef.current = null;
+    }
+    setToast(null);
+  };
+
+  const showToast = ({
+    message,
+    type = "info",
+    undoLabel = "Undo",
+    onUndo = null,
+    duration,
+  }) => {
+    if (toastTimeoutRef.current) {
+      window.clearTimeout(toastTimeoutRef.current);
+    }
+
+    const toastId = `${Date.now()}-${Math.random()}`;
+    const nextToast = {
+      id: toastId,
+      message,
+      type,
+      undoLabel,
+      onUndo: onUndo
+        ? async () => {
+            try {
+              await onUndo();
+            } finally {
+              clearToast();
+            }
+          }
+        : null,
+    };
+
+    setToast(nextToast);
+    toastTimeoutRef.current = window.setTimeout(
+      () => setToast((current) => (current?.id === toastId ? null : current)),
+      duration || (onUndo ? 7000 : 3500),
+    );
+  };
 
   const selectedFamily = useMemo(
     () => families.find((family) => family.familyId === selectedFamilyId),
@@ -1414,6 +1567,15 @@ function WorkspaceGate({ session, onLogout }) {
       // Local display preference only.
     }
   }, [timeZonePreference]);
+
+  useEffect(
+    () => () => {
+      if (toastTimeoutRef.current) {
+        window.clearTimeout(toastTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!selectedFamilyId || !upgradeBannerStorageKey) return;
@@ -2323,6 +2485,50 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const removeSavedCareOption = async (option) => {
+    if (!selectedFamilyId || !selectedChildId || !option?.id) return;
+
+    const label = option.label || "item";
+    const kind = option.category === "location" ? "Location" : "Food";
+    const confirmed = window.confirm(`Remove ${label}?`);
+    if (!confirmed) return;
+
+    setError("");
+
+    try {
+      await api.deleteChildCareOption(selectedFamilyId, selectedChildId, option.id);
+      setChildCareOptions((current) =>
+        current.filter((item) => item.id !== option.id),
+      );
+      showToast({
+        message: `${kind} removed`,
+        type: "info",
+        undoLabel: "Undo",
+        onUndo: async () => {
+          const restored = await api.createChildCareOption(
+            selectedFamilyId,
+            selectedChildId,
+            {
+              category: option.category,
+              label: option.label,
+              defaultValue: option.defaultValue || "",
+            },
+          );
+          setChildCareOptions((current) => [
+            ...current.filter((item) => item.id !== restored.id),
+            restored,
+          ]);
+        },
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({
+        message: `${kind} could not be removed`,
+        type: "error",
+      });
+    }
+  };
+
   const startCheckout = async () => {
     if (!selectedFamilyId) return;
 
@@ -2893,8 +3099,56 @@ function WorkspaceGate({ session, onLogout }) {
       setPlatformActionMessage(
         `Password reset link created for ${reset.email}: ${reset.resetUrl}`,
       );
+      showToast({
+        message: "Email sent - check your inbox",
+        type: "success",
+      });
     } catch (caughtError) {
       setError(caughtError.message);
+      showToast({
+        message: "Email failed to send - please try again",
+        type: "error",
+      });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const deletePlatformUser = async (event) => {
+    event.preventDefault();
+    if (!deleteUserConfirm.user?.id || deleteUserConfirm.confirmText !== "DELETE") {
+      return;
+    }
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await api.adminDeleteUser(deleteUserConfirm.user.id, {
+        confirmText: deleteUserConfirm.confirmText,
+      });
+      setPlatformData((current) => ({
+        ...current,
+        users: current.users.filter(
+          (user) => user.id !== deleteUserConfirm.user.id,
+        ),
+      }));
+      if (selectedPlatformUser?.user?.id === deleteUserConfirm.user.id) {
+        setSelectedPlatformUser(null);
+      }
+      setDeleteUserConfirm({ isOpen: false, user: null, confirmText: "" });
+      setPlatformActionMessage("Account access removed and data preserved.");
+      showToast({
+        message: "Account access removed",
+        type: "warning",
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({
+        message: "Account could not be deleted",
+        type: "error",
+      });
     } finally {
       setIsPlatformSaving(false);
     }
@@ -3088,7 +3342,7 @@ function WorkspaceGate({ session, onLogout }) {
   ).length;
 
   const openIssueCount = platformIssues.filter(
-    (issue) => issue.status === "open",
+    (issue) => issue.status !== "resolved" && !issue.resolved,
   ).length;
 
   const filteredPlatformFamilies = platformData.families.filter((family) => {
@@ -4570,9 +4824,17 @@ function WorkspaceGate({ session, onLogout }) {
                             groupedCareOptions.food.map((option) => (
                               <span
                                 key={option.id}
-                                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
+                                className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
                               >
                                 {option.label}
+                                <button
+                                  type="button"
+                                  onClick={() => removeSavedCareOption(option)}
+                                  className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700"
+                                  aria-label={`Remove ${option.label}`}
+                                >
+                                  Remove
+                                </button>
                               </span>
                             ))
                           ) : (
@@ -4609,9 +4871,17 @@ function WorkspaceGate({ session, onLogout }) {
                             groupedCareOptions.locations.map((option) => (
                               <span
                                 key={option.id}
-                                className="rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
+                                className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
                               >
                                 {option.label}
+                                <button
+                                  type="button"
+                                  onClick={() => removeSavedCareOption(option)}
+                                  className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-700"
+                                  aria-label={`Remove ${option.label}`}
+                                >
+                                  Remove
+                                </button>
                               </span>
                             ))
                           ) : (
@@ -4666,9 +4936,10 @@ function WorkspaceGate({ session, onLogout }) {
                 <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm lg:col-span-3">
                   <h3 className="font-bold text-rose-900">Delete account</h3>
                   <p className="mt-1 text-sm leading-6 text-rose-800">
-                    Account deletion is permanent and can remove access to family
-                    data. This control is intentionally not connected until the
-                    full deletion policy and backups are agreed.
+                    Account deletion is not enabled from user settings yet. It
+                    needs backend deletion rules first so family members, child
+                    profiles, logs, reports, photos and audit records are handled
+                    safely without orphaned data or accidental permanent loss.
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
                     <input
@@ -4682,7 +4953,7 @@ function WorkspaceGate({ session, onLogout }) {
                       disabled={deleteConfirmText !== "DELETE"}
                       onClick={() =>
                         setAccountMessage(
-                          "Account deletion needs backend deletion rules before it can be enabled safely.",
+                          "Account deletion needs backend deletion rules before it can be enabled safely. This protects family data from accidental loss.",
                         )
                       }
                       className="rounded-xl bg-rose-700 px-4 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
@@ -5181,6 +5452,7 @@ function WorkspaceGate({ session, onLogout }) {
                     onRefresh={refreshPlatformIssues}
                     onToggleEnabled={updateFeedbackEnabled}
                     onStatusChange={updateIssueStatus}
+                    showToast={showToast}
                   />
                 ) : null}
 
@@ -5553,6 +5825,23 @@ function WorkspaceGate({ session, onLogout }) {
                             className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-800 shadow-sm disabled:opacity-50"
                           >
                             View as user
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDeleteUserConfirm({
+                                isOpen: true,
+                                user: selectedPlatformUser.user,
+                                confirmText: "",
+                              })
+                            }
+                            disabled={
+                              isPlatformSaving ||
+                              selectedPlatformUser.user.id === session.user.id
+                            }
+                            className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 shadow-sm disabled:opacity-50"
+                          >
+                            Delete account
                           </button>
                         </div>
 
@@ -6514,6 +6803,7 @@ function WorkspaceGate({ session, onLogout }) {
         childProfile={childProfile}
         importantEvents={importantEvents}
         accountAccess={selectedFamilyAccess}
+        showToast={showToast}
         useSaasApi
       />
       </>
@@ -6669,6 +6959,67 @@ function WorkspaceGate({ session, onLogout }) {
           </div>
         </div>
       ) : null}
+      {deleteUserConfirm.isOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+          <form
+            className="w-full rounded-[1.75rem] border border-rose-200 bg-white p-4 shadow-2xl sm:max-w-md"
+            onSubmit={deletePlatformUser}
+          >
+            <h3 className="text-lg font-black text-rose-900">
+              Delete account access
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-rose-800">
+              This will remove access to this account and hide its data. This
+              action should only be used when you are sure.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              The backend will soft delete the account and preserve data for
+              audit or recovery.
+            </p>
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800">
+              {deleteUserConfirm.user?.fullName ||
+                deleteUserConfirm.user?.email}
+            </div>
+            <label className="mt-4 block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              Type DELETE to confirm
+              <input
+                className={inputClass}
+                value={deleteUserConfirm.confirmText}
+                onChange={(event) =>
+                  setDeleteUserConfirm((current) => ({
+                    ...current,
+                    confirmText: event.target.value,
+                  }))
+                }
+                placeholder="DELETE"
+              />
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setDeleteUserConfirm({
+                    isOpen: false,
+                    user: null,
+                    confirmText: "",
+                  })
+                }
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-rose-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                disabled={
+                  isPlatformSaving || deleteUserConfirm.confirmText !== "DELETE"
+                }
+              >
+                Delete
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
       {childPhotoCrop ? (
         <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/50 p-3 sm:items-center sm:justify-center">
           <div className="w-full rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-2xl sm:max-w-md">
@@ -6763,13 +7114,70 @@ function WorkspaceGate({ session, onLogout }) {
           </div>
         </div>
       ) : null}
+      {!showAdmin && !showPlatformAdmin && children.length > 1 ? (
+        <div className="fixed right-3 top-3 z-50" data-feedback-ui="true">
+          <button
+            type="button"
+            onClick={() =>
+              setIsFloatingChildSwitcherOpen((current) => !current)
+            }
+            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/80 bg-white shadow-lg ring-1 ring-slate-200"
+            title={`Current child: ${childDisplayName(selectedChild)}`}
+            aria-label={`Current child: ${childDisplayName(selectedChild)}`}
+          >
+            {avatarUrlForChild(selectedChild) ? (
+              <img
+                src={avatarUrlForChild(selectedChild)}
+                alt=""
+                className="h-10 w-10 rounded-full object-cover"
+              />
+            ) : (
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">
+                {childInitials(selectedChild)}
+              </span>
+            )}
+          </button>
+          {isFloatingChildSwitcherOpen ? (
+            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+              <p className="px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                Switch child
+              </p>
+              <div className="mt-1 space-y-1">
+                {children.map((child) => {
+                  const isSelected = child.id === selectedChildId;
+                  return (
+                    <button
+                      key={child.id}
+                      type="button"
+                      onClick={() => {
+                        selectChild(child.id);
+                        setIsFloatingChildSwitcherOpen(false);
+                      }}
+                      className={`flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-bold ${
+                        isSelected
+                          ? "bg-indigo-50 text-indigo-700"
+                          : "text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      <ChildAvatar child={child} active={false} />
+                      <span className="truncate">{childDisplayName(child)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
       <ReportIssueWidget
         enabled={isFeedbackEnabled}
         selectedChild={selectedChild}
         selectedFamily={selectedFamily}
         selectedChildId={selectedChildId}
         selectedFamilyId={selectedFamilyId}
+        showToast={showToast}
       />
+      <Toast toast={toast} onClose={clearToast} />
     </div>
   );
 }

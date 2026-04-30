@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS issue_reports (
   status TEXT NOT NULL DEFAULT 'new',
   internal_note TEXT NOT NULL DEFAULT '',
   resolved BOOLEAN NOT NULL DEFAULT false,
+  resolved_at TIMESTAMPTZ,
   notified BOOLEAN NOT NULL DEFAULT false,
   context_section TEXT NOT NULL DEFAULT '',
   device_type TEXT NOT NULL DEFAULT '',
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS issue_reports (
 ALTER TABLE issue_reports
   ADD COLUMN IF NOT EXISTS internal_note TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS resolved BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ,
   ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS context_section TEXT NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS device_type TEXT NOT NULL DEFAULT '';
@@ -53,7 +55,8 @@ SET status = CASE status
 END;
 
 UPDATE issue_reports
-SET resolved = true
+SET resolved = true,
+    resolved_at = COALESCE(resolved_at, updated_at, now())
 WHERE status = 'resolved';
 
 ALTER TABLE issue_reports

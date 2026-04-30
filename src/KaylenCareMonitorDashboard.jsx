@@ -376,6 +376,7 @@ export default function KaylenCareMonitorDashboard({
   childProfile = {},
   importantEvents = [],
   accountAccess = null,
+  showToast,
   useSaasApi = false,
 } = {}) {
   const APP_PASSWORD = "030920";
@@ -422,6 +423,13 @@ export default function KaylenCareMonitorDashboard({
   const [sharedLog, setSharedLog] = useState([]);
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [isReportEmailOpen, setIsReportEmailOpen] = useState(false);
+  const [isSendingReportEmail, setIsSendingReportEmail] = useState(false);
+  const [reportEmailForm, setReportEmailForm] = useState({
+    recipientEmail: "",
+    message: "",
+    confirmed: false,
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncState, setSyncState] = useState("Synced");
 
@@ -454,6 +462,7 @@ export default function KaylenCareMonitorDashboard({
   const [hasViewedCareSnapshot, setHasViewedCareSnapshot] = useState(
     () => safeLocalStorageGet(careSnapshotViewedKey) === "true",
   );
+  const careSnapshotPreferenceKey = `onboarding-care-snapshot:${familyId || "legacy"}:${childId || "legacy"}`;
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -864,6 +873,11 @@ export default function KaylenCareMonitorDashboard({
 
     safeLocalStorageSet(careSnapshotViewedKey, "true");
     setHasViewedCareSnapshot(true);
+    if (useSaasApi) {
+      api
+        .updatePreference(careSnapshotPreferenceKey, { completed: true })
+        .catch(() => null);
+    }
     openSection(snapshotSection);
   };
 
@@ -929,6 +943,29 @@ export default function KaylenCareMonitorDashboard({
   useEffect(() => {
     setHasViewedCareSnapshot(safeLocalStorageGet(careSnapshotViewedKey) === "true");
   }, [careSnapshotViewedKey]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadCareSnapshotPreference() {
+      if (!useSaasApi || !familyId || !childId) return;
+
+      try {
+        const preference = await api.getPreference(careSnapshotPreferenceKey);
+        if (!ignore && preference?.completed) {
+          safeLocalStorageSet(careSnapshotViewedKey, "true");
+          setHasViewedCareSnapshot(true);
+        }
+      } catch {
+        // Backend onboarding persistence is helpful, but local app use should continue.
+      }
+    }
+
+    loadCareSnapshotPreference();
+    return () => {
+      ignore = true;
+    };
+  }, [careSnapshotPreferenceKey, careSnapshotViewedKey, childId, familyId, useSaasApi]);
 
   useEffect(() => {
     const kind = sectionDraftKind();
@@ -3107,7 +3144,7 @@ export default function KaylenCareMonitorDashboard({
       }
 
       try {
-        await createCareLogWithOfflineQueue({
+        const saved = await createCareLogWithOfflineQueue({
           childId,
           category: "food",
           logDate,
@@ -3125,7 +3162,7 @@ export default function KaylenCareMonitorDashboard({
           notes: [foodForm.description, foodForm.notes].filter(Boolean).join("\n"),
         });
 
-        return true;
+        return saved || true;
       } catch (error) {
         console.error("SaaS food save failed:", error);
         alert(error.message || "Food save failed");
@@ -3207,7 +3244,7 @@ export default function KaylenCareMonitorDashboard({
       }
 
       try {
-        await createCareLogWithOfflineQueue({
+        const saved = await createCareLogWithOfflineQueue({
           childId,
           category: "medication",
           logDate,
@@ -3221,7 +3258,7 @@ export default function KaylenCareMonitorDashboard({
           notes: medicationForm.notes || "",
         });
 
-        return true;
+        return saved || true;
       } catch (error) {
         console.error("SaaS medication save failed:", error);
         alert(error.message || "Medication save failed");
@@ -3271,7 +3308,7 @@ export default function KaylenCareMonitorDashboard({
       }
 
       try {
-        await createCareLogWithOfflineQueue({
+        const saved = await createCareLogWithOfflineQueue({
           childId,
           category: "toileting",
           logDate,
@@ -3282,7 +3319,7 @@ export default function KaylenCareMonitorDashboard({
           notes: toiletingForm.notes || "",
         });
 
-        return true;
+        return saved || true;
       } catch (error) {
         console.error("SaaS toileting save failed:", error);
         alert(error.message || "Toileting save failed");
@@ -3343,7 +3380,7 @@ export default function KaylenCareMonitorDashboard({
             return false;
           }
 
-          await createCareLogWithOfflineQueue({
+          const saved = await createCareLogWithOfflineQueue({
             childId,
             category: "sleep",
             logDate,
@@ -3360,7 +3397,7 @@ export default function KaylenCareMonitorDashboard({
 
           await loadLatestIncompleteSleepEntry();
           await loadEntriesFromSupabase();
-          return true;
+          return saved || true;
         }
 
         const payload = {
@@ -3536,7 +3573,7 @@ export default function KaylenCareMonitorDashboard({
       }
 
       try {
-        await createCareLogWithOfflineQueue({
+        const saved = await createCareLogWithOfflineQueue({
           childId,
           category: "health",
           logDate,
@@ -3554,7 +3591,7 @@ export default function KaylenCareMonitorDashboard({
           notes: form.notes || "",
         });
 
-        return true;
+        return saved || true;
       } catch (error) {
         console.error("SaaS health save failed:", error);
         alert(error.message || "Health save failed");
@@ -3591,61 +3628,147 @@ export default function KaylenCareMonitorDashboard({
     return true;
   };
 
+  const toastSavedForChild = (saved) => {
+    if (!showToast) return;
+    const rawId = saved?.id ? String(saved.id).replace(/^care-/, "") : "";
+    showToast({
+      message: `Saved for ${childName}`,
+      type: "success",
+      undoLabel: "Undo",
+      onUndo:
+        useSaasApi && familyId && rawId
+          ? async () => {
+              await api.deleteCareLog(familyId, rawId);
+              await loadEntriesFromSupabase();
+            }
+          : null,
+    });
+  };
+
+  const defaultReportPdfFilename = () =>
+    `familytrack-care-report-${childName
+      .toLowerCase()
+      .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`;
+
+  const createReportPdf = async (elementId = "report-pdf-export") => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const exportNode = document.getElementById(elementId);
+    if (!exportNode) {
+      throw new Error("PDF export area not found");
+    }
+
+    const pdfWidth = 210;
+    const pdfHeight = 297;
+    const margin = 8;
+    const usableWidth = pdfWidth - margin * 2;
+    const usableHeight = pdfHeight - margin * 2;
+    const canvas = await html2canvas(exportNode, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      logging: false,
+      windowWidth: 794,
+    });
+
+    const imgData = canvas.toDataURL("image/png");
+    const pdf = new jsPDF("p", "mm", "a4");
+
+    const imgWidth = usableWidth;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+    let heightLeft = imgHeight;
+    let position = margin;
+
+    pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+    heightLeft -= usableHeight;
+
+    while (heightLeft > 0) {
+      position = heightLeft - imgHeight + margin;
+      pdf.addPage();
+      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
+      heightLeft -= usableHeight;
+    }
+
+    return pdf;
+  };
+
+  const blobToBase64 = (blob) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || "").split(",").pop());
+      reader.onerror = () => reject(new Error("Could not prepare PDF email."));
+      reader.readAsDataURL(blob);
+    });
+
   const handleExportPdf = async (
     elementId = "report-pdf-export",
-    filename = `familytrack-care-report-${childName
-      .toLowerCase()
-      .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`,
+    filename = defaultReportPdfFilename(),
   ) => {
     try {
       setIsExportingPdf(true);
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      const exportNode = document.getElementById(elementId);
-      if (!exportNode) {
-        alert("PDF export area not found");
-        return;
-      }
-
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const margin = 8;
-      const usableWidth = pdfWidth - margin * 2;
-      const usableHeight = pdfHeight - margin * 2;
-      const canvas = await html2canvas(exportNode, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-        windowWidth: 794,
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-
-      const imgWidth = usableWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      let heightLeft = imgHeight;
-      let position = margin;
-
-      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
-      heightLeft -= usableHeight;
-
-      while (heightLeft > 0) {
-        position = heightLeft - imgHeight + margin;
-        pdf.addPage();
-        pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
-        heightLeft -= usableHeight;
-      }
-
+      const pdf = await createReportPdf(elementId);
       pdf.save(filename);
     } catch (error) {
       console.error("PDF export failed", error);
       alert("PDF export failed - check console");
     } finally {
       setIsExportingPdf(false);
+    }
+  };
+
+  const sendReportByEmail = async (event) => {
+    event.preventDefault();
+
+    if (!familyId || !childId) {
+      showToast?.({ message: "Choose a child before sending", type: "warning" });
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(reportEmailForm.recipientEmail)) {
+      showToast?.({ message: "Enter a valid email address", type: "warning" });
+      return;
+    }
+
+    if (!reportEmailForm.confirmed) {
+      showToast?.({
+        message: "Confirm this report will be emailed externally",
+        type: "warning",
+      });
+      return;
+    }
+
+    try {
+      setIsSendingReportEmail(true);
+      const filename = defaultReportPdfFilename();
+      const pdf = await createReportPdf();
+      const pdfBase64 = await blobToBase64(pdf.output("blob"));
+      const dateRange =
+        reportDays === "custom"
+          ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
+          : `Last ${effectiveReportDays} days`;
+
+      await api.sendReportEmail(familyId, {
+        recipientEmail: reportEmailForm.recipientEmail,
+        message: reportEmailForm.message,
+        childId,
+        childName,
+        dateRange,
+        filename,
+        pdfBase64,
+      });
+
+      setIsReportEmailOpen(false);
+      setReportEmailForm({ recipientEmail: "", message: "", confirmed: false });
+      showToast?.({ message: "📧 Report sent", type: "success" });
+    } catch (error) {
+      console.error("Report email failed", error);
+      showToast?.({
+        message: "Report email failed - please try again",
+        type: "error",
+      });
+    } finally {
+      setIsSendingReportEmail(false);
     }
   };
 
@@ -4179,6 +4302,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
 
                 if (saveFoodForFuture && canSaveTypedFood) {
                   if (onCreateCareOption) {
@@ -4496,6 +4620,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
 
                 if (
                   showOtherMedication &&
@@ -4609,6 +4734,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
                 clearLogDraft("toileting");
                 resetToiletingForm();
                 closeSection();
@@ -4808,6 +4934,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
                 clearLogDraft("health");
                 resetHealthForm();
                 closeSection();
@@ -5116,7 +5243,10 @@ export default function KaylenCareMonitorDashboard({
               onClick={() =>
                 runLockedSave("sleep-start", async () => {
                   const saved = await saveSleepEntryToSupabase({ mode: "sleep" });
-                  if (saved) clearLogDraft("sleep");
+                  if (saved) {
+                    toastSavedForChild(saved);
+                    clearLogDraft("sleep");
+                  }
                 })
               }
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -5276,6 +5406,10 @@ export default function KaylenCareMonitorDashboard({
 
                   if (!saved) return;
 
+                  showToast?.({
+                    message: `Saved for ${childName}`,
+                    type: "success",
+                  });
                   clearLogDraft("sleep");
                   resetSleepForm();
                   closeSection();
@@ -6543,7 +6677,7 @@ export default function KaylenCareMonitorDashboard({
                     </h4>
                   </div>
 
-                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                     <button
                       type="button"
                       onClick={async () => {
@@ -6574,12 +6708,119 @@ export default function KaylenCareMonitorDashboard({
                     >
                       {isExportingPdf ? "Exporting..." : "Export PDF"}
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsReportEmailOpen(true)}
+                      disabled={isExportingPdf || invalidCustomRange || !useSaasApi}
+                      className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Send Report
+                    </button>
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600 shadow-sm">
                       {reportLayout === "daily" ? "Full daily log" : "Summary with graphs"}
                     </div>
                   </div>
                 </div>
               </div>
+
+              {isReportEmailOpen ? (
+                <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+                  <form
+                    className="w-full rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-2xl sm:max-w-md"
+                    onSubmit={sendReportByEmail}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-black text-slate-950">
+                          Send Report
+                        </h3>
+                        <p className="mt-1 text-sm font-medium text-slate-600">
+                          This will email the current PDF report outside the app.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setIsReportEmailOpen(false)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <label className="mt-4 block text-sm font-bold text-slate-700">
+                      Recipient email
+                      <input
+                        className={reportInputClassName}
+                        type="email"
+                        value={reportEmailForm.recipientEmail}
+                        onChange={(event) =>
+                          setReportEmailForm((current) => ({
+                            ...current,
+                            recipientEmail: event.target.value,
+                          }))
+                        }
+                        placeholder="professional@example.com"
+                        required
+                      />
+                    </label>
+
+                    <label className="mt-3 block text-sm font-bold text-slate-700">
+                      Optional message
+                      <textarea
+                        className={reportInputClassName}
+                        rows={3}
+                        value={reportEmailForm.message}
+                        onChange={(event) =>
+                          setReportEmailForm((current) => ({
+                            ...current,
+                            message: event.target.value,
+                          }))
+                        }
+                        placeholder="Short note to include in the email"
+                      />
+                    </label>
+
+                    <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                      Child: {childName}. Range:{" "}
+                      {reportDays === "custom"
+                        ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
+                        : `Last ${effectiveReportDays} days`}
+                      . Filter: {reportCategoryFilter}.
+                    </div>
+
+                    <label className="mt-3 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+                      <input
+                        type="checkbox"
+                        checked={reportEmailForm.confirmed}
+                        onChange={(event) =>
+                          setReportEmailForm((current) => ({
+                            ...current,
+                            confirmed: event.target.checked,
+                          }))
+                        }
+                        className="mt-1 h-4 w-4"
+                      />
+                      I understand this report will be emailed externally.
+                    </label>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setIsReportEmailOpen(false)}
+                        className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                        disabled={isSendingReportEmail}
+                      >
+                        {isSendingReportEmail ? "Sending..." : "Send"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

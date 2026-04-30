@@ -113,6 +113,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  getPreference: (key) => request(`/account/preferences/${encodeURIComponent(key)}`),
+  updatePreference: (key, value) =>
+    request(`/account/preferences/${encodeURIComponent(key)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ value }),
+    }),
   listFamilies: () => request("/families"),
   createFamily: ({ name }) =>
     request("/families", {
@@ -193,6 +199,15 @@ export const api = {
   updateCareLog: (familyId, logId, payload) =>
     request(`/families/${familyId}/care-logs/${logId}`, {
       method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  deleteCareLog: (familyId, logId) =>
+    request(`/families/${familyId}/care-logs/${logId}`, {
+      method: "DELETE",
+    }),
+  sendReportEmail: (familyId, payload) =>
+    request(`/families/${familyId}/reports/email`, {
+      method: "POST",
       body: JSON.stringify(payload),
     }),
   getIncompleteSleepLog: (familyId, childId) =>
@@ -285,6 +300,11 @@ export const api = {
   adminCreatePasswordReset: (userId) =>
     request(`/admin/users/${userId}/password-reset`, {
       method: "POST",
+    }),
+  adminDeleteUser: (userId, payload) =>
+    request(`/admin/users/${userId}`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
     }),
   adminIssues: () => request("/admin/issues"),
   adminUpdateIssueStatus: (issueId, payload) =>

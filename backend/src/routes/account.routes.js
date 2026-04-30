@@ -10,6 +10,18 @@ export const accountRouter = Router();
 
 accountRouter.use(requireAuth);
 
+async function ensureUserPreferencesSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      key TEXT NOT NULL,
+      value JSONB NOT NULL DEFAULT '{}'::JSONB,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (user_id, key)
+    )
+  `);
+}
+
 accountRouter.post(
   "/password",
   asyncHandler(async (req, res) => {
@@ -51,5 +63,52 @@ accountRouter.post(
     );
 
     res.json({ data: { changed: true }, error: null });
+  }),
+);
+
+accountRouter.get(
+  "/preferences/:key",
+  asyncHandler(async (req, res) => {
+    await ensureUserPreferencesSchema();
+    const key = requireString(req.params, "key", "Preference key");
+
+    const { rows } = await query(
+      `
+        SELECT value
+        FROM user_preferences
+        WHERE user_id = $1
+          AND key = $2
+        LIMIT 1
+      `,
+      [req.user.id, key],
+    );
+
+    res.json({ data: rows[0]?.value || {}, error: null });
+  }),
+);
+
+accountRouter.patch(
+  "/preferences/:key",
+  asyncHandler(async (req, res) => {
+    await ensureUserPreferencesSchema();
+    const key = requireString(req.params, "key", "Preference key");
+    const value =
+      req.body?.value && typeof req.body.value === "object" && !Array.isArray(req.body.value)
+        ? req.body.value
+        : {};
+
+    const { rows } = await query(
+      `
+        INSERT INTO user_preferences (user_id, key, value, updated_at)
+        VALUES ($1, $2, $3, now())
+        ON CONFLICT (user_id, key)
+        DO UPDATE SET value = EXCLUDED.value,
+                      updated_at = now()
+        RETURNING value
+      `,
+      [req.user.id, key, JSON.stringify(value)],
+    );
+
+    res.json({ data: rows[0].value, error: null });
   }),
 );

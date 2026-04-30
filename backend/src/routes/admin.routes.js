@@ -334,6 +334,7 @@ adminRouter.get(
             ir.status,
             ir.internal_note AS "internalNote",
             ir.resolved,
+            ir.resolved_at AS "resolvedAt",
             ir.notified,
             ir.context_section AS "contextSection",
             ir.device_type AS "deviceType",
@@ -380,8 +381,14 @@ adminRouter.patch(
           SET status = $1,
               internal_note = $2,
               resolved = ($1 = 'resolved'),
+              resolved_at = CASE
+                WHEN $1 = 'resolved' AND issue_reports.status <> 'resolved' THEN now()
+                WHEN $1 <> 'resolved' THEN NULL
+                ELSE resolved_at
+              END,
               notified = CASE
                 WHEN $1 = 'resolved' AND issue_reports.status <> 'resolved' THEN false
+                WHEN $1 <> 'resolved' THEN true
                 ELSE notified
               END,
               updated_at = now()
@@ -393,6 +400,7 @@ adminRouter.patch(
             issue_reports.status,
             issue_reports.internal_note AS "internalNote",
             issue_reports.resolved,
+            issue_reports.resolved_at AS "resolvedAt",
             issue_reports.notified,
             issue_reports.updated_at AS "updatedAt",
             existing.previous_status AS "previousStatus"
@@ -1289,6 +1297,69 @@ adminRouter.post(
         email: rows[0].email,
         resetUrl,
         expiresAt: rows[0].expiresAt,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.delete(
+  "/users/:userId",
+  asyncHandler(async (req, res) => {
+    const userId = requireUuid(req.params.userId, "User ID");
+    const confirmText = requireString(req.body, "confirmText", "Confirmation");
+
+    if (confirmText !== "DELETE") {
+      throw badRequest("Type DELETE to confirm account deletion.");
+    }
+
+    if (userId === req.user.id) {
+      throw badRequest("You cannot delete your own owner account here.");
+    }
+
+    const { rows } = await query(
+      `
+        UPDATE users
+        SET deleted_at = now(),
+            platform_status = 'suspended',
+            platform_admin_notes = concat_ws(
+              E'\n',
+              NULLIF(platform_admin_notes, ''),
+              'Soft deleted by owner platform on ' || to_char(now(), 'YYYY-MM-DD HH24:MI')
+            )
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id, email, full_name AS "fullName"
+      `,
+      [userId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("User not found.");
+    }
+
+    await query(
+      `
+        UPDATE family_members
+        SET deleted_at = now()
+        WHERE user_id = $1
+          AND deleted_at IS NULL
+      `,
+      [userId],
+    );
+
+    await writeAudit(req, {
+      entityType: "user",
+      entityId: userId,
+      action: "platform_user_soft_deleted",
+      metadata: { email: rows[0].email },
+    });
+
+    res.json({
+      data: {
+        id: rows[0].id,
+        email: rows[0].email,
+        deleted: true,
       },
       error: null,
     });

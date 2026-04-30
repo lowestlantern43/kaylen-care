@@ -8,7 +8,7 @@ function normalizeRecipients(to) {
   return Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
 }
 
-async function sendViaResend({ to, subject, text, html }) {
+async function sendViaResend({ to, subject, text, html, attachments = [] }) {
   if (!config.resendApiKey) {
     console.log(
       `Email skipped because RESEND_API_KEY is not configured: ${subject} -> ${to.join(", ")}`,
@@ -29,6 +29,7 @@ async function sendViaResend({ to, subject, text, html }) {
       subject,
       text,
       html,
+      attachments,
     }),
   });
 
@@ -43,7 +44,7 @@ async function sendViaResend({ to, subject, text, html }) {
   return { sent: true, skipped: false };
 }
 
-async function sendViaWebhook({ to, subject, text, html, metadata }) {
+async function sendViaWebhook({ to, subject, text, html, metadata, attachments = [] }) {
   if (!config.emailWebhookUrl) {
     console.log(
       `Email skipped because EMAIL_WEBHOOK_URL is not configured: ${subject} -> ${to.join(", ")}`,
@@ -64,6 +65,7 @@ async function sendViaWebhook({ to, subject, text, html, metadata }) {
       text,
       html,
       metadata,
+      attachments,
     }),
   });
 
@@ -78,15 +80,29 @@ async function sendViaWebhook({ to, subject, text, html, metadata }) {
   return { sent: true, skipped: false };
 }
 
-export async function sendAppEmail({ to, subject, text, html, metadata = {} }) {
+export async function sendAppEmail({
+  to,
+  subject,
+  text,
+  html,
+  metadata = {},
+  attachments = [],
+}) {
   const recipients = normalizeRecipients(to);
   if (!recipients.length) return { sent: false, skipped: true };
 
   if (config.emailProvider === "resend") {
-    return sendViaResend({ to: recipients, subject, text, html });
+    return sendViaResend({ to: recipients, subject, text, html, attachments });
   }
 
-  return sendViaWebhook({ to: recipients, subject, text, html, metadata });
+  return sendViaWebhook({
+    to: recipients,
+    subject,
+    text,
+    html,
+    metadata,
+    attachments,
+  });
 }
 
 export function welcomeEmail({ fullName }) {
