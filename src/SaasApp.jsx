@@ -6,6 +6,86 @@ import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
+const PRODUCTION_URL = "https://familytrack.care";
+
+const publicPages = {
+  "/": {
+    title: "FamilyTrack - Simple Care Tracking for Families",
+    description:
+      "FamilyTrack helps busy parents and carers log food, medication, sleep, toileting and health, then create clearer reports for doctors, school and reviews.",
+    h1: "FamilyTrack — simple care tracking for families",
+    canonical: `${PRODUCTION_URL}/`,
+    ogImage: `${PRODUCTION_URL}/screenshots/dashboard.png`,
+  },
+  "/autism-daily-tracker-app": {
+    title: "Autism Daily Tracker App for Parents | FamilyTrack",
+    description:
+      "Track food, sleep, medication, toileting and health in one simple app built for busy parents and carers.",
+    h1: "Autism daily tracker app for parents",
+    canonical: `${PRODUCTION_URL}/autism-daily-tracker-app`,
+    screenshot: "/screenshots/dashboard.png",
+    screenshotAlt:
+      "FamilyTrack dashboard showing daily care logging cards for a selected child",
+    focus:
+      "For parents and carers who need a calmer way to record daily patterns, routines and care notes.",
+  },
+  "/special-needs-child-diary-app": {
+    title: "Special Needs Child Diary App | FamilyTrack",
+    description:
+      "A simple child diary app for SEN families to log daily care, routines, health notes and reports in one place.",
+    h1: "A simple diary app for children with additional needs",
+    canonical: `${PRODUCTION_URL}/special-needs-child-diary-app`,
+    screenshot: "/screenshots/logging-food.png",
+    screenshotAlt:
+      "FamilyTrack food and drink logging screen for recording daily care details",
+    focus:
+      "Built for SEN families who want everyday care notes in one place without a complicated clinical system.",
+  },
+  "/ehcp-report-tracker": {
+    title: "EHCP Report Tracker for Parents | FamilyTrack",
+    description:
+      "Turn daily care notes into clearer reports for EHCP reviews, school meetings, doctors and appointments.",
+    h1: "Track care notes and create clearer reports for EHCP reviews",
+    canonical: `${PRODUCTION_URL}/ehcp-report-tracker`,
+    screenshot: "/screenshots/reports-page.png",
+    screenshotAlt:
+      "FamilyTrack reports page showing daily care summaries and filters",
+    focus:
+      "Use daily notes to prepare clearer summaries for EHCP reviews, school meetings and professional appointments.",
+  },
+  "/child-medication-tracker": {
+    title: "Child Medication Tracker App | FamilyTrack",
+    description:
+      "Log medication, doses, timings and notes for your child, then include them in simple care reports.",
+    h1: "Child medication tracker for busy parents and carers",
+    canonical: `${PRODUCTION_URL}/child-medication-tracker`,
+    screenshot: "/screenshots/medication-log.png",
+    screenshotAlt:
+      "FamilyTrack medication log screen with medicine, dose, time and notes",
+    focus:
+      "Record medication, dose, timing and notes in a way that can be shared clearly when needed.",
+  },
+  "/care-report-app": {
+    title: "Care Report App for Parents | FamilyTrack",
+    description:
+      "Create useful care reports from food, sleep, medication, toileting and health logs for appointments and reviews.",
+    h1: "Create care reports from daily family logs",
+    canonical: `${PRODUCTION_URL}/care-report-app`,
+    screenshot: "/screenshots/pdf-report.png",
+    screenshotAlt:
+      "FamilyTrack PDF care report prepared for sharing with professionals",
+    focus:
+      "Turn everyday logging into compact reports for appointments, reviews, carers and school conversations.",
+  },
+};
+
+const landingPageLinks = [
+  ["/autism-daily-tracker-app", "Autism daily tracker"],
+  ["/special-needs-child-diary-app", "Special needs child diary"],
+  ["/ehcp-report-tracker", "EHCP report tracker"],
+  ["/child-medication-tracker", "Child medication tracker"],
+  ["/care-report-app", "Care report app"],
+];
 
 const inputClass =
   "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -374,6 +454,116 @@ function ChildPhotoPreview({ child, url }) {
   );
 }
 
+function SeoHead({ page, jsonLd }) {
+  useEffect(() => {
+    const upsertMeta = (selector, attrs) => {
+      let element = document.head.querySelector(selector);
+      if (!element) {
+        element = document.createElement("meta");
+        Object.entries(attrs.identity || {}).forEach(([key, value]) =>
+          element.setAttribute(key, value),
+        );
+        document.head.appendChild(element);
+      }
+      Object.entries(attrs.values || {}).forEach(([key, value]) =>
+        element.setAttribute(key, value),
+      );
+    };
+
+    const upsertLink = (selector, attrs) => {
+      let element = document.head.querySelector(selector);
+      if (!element) {
+        element = document.createElement("link");
+        document.head.appendChild(element);
+      }
+      Object.entries(attrs).forEach(([key, value]) =>
+        element.setAttribute(key, value),
+      );
+    };
+
+    document.title = page.title;
+    upsertMeta("meta[name='description']", {
+      identity: { name: "description" },
+      values: { content: page.description },
+    });
+    upsertMeta("meta[property='og:title']", {
+      identity: { property: "og:title" },
+      values: { content: page.title },
+    });
+    upsertMeta("meta[property='og:description']", {
+      identity: { property: "og:description" },
+      values: { content: page.description },
+    });
+    upsertMeta("meta[property='og:type']", {
+      identity: { property: "og:type" },
+      values: { content: "website" },
+    });
+    upsertMeta("meta[property='og:url']", {
+      identity: { property: "og:url" },
+      values: { content: page.canonical },
+    });
+    upsertMeta("meta[property='og:image']", {
+      identity: { property: "og:image" },
+      values: { content: page.ogImage || `${PRODUCTION_URL}${page.screenshot || "/screenshots/dashboard.png"}` },
+    });
+    upsertLink("link[rel='canonical']", {
+      rel: "canonical",
+      href: page.canonical,
+    });
+
+    let script = document.getElementById("familytrack-jsonld");
+    if (!script) {
+      script = document.createElement("script");
+      script.id = "familytrack-jsonld";
+      script.type = "application/ld+json";
+      document.head.appendChild(script);
+    }
+    script.textContent = JSON.stringify(jsonLd);
+  }, [jsonLd, page]);
+
+  return null;
+}
+
+function MarketingScreenshot({
+  src,
+  alt,
+  priority = false,
+  className = "",
+}) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div
+        className={`flex min-h-64 items-center justify-center rounded-[1.5rem] border-2 border-dashed border-indigo-200 bg-white px-5 py-8 text-center shadow-sm ${className}`}
+      >
+        <div>
+          <p className="text-sm font-black text-slate-900">
+            Add real FamilyTrack screenshot:
+          </p>
+          <p className="mt-2 break-all rounded-xl bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-700">
+            {src}
+          </p>
+          <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+            Upload this actual app screenshot into /public/screenshots/. Do not
+            use stock images or fake dashboards.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      loading={priority ? "eager" : "lazy"}
+      className={`w-full max-w-full rounded-[1.5rem] border border-slate-200 bg-white object-cover shadow-xl ${className}`}
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 function Toast({ toast, onClose }) {
   if (!toast) return null;
 
@@ -444,50 +634,105 @@ const emptyImportantEvent = {
   outcome: "",
 };
 
+function PublicNav({ onStartFree, onLogin }) {
+  return (
+    <nav className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+      <a href="/" className="min-w-0">
+        <p className="text-xl font-black tracking-tight text-slate-950">
+          FamilyTrack
+        </p>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
+          Tracking what matters
+        </p>
+      </a>
+      <div className="flex shrink-0 items-center gap-2">
+        <button
+          type="button"
+          onClick={onLogin}
+          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm"
+        >
+          Log in
+        </button>
+        <button
+          type="button"
+          onClick={onStartFree}
+          className="hidden rounded-full bg-slate-900 px-4 py-2 text-sm font-bold text-white shadow-sm sm:inline-flex"
+        >
+          Start tracking
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+function PublicFooter() {
+  return (
+    <footer className="border-t border-slate-200 bg-white px-5 py-8">
+      <div className="mx-auto flex max-w-6xl flex-col gap-5 text-sm font-semibold text-slate-600 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <p className="font-black text-slate-900">FamilyTrack</p>
+          <p className="mt-1">Simple care tracking for busy families.</p>
+          <a
+            href={SUPPORT_MAILTO}
+            className="mt-2 inline-block font-black text-indigo-700 underline decoration-indigo-200 underline-offset-4"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {landingPageLinks.map(([href, label]) => (
+            <a
+              key={href}
+              href={href}
+              className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700"
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </div>
+    </footer>
+  );
+}
+
 function LandingPage({ onStartFree, onLogin }) {
+  const page = publicPages["/"];
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    name: "FamilyTrack",
+    url: PRODUCTION_URL,
+    applicationCategory: "LifestyleApplication",
+    operatingSystem: "Web",
+    description: page.description,
+    offers: {
+      "@type": "Offer",
+      price: "0",
+      priceCurrency: "GBP",
+      description: "Free trial available",
+    },
+  };
+
   const features = [
     [
       "Daily care logging",
-      "Record food, drink, toileting, health notes and important changes quickly from your phone.",
+      "Log food, drink, medication, sleep, toileting, health notes and important changes from a mobile-friendly diary.",
     ],
     [
-      "Medication and routines",
-      "Keep everyday care tasks clear without mixing routines into medication records.",
+      "Reports for professionals",
+      "Create clearer summaries and PDF reports for doctors, school meetings, EHCP reviews, carers and appointments.",
     ],
     [
-      "Reports and PDF export",
-      "Create readable summaries for EHCP reviews, school meetings, hospital visits and carers.",
-    ],
-    [
-      "Care Snapshot",
-      "Prepare a compact view of key information for professionals when time matters.",
-    ],
-    [
-      "Calendar and trends",
-      "Look back over days and weeks to spot patterns in sleep, health, food and care activity.",
+      "Built for busy families",
+      "Keep useful records without turning family life into complicated medical software.",
     ],
   ];
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
+      <SeoHead page={page} jsonLd={jsonLd} />
       <section className="overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-5 py-5">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div>
-            <p className="text-xl font-black tracking-tight text-slate-950">
-              FamilyTrack
-            </p>
-            <p className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">
-              Tracking what matters
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onLogin}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-sm"
-          >
-            Log in
-          </button>
-        </nav>
+        <PublicNav onStartFree={onStartFree} onLogin={onLogin} />
 
         <div className="mx-auto grid max-w-6xl gap-8 py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div>
@@ -495,63 +740,44 @@ function LandingPage({ onStartFree, onLogin }) {
               Parent-led care diary
             </p>
             <h1 className="mt-4 max-w-3xl text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
-              Track your child&apos;s care, health, and routines in one place
+              {page.h1}
             </h1>
             <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
-              FamilyTrack helps families record food, sleep, medication,
-              toileting, health, routines and reports, then share clear updates
-              with schools, hospitals, carers and professionals.
+              FamilyTrack is a simple care tracking app for busy parents and
+              carers, including SEN families and children with additional needs.
+              Record food, medication, sleep, toileting and health logs, then
+              turn daily notes into reports for doctors, school and reviews.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={onStartFree} className={buttonClass}>
-                Start free
+                Start tracking
               </button>
-              <button
-                type="button"
-                onClick={onLogin}
+              <a
+                href="#reports-example"
                 className={secondaryButtonClass}
               >
-                Log in
+                View reports example
+              </a>
+              <button
+                type="button"
+                onClick={onStartFree}
+                className="flex w-full items-center justify-center rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 sm:w-auto"
+              >
+                Try FamilyTrack
               </button>
             </div>
           </div>
 
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-xl">
-            <div className="rounded-[1.5rem] bg-slate-950 p-4 text-white">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-black">FamilyTrack</p>
-                  <p className="text-xs text-slate-300">Today at a glance</p>
-                </div>
-                <span className="rounded-full bg-emerald-400/20 px-3 py-1 text-xs font-bold text-emerald-200">
-                  Synced
-                </span>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {[
-                  ["Food", "Lunch logged - reduced appetite"],
-                  ["Medication", "Keppra 5ml at 08:00"],
-                  ["Sleep", "9h 15m - good quality"],
-                  ["Health", "No new health notes today"],
-                ].map(([title, copy]) => (
-                  <div
-                    key={title}
-                    className="rounded-2xl border border-white/10 bg-white/10 px-4 py-3"
-                  >
-                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-sky-200">
-                      {title}
-                    </p>
-                    <p className="mt-1 text-sm font-semibold text-white">{copy}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <MarketingScreenshot
+            src="/screenshots/dashboard.png"
+            alt="FamilyTrack dashboard showing care logging cards for a selected child"
+            priority
+          />
         </div>
       </section>
 
       <section className="px-5 py-10">
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
           {features.map(([title, copy]) => (
             <article
               key={title}
@@ -567,54 +793,227 @@ function LandingPage({ onStartFree, onLogin }) {
       </section>
 
       <section className="bg-white px-5 py-12">
-        <div className="mx-auto max-w-4xl">
-          <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
-            Built from real family life
-          </p>
-          <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-            Created by Martin, Kaylen&apos;s dad
+        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2 lg:items-center">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
+              Built from real family life
+            </p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+              Designed by a parent, for everyday care
+            </h2>
+            <p className="mt-4 text-base font-medium leading-8 text-slate-600">
+              FamilyTrack was created from real family need. When care involves
+              food, drink, medication, sleep, toileting, routines, health notes
+              and important changes, small details can be hard to remember.
+              FamilyTrack helps keep those notes clear and shareable.
+            </p>
+          </div>
+          <MarketingScreenshot
+            src="/screenshots/logging-food.png"
+            alt="FamilyTrack food and drink logging form from the real app"
+          />
+        </div>
+      </section>
+
+      <section id="reports-example" className="px-5 py-12">
+        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2 lg:items-center">
+          <MarketingScreenshot
+            src="/screenshots/reports-page.png"
+            alt="FamilyTrack reports page with daily grouped logs and filters"
+          />
+          <div>
+            <h2 className="text-3xl font-black tracking-tight text-slate-950">
+              Reports that make appointments easier
+            </h2>
+            <p className="mt-4 text-base font-medium leading-8 text-slate-600">
+              Use daily family logs to prepare care reports and PDF summaries
+              for doctors, school, EHCP reviews and carers. Reports are designed
+              to be readable, practical and parent-friendly.
+            </p>
+            <div className="mt-6">
+              <button type="button" onClick={onStartFree} className={buttonClass}>
+                Try FamilyTrack
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-indigo-50 px-5 py-12">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-2xl font-black text-slate-950">
+            Helpful FamilyTrack pages
           </h2>
-          <p className="mt-4 text-base font-medium leading-8 text-slate-600">
-            Kaylen is autistic and non-verbal. Managing his care involves
-            tracking many daily things including food, drink, medication, sleep,
-            toileting, routines, health notes and important changes.
-            FamilyTrack was built from real family need, to make it easier to
-            record important information, spot patterns and share clear updates
-            with schools, hospitals, carers and professionals.
-          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {landingPageLinks.map(([href, label]) => (
+              <a
+                key={href}
+                href={href}
+                className="rounded-2xl border border-indigo-100 bg-white px-4 py-4 text-sm font-black text-indigo-700 shadow-sm"
+              >
+                {label}
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <PublicFooter />
+    </main>
+  );
+}
+
+function SeoLandingPage({ page, onStartFree, onLogin }) {
+  const faqs = [
+    [
+      "Can I track food, sleep and medication in one place?",
+      "Yes. FamilyTrack lets you keep food, medication, sleep, toileting and health logs together for the selected child.",
+    ],
+    [
+      "Can I create reports for appointments?",
+      "Yes. Reports can turn daily logs into clearer summaries for appointments, school meetings and reviews.",
+    ],
+    [
+      "Is FamilyTrack useful for SEN parents?",
+      "FamilyTrack is designed to be useful for SEN families and children with additional needs, while staying simple and parent-friendly.",
+    ],
+    [
+      "Can I use it on my phone?",
+      "Yes. FamilyTrack is mobile-first, so parents and carers can log care notes quickly during normal family life.",
+    ],
+    [
+      "Can reports be shared as PDF?",
+      "Yes. FamilyTrack supports PDF-style report export for sharing care history more clearly.",
+    ],
+  ];
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: faqs.map(([question, answer]) => ({
+      "@type": "Question",
+      name: question,
+      acceptedAnswer: {
+        "@type": "Answer",
+        text: answer,
+      },
+    })),
+  };
+  const relatedLinks = landingPageLinks.filter(([href]) => href !== new URL(page.canonical).pathname);
+
+  return (
+    <main className="min-h-screen bg-slate-50 text-slate-950">
+      <SeoHead page={page} jsonLd={jsonLd} />
+      <section className="bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-5 py-5">
+        <PublicNav onStartFree={onStartFree} onLogin={onLogin} />
+        <div className="mx-auto grid max-w-6xl gap-8 py-12 lg:grid-cols-[1fr_0.9fr] lg:items-center">
+          <div>
+            <a href="/" className="text-sm font-black text-indigo-700">
+              FamilyTrack home
+            </a>
+            <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
+              {page.h1}
+            </h1>
+            <p className="mt-5 text-base font-medium leading-8 text-slate-600 sm:text-lg">
+              {page.focus} Log food, sleep, medication, toileting and health in
+              one simple place, then create useful reports for doctors, school,
+              carers and reviews.
+            </p>
+            <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+              <button type="button" onClick={onStartFree} className={buttonClass}>
+                Start tracking
+              </button>
+              <a href="/care-report-app" className={secondaryButtonClass}>
+                View reports example
+              </a>
+            </div>
+          </div>
+          <MarketingScreenshot src={page.screenshot} alt={page.screenshotAlt} priority />
+        </div>
+      </section>
+
+      <section className="px-5 py-12">
+        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
+          {[
+            [
+              "Common struggles",
+              "Daily care details can be spread across memory, messages, notebooks and different carers.",
+            ],
+            [
+              "How FamilyTrack helps",
+              "Keep care notes together by child, with fast logging and reports that are easier to share.",
+            ],
+            [
+              "What you can record",
+              "Food, drink, medication, doses, sleep, toileting, health notes, routines and care changes.",
+            ],
+          ].map(([title, copy]) => (
+            <article
+              key={title}
+              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <h2 className="text-lg font-black text-slate-950">{title}</h2>
+              <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                {copy}
+              </p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white px-5 py-12">
+        <div className="mx-auto max-w-4xl">
+          <h2 className="text-2xl font-black text-slate-950">
+            Frequently asked questions
+          </h2>
+          <div className="mt-5 space-y-3">
+            {faqs.map(([question, answer]) => (
+              <details
+                key={question}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <summary className="cursor-pointer text-sm font-black text-slate-900">
+                  {question}
+                </summary>
+                <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
+                  {answer}
+                </p>
+              </details>
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="px-5 py-12">
         <div className="mx-auto max-w-6xl rounded-[2rem] border border-indigo-100 bg-indigo-50 p-6 shadow-sm md:p-8">
-          <h2 className="text-2xl font-black text-slate-950">Simple pricing</h2>
-          <p className="mt-3 max-w-3xl text-sm font-medium leading-7 text-slate-700">
-            Start free with basic logging. Pro unlocks reports, PDFs, Care
-            Snapshot, sharing, multiple children and advanced features as the
-            platform grows.
-          </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+          <h2 className="text-2xl font-black text-slate-950">
+            Helpful pages
+          </h2>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <a
+              href="/"
+              className="rounded-2xl border border-indigo-100 bg-white px-4 py-4 text-sm font-black text-indigo-700 shadow-sm"
+            >
+              FamilyTrack homepage
+            </a>
+            {relatedLinks.slice(0, 4).map(([href, label]) => (
+              <a
+                key={href}
+                href={href}
+                className="rounded-2xl border border-indigo-100 bg-white px-4 py-4 text-sm font-black text-indigo-700 shadow-sm"
+              >
+                {label}
+              </a>
+            ))}
+          </div>
+          <div className="mt-6">
             <button type="button" onClick={onStartFree} className={buttonClass}>
-              Start free
-            </button>
-            <button type="button" onClick={onLogin} className={secondaryButtonClass}>
-              Log in
+              Try FamilyTrack
             </button>
           </div>
         </div>
       </section>
 
-      <footer className="border-t border-slate-200 bg-white px-5 py-8">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm font-semibold text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-          <p>FamilyTrack - Tracking what matters</p>
-          <a
-            href={SUPPORT_MAILTO}
-            className="font-black text-indigo-700 underline decoration-indigo-200 underline-offset-4"
-          >
-            {SUPPORT_EMAIL}
-          </a>
-        </div>
-      </footer>
+      <PublicFooter />
     </main>
   );
 }
@@ -7223,6 +7622,9 @@ export default function SaasApp() {
   }
 
   if (!session) {
+    const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
+    const seoPage = publicPages[currentPath];
+
     if (publicView === "auth") {
       return (
         <AuthScreen
@@ -7239,6 +7641,16 @@ export default function SaasApp() {
           initialMode="login"
           onAuthenticated={setSession}
           onBack={() => setPublicView("landing")}
+        />
+      );
+    }
+
+    if (seoPage && currentPath !== "/") {
+      return (
+        <SeoLandingPage
+          page={seoPage}
+          onStartFree={() => setPublicView("auth")}
+          onLogin={() => setPublicView("login")}
         />
       );
     }
