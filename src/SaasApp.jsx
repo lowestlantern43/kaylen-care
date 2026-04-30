@@ -174,6 +174,37 @@ function ChildAvatar({ child, active = false, size = "sm" }) {
   );
 }
 
+function ChildPhotoPreview({ child, url }) {
+  const [failedUrl, setFailedUrl] = useState("");
+  const imageUrl = url || avatarUrlForChild(child);
+  const hasFailed = imageUrl && failedUrl === imageUrl;
+
+  useEffect(() => {
+    setFailedUrl("");
+  }, [imageUrl]);
+
+  if (!imageUrl) {
+    return <ChildAvatar child={child} size="lg" />;
+  }
+
+  if (hasFailed) {
+    return (
+      <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-xs font-bold text-amber-800">
+        Check permissions
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt=""
+      className="h-20 w-20 rounded-2xl object-cover ring-2 ring-indigo-100"
+      onError={() => setFailedUrl(imageUrl)}
+    />
+  );
+}
+
 const emptyChildProfile = {
   diagnosisNeeds: "",
   communicationStyle: "",
@@ -1061,6 +1092,7 @@ function WorkspaceGate({ session, onLogout }) {
     showPasswords: false,
   });
   const [accountMessage, setAccountMessage] = useState("");
+  const [childPhotoPreviewError, setChildPhotoPreviewError] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [timeZonePreference, setTimeZonePreference] = useState(() => {
@@ -1481,6 +1513,7 @@ function WorkspaceGate({ session, onLogout }) {
 
     setIsUploadingChildPhoto(true);
     setError("");
+    setChildPhotoPreviewError("");
 
     try {
       const upload = await api.uploadProfilePhoto({
@@ -1498,7 +1531,7 @@ function WorkspaceGate({ session, onLogout }) {
       setChildren((current) =>
         current.map((child) => (child.id === updated.id ? updated : child)),
       );
-      setAccountMessage("Child photo updated.");
+      setAccountMessage("Child photo uploaded and saved.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -3458,7 +3491,10 @@ function WorkspaceGate({ session, onLogout }) {
                       </h4>
                       <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex items-center gap-3">
-                          <ChildAvatar child={{ ...selectedChild, avatarUrl: childEditForm.avatarUrl }} size="lg" />
+                          <ChildPhotoPreview
+                            child={selectedChild}
+                            url={childEditForm.avatarUrl}
+                          />
                           <div>
                             <p className="text-sm font-bold text-slate-900">
                               Child photo
@@ -3480,9 +3516,27 @@ function WorkspaceGate({ session, onLogout }) {
                         </label>
                       </div>
                       {childEditForm.avatarUrl ? (
-                        <p className="break-all rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500">
-                          Photo URL: {childEditForm.avatarUrl}
-                        </p>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <p className="break-all text-xs font-medium text-slate-500">
+                            Photo URL: {childEditForm.avatarUrl}
+                          </p>
+                          {childPhotoPreviewError ? (
+                            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                              {childPhotoPreviewError}
+                            </p>
+                          ) : null}
+                          <img
+                            src={childEditForm.avatarUrl}
+                            alt=""
+                            className="mt-3 h-28 w-28 rounded-2xl object-cover"
+                            onLoad={() => setChildPhotoPreviewError("")}
+                            onError={() =>
+                              setChildPhotoPreviewError(
+                                "Photo uploaded but cannot be viewed — check storage permissions.",
+                              )
+                            }
+                          />
+                        </div>
                       ) : null}
                       <div className="grid gap-3 sm:grid-cols-2">
                         <input

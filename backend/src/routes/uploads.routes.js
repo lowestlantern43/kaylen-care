@@ -8,6 +8,7 @@ import { requireEnum, requireString, requireUuid } from "../validators/simple.js
 import {
   buildProfilePhotoObjectKey,
   buildPublicSpacesUrl,
+  createSignedAclUrl,
   createSignedPutUrl,
 } from "../services/spaces.js";
 
@@ -53,6 +54,25 @@ async function assertWritableChild({ familyId, childId, userId }) {
 
   if (!child.rows[0]) {
     throw notFound("Child not found.");
+  }
+}
+
+async function applyPublicReadAcl(objectKey) {
+  const aclResponse = await fetch(createSignedAclUrl({ objectKey }), {
+    method: "PUT",
+    headers: {
+      "x-amz-acl": "public-read",
+    },
+  });
+
+  if (!aclResponse.ok) {
+    const details = await aclResponse.text().catch(() => "");
+    throw badRequest(
+      `DigitalOcean Spaces uploaded the photo but could not make it public (${aclResponse.status}). ${
+        details ||
+        "Check the Spaces access key has permission to update object ACLs."
+      }`,
+    );
   }
 }
 
@@ -138,6 +158,8 @@ uploadsRouter.post(
         }`,
       );
     }
+
+    await applyPublicReadAcl(objectKey);
 
     const { rows } = await query(
       `

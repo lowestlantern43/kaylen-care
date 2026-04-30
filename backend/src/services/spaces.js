@@ -88,7 +88,7 @@ export function buildPublicSpacesUrl(objectKey) {
   return `${normalizePublicUrl(config.spacesPublicUrl)}/${encodeObjectKey(objectKey)}`;
 }
 
-function buildBucketUploadUrl(objectKey) {
+function buildBucketObjectUrl(objectKey) {
   const endpoint = new URL(normalizeEndpoint(config.spacesEndpoint));
   const bucketPrefix = `${config.spacesBucket}.`;
   const host = endpoint.hostname.startsWith(bucketPrefix)
@@ -104,7 +104,7 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
   requireSpacesConfig();
   getProfilePhotoExtension(fileType);
 
-  const uploadUrl = buildBucketUploadUrl(objectKey);
+  const uploadUrl = buildBucketObjectUrl(objectKey);
   const host = uploadUrl.host;
   const { amzDate, dateStamp } = buildAmzDates();
   const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
@@ -158,4 +158,64 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
   uploadUrl.search = queryParams.toString();
 
   return uploadUrl.toString();
+}
+
+export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {
+  requireSpacesConfig();
+
+  const aclUrl = buildBucketObjectUrl(objectKey);
+  const host = aclUrl.host;
+  const { amzDate, dateStamp } = buildAmzDates();
+  const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
+  const signedHeaders = "host;x-amz-acl";
+
+  const queryParams = new URLSearchParams({
+    acl: "",
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${config.spacesKey}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+  });
+
+  const canonicalQueryString = [...queryParams.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(
+      ([key, value]) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(value).replace(
+          /[!'()*]/g,
+          (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+        )}`,
+    )
+    .join("&");
+
+  const canonicalHeaders = `host:${host}\nx-amz-acl:public-read\n`;
+  const canonicalRequest = [
+    "PUT",
+    aclUrl.pathname,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const signingKey = getSigningKey(
+    config.spacesSecret,
+    dateStamp,
+    config.spacesRegion,
+  );
+  const signature = hmac(signingKey, stringToSign, "hex");
+
+  queryParams.set("X-Amz-Signature", signature);
+  aclUrl.search = queryParams.toString();
+
+  return aclUrl.toString();
 }
