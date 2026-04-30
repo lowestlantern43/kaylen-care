@@ -1,5 +1,5 @@
 import html2canvas from "html2canvas";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 
@@ -1094,8 +1094,10 @@ function WorkspaceGate({ session, onLogout }) {
   const [platformAccountFilter, setPlatformAccountFilter] = useState("all");
   const [platformSnapshot, setPlatformSnapshot] = useState(null);
   const [platformViewAsUser, setPlatformViewAsUser] = useState(null);
+  const [platformViewAsFamily, setPlatformViewAsFamily] = useState(null);
   const [resolvedIssueNotice, setResolvedIssueNotice] = useState("");
   const [showSystemStatus, setShowSystemStatus] = useState(false);
+  const [isPlatformQuickJumpOpen, setIsPlatformQuickJumpOpen] = useState(false);
   const [platformMemberForm, setPlatformMemberForm] = useState({
     email: "",
     role: "parent",
@@ -1104,6 +1106,8 @@ function WorkspaceGate({ session, onLogout }) {
     password: "",
   });
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
+  const platformQuickJumpRef = useRef(null);
+  const platformSearchInputRef = useRef(null);
 
   const selectedFamily = useMemo(
     () => families.find((family) => family.familyId === selectedFamilyId),
@@ -1179,6 +1183,49 @@ function WorkspaceGate({ session, onLogout }) {
     if (!showPlatformAdmin || platformAdminTab !== "issues") return;
     refreshPlatformIssues();
   }, [showPlatformAdmin, platformAdminTab]);
+
+  useEffect(() => {
+    if (!platformSearch.trim()) {
+      setIsPlatformQuickJumpOpen(false);
+    }
+  }, [platformSearch]);
+
+  useEffect(() => {
+    setIsPlatformQuickJumpOpen(false);
+  }, [platformAdminTab, showPlatformAdmin]);
+
+  useEffect(() => {
+    if (!isPlatformQuickJumpOpen) return undefined;
+
+    const closeOnOutsidePress = (event) => {
+      if (
+        platformQuickJumpRef.current?.contains(event.target) ||
+        platformSearchInputRef.current?.contains(event.target)
+      ) {
+        return;
+      }
+      setIsPlatformQuickJumpOpen(false);
+    };
+
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") {
+        setIsPlatformQuickJumpOpen(false);
+        platformSearchInputRef.current?.blur();
+      }
+    };
+
+    window.addEventListener("pointerdown", closeOnOutsidePress);
+    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("hashchange", closeOnEscape);
+    window.addEventListener("popstate", closeOnEscape);
+
+    return () => {
+      window.removeEventListener("pointerdown", closeOnOutsidePress);
+      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("hashchange", closeOnEscape);
+      window.removeEventListener("popstate", closeOnEscape);
+    };
+  }, [isPlatformQuickJumpOpen]);
 
   useEffect(() => {
     let ignore = false;
@@ -2102,14 +2149,41 @@ function WorkspaceGate({ session, onLogout }) {
 
     try {
       const detail = await api.adminUserDetail(userId);
+      const firstFamilyId = detail.memberships?.[0]?.familyId;
+      const firstFamily = firstFamilyId
+        ? await api.adminFamilyDetail(firstFamilyId)
+        : null;
       setPlatformViewAsUser(detail);
+      setPlatformViewAsFamily(firstFamily);
       setShowPlatformAdmin(true);
       setPlatformAdminTab("accounts");
+      setIsPlatformQuickJumpOpen(false);
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
       setIsUserDetailLoading(false);
     }
+  };
+
+  const openPlatformViewAsFamily = async (familyId) => {
+    if (!familyId) return;
+
+    setIsFamilyDetailLoading(true);
+    setError("");
+
+    try {
+      setPlatformViewAsFamily(await api.adminFamilyDetail(familyId));
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsFamilyDetailLoading(false);
+    }
+  };
+
+  const exitPlatformViewAsUser = () => {
+    setPlatformViewAsUser(null);
+    setPlatformViewAsFamily(null);
+    setPlatformActionMessage("Returned to Owner Platform.");
   };
 
   const updatePlatformFamilyField = (field, value) => {
@@ -2594,6 +2668,19 @@ function WorkspaceGate({ session, onLogout }) {
         ]
           .filter((item) => item.haystack.includes(platformSearchTerm))
           .slice(0, 8);
+
+  const selectPlatformSearchResult = (result, action = "select") => {
+    if (!result) return;
+    setIsPlatformQuickJumpOpen(false);
+    if (action === "snapshot" && result.onSnapshot) {
+      result.onSnapshot();
+    } else if (action === "viewAs" && result.onViewAs) {
+      result.onViewAs();
+    } else {
+      result.onSelect();
+    }
+    platformSearchInputRef.current?.blur();
+  };
 
   const filteredPlatformIssues = platformIssues.filter((issue) => {
     const haystack = [
@@ -4015,112 +4102,167 @@ function WorkspaceGate({ session, onLogout }) {
             ) : null}
 
             {platformViewAsUser ? (
-              <section className="mt-3 overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+              <section className="mt-3 overflow-hidden rounded-[1.5rem] border border-indigo-200 bg-white shadow-sm">
                 <div className="flex flex-col gap-2 bg-indigo-600 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-[10px] font-black uppercase tracking-[0.16em] text-indigo-100">
-                      Read-only view
+                      Owner read-only mode
                     </p>
-                    <h3 className="text-sm font-black">
+                    <h3 className="text-lg font-black">
                       Viewing as {platformViewAsUser.user.fullName}
                     </h3>
+                    <p className="text-xs font-semibold text-indigo-100">
+                      Your owner session is still active. Editing, saving and deleting are disabled in this view.
+                    </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => setPlatformViewAsUser(null)}
+                    onClick={exitPlatformViewAsUser}
                     className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm"
                   >
                     Exit view as user
                   </button>
                 </div>
-                <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                      Email
-                    </p>
-                    <p className="mt-1 break-all text-sm font-bold text-slate-900">
-                      {platformViewAsUser.user.email}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                      Last login
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">
-                      {formatPlatformDateTime(platformViewAsUser.user.lastLoginAt)}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                      Families
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">
-                      {platformViewAsUser.activity?.familyCount ?? 0}
-                    </p>
-                  </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                      Logs
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-slate-900">
-                      {platformViewAsUser.activity?.logCount ?? 0}
-                    </p>
+                <div className="border-b border-indigo-100 bg-indigo-50/70 p-3">
+                  <div className="flex gap-2 overflow-x-auto pb-1">
+                    {(platformViewAsUser.memberships || []).map((membership) => (
+                      <button
+                        type="button"
+                        key={membership.id}
+                        onClick={() => openPlatformViewAsFamily(membership.familyId)}
+                        disabled={isFamilyDetailLoading}
+                        className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold shadow-sm disabled:opacity-50 ${
+                          platformViewAsFamily?.family?.id === membership.familyId
+                            ? "border-indigo-500 bg-indigo-600 text-white"
+                            : "border-indigo-100 bg-white text-indigo-700"
+                        }`}
+                      >
+                        {membership.familyName} - {membership.role}
+                      </button>
+                    ))}
+                    {!platformViewAsUser.memberships?.length ? (
+                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-600">
+                        No family memberships
+                      </span>
+                    ) : null}
                   </div>
                 </div>
-                <div className="grid gap-3 p-3 pt-0 lg:grid-cols-2">
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <h4 className="text-sm font-black text-slate-900">
-                      Workspaces they can see
-                    </h4>
-                    <div className="mt-2 space-y-2">
-                      {(platformViewAsUser.memberships || []).map((membership) => (
-                        <button
-                          type="button"
-                          key={membership.id}
-                          onClick={() =>
-                            openPlatformSnapshotForFamily(membership.familyId)
-                          }
-                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm"
-                        >
-                          <span className="font-bold text-slate-900">
-                            {membership.familyName}
-                          </span>
-                          <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
-                            {membership.role}
-                          </span>
-                        </button>
-                      ))}
-                      {!platformViewAsUser.memberships?.length ? (
-                        <p className="text-sm font-semibold text-slate-500">
-                          No family memberships found.
+
+                <div className="space-y-3 bg-slate-50 p-3">
+                  <div className="rounded-[1.25rem] border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                          FamilyTrack read-only preview
                         </p>
-                      ) : null}
+                        <h3 className="truncate text-2xl font-black text-slate-950">
+                          {platformViewAsFamily?.family?.name ||
+                            platformViewAsUser.user.fullName}
+                        </h3>
+                        <p className="mt-1 text-sm font-semibold text-slate-600">
+                          Account: {platformViewAsUser.user.email}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black uppercase tracking-[0.12em] text-amber-800">
+                        Read only
+                      </span>
                     </div>
                   </div>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                    <h4 className="text-sm font-black text-slate-900">
-                      Recent read-only activity
-                    </h4>
-                    <div className="mt-2 space-y-2">
-                      {(platformViewAsUser.recentLogs || []).slice(0, 6).map((log) => (
-                        <div
-                          key={log.id}
-                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                        >
-                          <p className="font-bold capitalize text-slate-900">
-                            {log.category} - {log.childFirstName || "Child"}
-                          </p>
-                          <p className="text-xs font-semibold text-slate-500">
-                            {log.familyName} - {log.logDate} {log.logTime || ""}
-                          </p>
-                        </div>
-                      ))}
-                      {!platformViewAsUser.recentLogs?.length ? (
-                        <p className="text-sm font-semibold text-slate-500">
-                          No recent logs from this user.
+
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      ["Last login", formatPlatformDateTime(platformViewAsUser.user.lastLoginAt)],
+                      ["Account created", formatPlatformDateTime(platformViewAsUser.user.createdAt)],
+                      ["Families", platformViewAsUser.activity?.familyCount ?? 0],
+                      ["User logs", platformViewAsUser.activity?.logCount ?? 0],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-xl border border-slate-200 bg-white p-3"
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          {label}
                         </p>
-                      ) : null}
+                        <p className="mt-1 text-sm font-black text-slate-900">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
+                    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
+                      <h4 className="text-sm font-black text-slate-900">
+                        Children in this family
+                      </h4>
+                      <div className="mt-2 space-y-2">
+                        {(platformViewAsFamily?.children || []).map((child) => (
+                          <div
+                            key={child.id}
+                            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                          >
+                            <p className="font-bold text-slate-900">
+                              {child.firstName} {child.lastName || ""}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-500">
+                              DOB: {child.dateOfBirth || "Not set"}
+                            </p>
+                          </div>
+                        ))}
+                        {!platformViewAsFamily?.children?.length ? (
+                          <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-500">
+                            No children visible in this family.
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
+
+                    <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-black text-slate-900">
+                          Recent diary activity
+                        </h4>
+                        <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">
+                          Read-only
+                        </span>
+                      </div>
+                      <div className="mt-2 space-y-2">
+                        {(platformViewAsFamily?.recentLogs ||
+                          platformViewAsUser.recentLogs ||
+                          [])
+                          .slice(0, 10)
+                          .map((log) => (
+                            <div
+                              key={log.id}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm"
+                            >
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="font-bold capitalize text-slate-900">
+                                  {log.category} - {log.childFirstName || "Child"}
+                                </p>
+                                <p className="text-xs font-semibold text-slate-500">
+                                  {log.logDate} {log.logTime || ""}
+                                </p>
+                              </div>
+                              {log.notes ? (
+                                <p className="mt-1 text-slate-700">{log.notes}</p>
+                              ) : null}
+                            </div>
+                          ))}
+                        {!(platformViewAsFamily?.recentLogs ||
+                          platformViewAsUser.recentLogs ||
+                          []).length ? (
+                          <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-500">
+                            No recent diary entries visible.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[1.25rem] border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">
+                    Add, edit, save, delete and export controls are hidden in view-as
+                    mode. Use Exit view as user to return to the Owner Platform.
                   </div>
                 </div>
               </section>
@@ -4137,18 +4279,38 @@ function WorkspaceGate({ session, onLogout }) {
                     Quick search and jump
                   </label>
                   <input
+                    ref={platformSearchInputRef}
                     className="mt-1.5 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                     value={platformSearch}
-                    onChange={(event) => setPlatformSearch(event.target.value)}
+                    onFocus={() =>
+                      setIsPlatformQuickJumpOpen(platformSearchTerm.length >= 2)
+                    }
+                    onBlur={() =>
+                      window.setTimeout(
+                        () => setIsPlatformQuickJumpOpen(false),
+                        120,
+                      )
+                    }
+                    onChange={(event) => {
+                      setPlatformSearch(event.target.value);
+                      setIsPlatformQuickJumpOpen(
+                        event.target.value.trim().length >= 2,
+                      );
+                    }}
                     placeholder="Search families, users or children"
                   />
-                  {platformSearchResults.length > 0 ? (
-                    <div className="absolute left-3 right-3 top-full z-20 mt-1 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-xl">
+                  {isPlatformQuickJumpOpen && platformSearchResults.length > 0 ? (
+                    <div
+                      ref={platformQuickJumpRef}
+                      className="absolute left-3 right-3 top-full z-20 mt-1 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-xl"
+                    >
                       {platformSearchResults.map((result) => (
                         <button
                           type="button"
                           key={`${result.type}-${result.id}`}
-                          onClick={result.onSelect}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onPointerDown={(event) => event.stopPropagation()}
+                          onClick={() => selectPlatformSearchResult(result)}
                           className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-indigo-50"
                         >
                           <span className="min-w-0">
@@ -4176,13 +4338,13 @@ function WorkspaceGate({ session, onLogout }) {
                                 tabIndex={0}
                                 onClick={(event) => {
                                   event.stopPropagation();
-                                  result.onSnapshot();
+                                  selectPlatformSearchResult(result, "snapshot");
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
                                     event.stopPropagation();
-                                    result.onSnapshot();
+                                    selectPlatformSearchResult(result, "snapshot");
                                   }
                                 }}
                                 className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700"
