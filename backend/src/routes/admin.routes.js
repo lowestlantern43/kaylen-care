@@ -1057,3 +1057,45 @@ adminRouter.post(
     });
   }),
 );
+
+adminRouter.post(
+  "/users/:userId/password-reset",
+  asyncHandler(async (req, res) => {
+    const userId = requireUuid(req.params.userId, "User ID");
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+    const { rows } = await query(
+      `
+        UPDATE users
+        SET reset_token_hash = $1,
+            reset_token_expires_at = now() + interval '24 hours'
+        WHERE id = $2
+          AND deleted_at IS NULL
+        RETURNING id, email, full_name AS "fullName", reset_token_expires_at AS "expiresAt"
+      `,
+      [tokenHash, userId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("User not found.");
+    }
+
+    await writeAudit(req, {
+      entityType: "user",
+      entityId: userId,
+      action: "platform_user_password_reset_link_created",
+      metadata: { email: rows[0].email },
+    });
+
+    res.json({
+      data: {
+        id: rows[0].id,
+        email: rows[0].email,
+        resetUrl: `${config.frontendUrl}/reset-password?token=${token}`,
+        expiresAt: rows[0].expiresAt,
+      },
+      error: null,
+    });
+  }),
+);

@@ -271,6 +271,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  adminCreatePasswordReset: (userId) =>
+    request(`/admin/users/${userId}/password-reset`, {
+      method: "POST",
+    }),
   adminIssues: () => request("/admin/issues"),
   adminUpdateIssueStatus: (issueId, status) =>
     request(`/admin/issues/${issueId}`, {

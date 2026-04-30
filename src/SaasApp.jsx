@@ -996,9 +996,13 @@ function WorkspaceGate({ session, onLogout }) {
   const [isPlatformLoading, setIsPlatformLoading] = useState(false);
   const [isFamilyDetailLoading, setIsFamilyDetailLoading] = useState(false);
   const [isUserDetailLoading, setIsUserDetailLoading] = useState(false);
+  const [isPlatformSnapshotLoading, setIsPlatformSnapshotLoading] =
+    useState(false);
   const [isPlatformSaving, setIsPlatformSaving] = useState(false);
   const [platformActionMessage, setPlatformActionMessage] = useState("");
   const [platformAccountFilter, setPlatformAccountFilter] = useState("all");
+  const [platformSnapshot, setPlatformSnapshot] = useState(null);
+  const [platformViewAsUser, setPlatformViewAsUser] = useState(null);
   const [platformMemberForm, setPlatformMemberForm] = useState({
     email: "",
     role: "parent",
@@ -1901,6 +1905,84 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const openPlatformSnapshotForFamily = async (familyId) => {
+    if (!familyId) return;
+
+    setIsPlatformSnapshotLoading(true);
+    setError("");
+
+    try {
+      const detail = await api.adminFamilyDetail(familyId);
+      setPlatformSnapshot({
+        source: "family",
+        family: detail.family,
+        members: detail.members || [],
+        children: detail.children || [],
+        recentLogs: detail.recentLogs || [],
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSnapshotLoading(false);
+    }
+  };
+
+  const openPlatformSnapshotForUser = async (userId) => {
+    if (!userId) return;
+
+    setIsPlatformSnapshotLoading(true);
+    setError("");
+
+    try {
+      const detail = await api.adminUserDetail(userId);
+      const primaryFamilyId = detail.memberships?.[0]?.familyId;
+
+      if (!primaryFamilyId) {
+        setPlatformSnapshot({
+          source: "user",
+          user: detail.user,
+          memberships: [],
+          children: [],
+          recentLogs: detail.recentLogs || [],
+        });
+        return;
+      }
+
+      const familyDetail = await api.adminFamilyDetail(primaryFamilyId);
+      setPlatformSnapshot({
+        source: "user",
+        user: detail.user,
+        memberships: detail.memberships || [],
+        family: familyDetail.family,
+        members: familyDetail.members || [],
+        children: familyDetail.children || [],
+        recentLogs: familyDetail.recentLogs || detail.recentLogs || [],
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSnapshotLoading(false);
+    }
+  };
+
+  const startPlatformViewAsUser = async (userId) => {
+    if (!userId) return;
+
+    setIsUserDetailLoading(true);
+    setError("");
+
+    try {
+      const detail = await api.adminUserDetail(userId);
+      setPlatformViewAsUser(detail);
+      setShowPlatformAdmin(true);
+      setPlatformAdminTab("accounts");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsUserDetailLoading(false);
+    }
+  };
+
   const updatePlatformFamilyField = (field, value) => {
     setSelectedPlatformFamily((current) =>
       current
@@ -2094,6 +2176,91 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const createPlatformPasswordReset = async (userId) => {
+    if (!userId) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const reset = await api.adminCreatePasswordReset(userId);
+      setPlatformActionMessage(
+        `Password reset link created for ${reset.email}: ${reset.resetUrl}`,
+      );
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const setPlatformUserStatus = async (user, status) => {
+    if (!user?.id) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updated = await api.adminUpdateUser(user.id, {
+        fullName: user.fullName || "",
+        email: user.email || "",
+        platformStatus: status,
+        platformAdminNotes: user.platformAdminNotes || "",
+        isPlatformAdmin: Boolean(user.isPlatformAdmin),
+      });
+
+      setPlatformData((current) => ({
+        ...current,
+        users: current.users.map((item) =>
+          item.id === updated.id ? { ...item, ...updated } : item,
+        ),
+      }));
+      if (selectedPlatformUser?.user?.id === user.id) {
+        await openPlatformUser(user.id);
+      }
+      setPlatformActionMessage(
+        status === "active" ? "Account activated." : "Account deactivated.",
+      );
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const setPlatformFamilyStatus = async (family, status) => {
+    if (!family?.id) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updated = await api.adminUpdateFamily(family.id, {
+        platformStatus: status,
+        platformAdminNotes: family.platformAdminNotes || "",
+      });
+      setPlatformData((current) => ({
+        ...current,
+        families: current.families.map((item) =>
+          item.id === updated.id ? { ...item, ...updated } : item,
+        ),
+      }));
+      if (selectedPlatformFamily?.family?.id === family.id) {
+        await openPlatformFamily(family.id);
+      }
+      setPlatformActionMessage(
+        status === "active" ? "Family activated." : "Family deactivated.",
+      );
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
   const platformSearchTerm = platformSearch.trim().toLowerCase();
   const now = new Date();
   const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
@@ -2134,6 +2301,18 @@ function WorkspaceGate({ session, onLogout }) {
       day: "numeric",
       month: "short",
       year: "numeric",
+    });
+  };
+
+  const formatPlatformDateTime = (value) => {
+    const date = safeDate(value);
+    if (!date) return "Not available";
+    return date.toLocaleString([], {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -2241,6 +2420,8 @@ function WorkspaceGate({ session, onLogout }) {
             subtitle: user.email,
             health: accountHealthForUser(user),
             onSelect: () => openPlatformUser(user.id),
+            onSnapshot: () => openPlatformSnapshotForUser(user.id),
+            onViewAs: () => startPlatformViewAsUser(user.id),
             haystack: [user.fullName, user.email, user.platformStatus]
               .filter(Boolean)
               .join(" ")
@@ -2252,6 +2433,7 @@ function WorkspaceGate({ session, onLogout }) {
             title: family.name,
             subtitle: family.ownerEmail || family.ownerName || "Family account",
             onSelect: () => openPlatformFamily(family.id),
+            onSnapshot: () => openPlatformSnapshotForFamily(family.id),
             haystack: [
               family.name,
               family.ownerName,
@@ -2272,6 +2454,7 @@ function WorkspaceGate({ session, onLogout }) {
                 title: childName,
                 subtitle: family.name,
                 onSelect: () => openPlatformFamily(family.id),
+                onSnapshot: () => openPlatformSnapshotForFamily(family.id),
                 haystack: [childName, family.name, family.ownerEmail]
                   .filter(Boolean)
                   .join(" ")
@@ -3652,11 +3835,123 @@ function WorkspaceGate({ session, onLogout }) {
               </p>
             ) : null}
 
+            {platformViewAsUser ? (
+              <section className="mt-3 overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+                <div className="flex flex-col gap-2 bg-indigo-600 px-4 py-3 text-white sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-indigo-100">
+                      Read-only view
+                    </p>
+                    <h3 className="text-sm font-black">
+                      Viewing as {platformViewAsUser.user.fullName}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPlatformViewAsUser(null)}
+                    className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 shadow-sm"
+                  >
+                    Exit view as user
+                  </button>
+                </div>
+                <div className="grid gap-3 p-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Email
+                    </p>
+                    <p className="mt-1 break-all text-sm font-bold text-slate-900">
+                      {platformViewAsUser.user.email}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Last login
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">
+                      {formatPlatformDateTime(platformViewAsUser.user.lastLoginAt)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Families
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">
+                      {platformViewAsUser.activity?.familyCount ?? 0}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                      Logs
+                    </p>
+                    <p className="mt-1 text-sm font-bold text-slate-900">
+                      {platformViewAsUser.activity?.logCount ?? 0}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid gap-3 p-3 pt-0 lg:grid-cols-2">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <h4 className="text-sm font-black text-slate-900">
+                      Workspaces they can see
+                    </h4>
+                    <div className="mt-2 space-y-2">
+                      {(platformViewAsUser.memberships || []).map((membership) => (
+                        <button
+                          type="button"
+                          key={membership.id}
+                          onClick={() =>
+                            openPlatformSnapshotForFamily(membership.familyId)
+                          }
+                          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-sm shadow-sm"
+                        >
+                          <span className="font-bold text-slate-900">
+                            {membership.familyName}
+                          </span>
+                          <span className="ml-2 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase text-indigo-700">
+                            {membership.role}
+                          </span>
+                        </button>
+                      ))}
+                      {!platformViewAsUser.memberships?.length ? (
+                        <p className="text-sm font-semibold text-slate-500">
+                          No family memberships found.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                    <h4 className="text-sm font-black text-slate-900">
+                      Recent read-only activity
+                    </h4>
+                    <div className="mt-2 space-y-2">
+                      {(platformViewAsUser.recentLogs || []).slice(0, 6).map((log) => (
+                        <div
+                          key={log.id}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                        >
+                          <p className="font-bold capitalize text-slate-900">
+                            {log.category} - {log.childFirstName || "Child"}
+                          </p>
+                          <p className="text-xs font-semibold text-slate-500">
+                            {log.familyName} - {log.logDate} {log.logTime || ""}
+                          </p>
+                        </div>
+                      ))}
+                      {!platformViewAsUser.recentLogs?.length ? (
+                        <p className="text-sm font-semibold text-slate-500">
+                          No recent logs from this user.
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+
             {isPlatformLoading ? (
               <div className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 text-sm font-semibold text-slate-600">
                 Loading platform dashboard...
               </div>
-            ) : (
+            ) : platformViewAsUser ? null : (
               <>
                 <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -3685,20 +3980,38 @@ function WorkspaceGate({ session, onLogout }) {
                               {result.type} - {result.subtitle}
                             </span>
                           </span>
-                          {result.health ? (
-                            <span
-                              className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${result.health.badgeClass}`}
-                            >
+                          <span className="flex shrink-0 items-center gap-1">
+                            {result.health ? (
                               <span
-                                className={`h-2 w-2 rounded-full ${result.health.dotClass}`}
-                              />
-                              {result.health.label}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">
-                              Jump
-                            </span>
-                          )}
+                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${result.health.badgeClass}`}
+                              >
+                                <span
+                                  className={`h-2 w-2 rounded-full ${result.health.dotClass}`}
+                                />
+                                {result.health.label}
+                              </span>
+                            ) : null}
+                            {result.onSnapshot ? (
+                              <span
+                                role="button"
+                                tabIndex={0}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  result.onSnapshot();
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    result.onSnapshot();
+                                  }
+                                }}
+                                className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700"
+                              >
+                                Snapshot
+                              </span>
+                            ) : null}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -3985,12 +4298,15 @@ function WorkspaceGate({ session, onLogout }) {
                     <h3 className="font-bold text-slate-900">Families</h3>
                     <div className="mt-3 space-y-2">
                       {filteredPlatformFamilies.map((family) => (
-                        <button
-                          type="button"
+                        <div
                           key={family.id}
-                          onClick={() => openPlatformFamily(family.id)}
                           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
                         >
+                          <button
+                            type="button"
+                            onClick={() => openPlatformFamily(family.id)}
+                            className="w-full text-left"
+                          >
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                             <p className="font-semibold text-slate-900">
                               {family.name}
@@ -4008,7 +4324,40 @@ function WorkspaceGate({ session, onLogout }) {
                             {family.logCount} logs - Platform:{" "}
                             {family.platformStatus || "active"}
                           </p>
-                        </button>
+                          </button>
+                          <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+                            {[
+                              ["View", () => openPlatformFamily(family.id)],
+                              ["Edit", () => openPlatformFamily(family.id)],
+                              [
+                                family.platformStatus === "suspended"
+                                  ? "Activate"
+                                  : "Deactivate",
+                                () =>
+                                  setPlatformFamilyStatus(
+                                    family,
+                                    family.platformStatus === "suspended"
+                                      ? "active"
+                                      : "suspended",
+                                  ),
+                              ],
+                              [
+                                "Snapshot",
+                                () => openPlatformSnapshotForFamily(family.id),
+                              ],
+                            ].map(([label, onClick]) => (
+                              <button
+                                type="button"
+                                key={label}
+                                onClick={onClick}
+                                disabled={isPlatformSaving}
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                       ))}
                     </div>
                   </section>
@@ -4049,16 +4398,19 @@ function WorkspaceGate({ session, onLogout }) {
                       {filteredPlatformUsers.map((user) => {
                         const health = accountHealthForUser(user);
                         return (
-                        <button
-                          type="button"
+                        <div
                           key={user.id}
-                          onClick={() => openPlatformUser(user.id)}
                           className={`w-full rounded-xl border px-3 py-3 text-left transition ${
                             selectedPlatformUser?.user?.id === user.id
                               ? "border-indigo-300 bg-indigo-50"
                               : "border-slate-200 bg-slate-50 hover:border-indigo-200 hover:bg-indigo-50"
                           }`}
                         >
+                          <button
+                            type="button"
+                            onClick={() => openPlatformUser(user.id)}
+                            className="w-full text-left"
+                          >
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                             <p className="font-semibold text-slate-900">
                               {user.fullName}
@@ -4087,7 +4439,48 @@ function WorkspaceGate({ session, onLogout }) {
                             {user.familyCount} families - {user.logCount || 0} logs
                             {" - "}Last seen: {lastSeenLabel(user.lastLoginAt)}
                           </p>
-                        </button>
+                          </button>
+                          <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+                            {[
+                              ["View", () => openPlatformUser(user.id)],
+                              ["Edit", () => openPlatformUser(user.id)],
+                              [
+                                user.platformStatus === "suspended"
+                                  ? "Activate"
+                                  : "Deactivate",
+                                () =>
+                                  setPlatformUserStatus(
+                                    user,
+                                    user.platformStatus === "suspended"
+                                      ? "active"
+                                      : "suspended",
+                                  ),
+                              ],
+                              [
+                                "Reset",
+                                () => createPlatformPasswordReset(user.id),
+                              ],
+                              [
+                                "Snapshot",
+                                () => openPlatformSnapshotForUser(user.id),
+                              ],
+                              [
+                                "View as",
+                                () => startPlatformViewAsUser(user.id),
+                              ],
+                            ].map(([label, onClick]) => (
+                              <button
+                                type="button"
+                                key={label}
+                                onClick={onClick}
+                                disabled={isPlatformSaving || isUserDetailLoading}
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
                         );
                       })}
                     </div>
@@ -4107,6 +4500,86 @@ function WorkspaceGate({ session, onLogout }) {
                           <span className="rounded-full bg-white px-3 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
                             {selectedPlatformUser.user.platformStatus || "active"}
                           </span>
+                        </div>
+
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                              Last login
+                            </p>
+                            <p className="mt-0.5 text-sm font-bold text-slate-900">
+                              {formatPlatformDateTime(
+                                selectedPlatformUser.user.lastLoginAt,
+                              )}
+                            </p>
+                          </div>
+                          <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                              Account created
+                            </p>
+                            <p className="mt-0.5 text-sm font-bold text-slate-900">
+                              {formatPlatformDateTime(
+                                selectedPlatformUser.user.createdAt,
+                              )}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPlatformUserStatus(
+                                selectedPlatformUser.user,
+                                selectedPlatformUser.user.platformStatus ===
+                                  "suspended"
+                                  ? "active"
+                                  : "suspended",
+                              )
+                            }
+                            disabled={isPlatformSaving}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                          >
+                            {selectedPlatformUser.user.platformStatus === "suspended"
+                              ? "Activate"
+                              : "Deactivate"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              createPlatformPasswordReset(
+                                selectedPlatformUser.user.id,
+                              )
+                            }
+                            disabled={isPlatformSaving}
+                            className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 shadow-sm disabled:opacity-50"
+                          >
+                            Send password reset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openPlatformSnapshotForUser(
+                                selectedPlatformUser.user.id,
+                              )
+                            }
+                            disabled={isPlatformSnapshotLoading}
+                            className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 shadow-sm disabled:opacity-50"
+                          >
+                            View Snapshot
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              startPlatformViewAsUser(
+                                selectedPlatformUser.user.id,
+                              )
+                            }
+                            disabled={isUserDetailLoading}
+                            className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-800 shadow-sm disabled:opacity-50"
+                          >
+                            View as user
+                          </button>
                         </div>
 
                         <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4">
@@ -4273,6 +4746,39 @@ function WorkspaceGate({ session, onLogout }) {
                     </p>
                   ) : (
                     <div className="mt-4 space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPlatformFamilyStatus(
+                              selectedPlatformFamily.family,
+                              selectedPlatformFamily.family.platformStatus ===
+                                "suspended"
+                                ? "active"
+                                : "suspended",
+                            )
+                          }
+                          disabled={isPlatformSaving}
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                        >
+                          {selectedPlatformFamily.family.platformStatus ===
+                          "suspended"
+                            ? "Activate family"
+                            : "Deactivate family"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openPlatformSnapshotForFamily(
+                              selectedPlatformFamily.family.id,
+                            )
+                          }
+                          disabled={isPlatformSnapshotLoading}
+                          className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 shadow-sm disabled:opacity-50"
+                        >
+                          View Snapshot
+                        </button>
+                      </div>
                       <div className="grid gap-3 md:grid-cols-4">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
@@ -4919,6 +5425,157 @@ function WorkspaceGate({ session, onLogout }) {
         useSaasApi
       />
       </>
+      ) : null}
+      {platformSnapshot ? (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 px-3 py-5">
+          <div className="mx-auto max-w-3xl rounded-[1.5rem] border border-cyan-100 bg-white shadow-2xl">
+            <div className="sticky top-3 z-10 flex items-start justify-between gap-3 rounded-t-[1.5rem] border-b border-cyan-100 bg-cyan-50 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-cyan-700">
+                  Read-only Care Snapshot
+                </p>
+                <h3 className="truncate text-lg font-black text-slate-950">
+                  {platformSnapshot.family?.name ||
+                    platformSnapshot.user?.fullName ||
+                    "FamilyTrack account"}
+                </h3>
+                <p className="text-xs font-semibold text-slate-600">
+                  Owner Platform quick view
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPlatformSnapshot(null)}
+                className="rounded-full bg-white px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Family
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {platformSnapshot.family?.name || "Not linked"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Owner
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {platformSnapshot.family?.ownerName ||
+                      platformSnapshot.user?.fullName ||
+                      "Unknown"}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Children
+                  </p>
+                  <p className="mt-1 text-sm font-bold text-slate-900">
+                    {platformSnapshot.children?.length || 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                    Subscription
+                  </p>
+                  <p className="mt-1 text-sm font-bold capitalize text-slate-900">
+                    {platformSnapshot.family?.subscriptionStatus || "Unknown"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <section className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
+                  <h4 className="text-sm font-black text-slate-900">
+                    Children
+                  </h4>
+                  <div className="mt-2 space-y-2">
+                    {(platformSnapshot.children || []).map((child) => (
+                      <div
+                        key={child.id}
+                        className="rounded-xl border border-white bg-white/80 px-3 py-2 text-sm"
+                      >
+                        <p className="font-bold text-slate-900">
+                          {child.firstName} {child.lastName || ""}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          DOB: {child.dateOfBirth || "Not set"}
+                        </p>
+                      </div>
+                    ))}
+                    {!platformSnapshot.children?.length ? (
+                      <p className="text-sm font-semibold text-slate-600">
+                        No children found for this snapshot.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                  <h4 className="text-sm font-black text-slate-900">
+                    Members
+                  </h4>
+                  <div className="mt-2 space-y-2">
+                    {(platformSnapshot.members || []).slice(0, 6).map((member) => (
+                      <div
+                        key={member.id}
+                        className="rounded-xl border border-white bg-white/80 px-3 py-2 text-sm"
+                      >
+                        <p className="font-bold text-slate-900">
+                          {member.fullName}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {member.email} - {member.role}
+                        </p>
+                      </div>
+                    ))}
+                    {!platformSnapshot.members?.length ? (
+                      <p className="text-sm font-semibold text-slate-600">
+                        No members found for this snapshot.
+                      </p>
+                    ) : null}
+                  </div>
+                </section>
+              </div>
+
+              <section className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <h4 className="text-sm font-black text-slate-900">
+                  Recent care activity
+                </h4>
+                <div className="mt-2 space-y-2">
+                  {(platformSnapshot.recentLogs || []).slice(0, 10).map((log) => (
+                    <div
+                      key={log.id}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
+                    >
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="font-bold capitalize text-slate-900">
+                          {log.category} - {log.childFirstName || "Child"}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {log.logDate} {log.logTime || ""}
+                        </p>
+                      </div>
+                      {log.notes ? (
+                        <p className="mt-1 text-slate-700">{log.notes}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                  {!platformSnapshot.recentLogs?.length ? (
+                    <p className="text-sm font-semibold text-slate-600">
+                      No recent logs found.
+                    </p>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
       ) : null}
       <ReportIssueWidget
         enabled={isFeedbackEnabled}
