@@ -108,11 +108,11 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (["family", "professional"].includes(plan) && ["active", "trialing"].includes(status)) {
+  if (["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status)) {
     return {
-      label: "Active",
-      tone: "emerald",
-      reason: "active",
+      label: status === "past_due" ? "Payment issue" : "Active",
+      tone: status === "past_due" ? "amber" : "emerald",
+      reason: status === "past_due" ? "past_due" : "active",
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
@@ -1386,6 +1386,36 @@ function WorkspaceGate({ session, onLogout }) {
     if (!showPlatformAdmin || platformAdminTab !== "issues") return;
     refreshPlatformIssues();
   }, [showPlatformAdmin, platformAdminTab]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const billingResult = params.get("billing");
+    if (!billingResult) return;
+
+    if (billingResult === "success") {
+      setAccountMessage(
+        "Thanks - Stripe is confirming the subscription. Access will update automatically once the payment is confirmed.",
+      );
+    }
+    if (billingResult === "cancelled") {
+      setAccountMessage("Checkout was cancelled. You can upgrade whenever you are ready.");
+    }
+
+    if (selectedFamilyId) {
+      api
+        .getSubscription(selectedFamilyId)
+        .then((loadedSubscription) => setSubscription(loadedSubscription))
+        .catch(() => null);
+      api
+        .listFamilies()
+        .then((loadedFamilies) =>
+          setFamilies(loadedFamilies.map(normalizeFamily)),
+        )
+        .catch(() => null);
+    }
+
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [selectedFamilyId]);
 
   useEffect(() => {
     if (!platformSearch.trim()) {
@@ -3272,6 +3302,74 @@ function WorkspaceGate({ session, onLogout }) {
       </div>
       ) : null}
 
+      {!showAdmin && !showPlatformAdmin && selectedFamilyAccess ? (
+        <div className="mx-auto max-w-6xl px-3 pt-3">
+          {selectedFamilyAccess.reason === "trial" ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-black text-sky-900">
+                  Trial: {selectedFamilyAccess.trialDaysLeft || 0} day
+                  {selectedFamilyAccess.trialDaysLeft === 1 ? "" : "s"} left
+                </p>
+                <p className="mt-0.5 font-semibold text-sky-700">
+                  Upgrade when you are ready to keep full editing access.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={startCheckout}
+                disabled={isCheckoutLoading}
+                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+              >
+                {isCheckoutLoading ? "Opening..." : "Upgrade now"}
+              </button>
+            </div>
+          ) : null}
+          {!selectedFamilyAccess.canAddLogs ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-black text-amber-900">
+                  This account is currently view-only
+                </p>
+                <p className="mt-0.5 font-semibold text-amber-800">
+                  Existing logs, reports and Care Snapshot stay available. Upgrade
+                  to add and edit care records.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={startCheckout}
+                disabled={isCheckoutLoading}
+                className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+              >
+                {isCheckoutLoading ? "Opening..." : "Upgrade"}
+              </button>
+            </div>
+          ) : null}
+          {selectedFamilyAccess.reason === "past_due" ? (
+            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-black text-amber-900">
+                  Stripe reported a payment issue
+                </p>
+                <p className="mt-0.5 font-semibold text-amber-800">
+                  Access is still available for now. Please update billing when
+                  possible.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={openBillingPortal}
+                disabled={isBillingPortalLoading}
+                className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+              >
+                {isBillingPortalLoading ? "Opening..." : "Manage billing"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {showAdmin ? (
         <div className="min-h-screen bg-slate-50 px-4 py-5">
           <div className="mx-auto max-w-6xl">
@@ -3556,6 +3654,15 @@ function WorkspaceGate({ session, onLogout }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-bold text-slate-900">Subscription / Plan</h3>
+                    <div className="mt-2">
+                      <PlanBadge
+                        record={{
+                          ...selectedFamily,
+                          ...subscription,
+                          subscriptionStatus: subscription?.status,
+                        }}
+                      />
+                    </div>
                     <p className="mt-1 text-sm text-slate-600">
                       Plan:{" "}
                       <span className="font-bold text-slate-900">
@@ -3584,7 +3691,7 @@ function WorkspaceGate({ session, onLogout }) {
                       disabled={isCheckoutLoading}
                       className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isCheckoutLoading ? "Opening Stripe..." : "Start subscription"}
+                      {isCheckoutLoading ? "Opening Stripe..." : "Upgrade with Stripe"}
                     </button>
                     <button
                       type="button"
@@ -5033,7 +5140,7 @@ function WorkspaceGate({ session, onLogout }) {
                       </p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-800">
                         {platformData.overview?.stripeSetup?.priceId ||
-                          "Add STRIPE_PRICE_ID=price_..."}
+                          `Add ${platformData.overview?.stripeSetup?.priceEnv || "STRIPE_FAMILY_PRICE_ID"}=price_...`}
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -5543,7 +5650,7 @@ function WorkspaceGate({ session, onLogout }) {
                           View Snapshot
                         </button>
                       </div>
-                      <div className="grid gap-3 md:grid-cols-4">
+                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                             Family
@@ -5581,6 +5688,27 @@ function WorkspaceGate({ session, onLogout }) {
                           <p className="mt-1 break-all text-sm font-semibold text-slate-700">
                             {selectedPlatformFamily.family.stripeCustomerId ||
                               "Not connected"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Subscription ID
+                          </p>
+                          <p className="mt-1 break-all text-sm font-semibold text-slate-700">
+                            {selectedPlatformFamily.family.stripeSubscriptionId ||
+                              "Not connected"}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Renewal
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">
+                            {selectedPlatformFamily.family.currentPeriodEnd
+                              ? new Date(
+                                  selectedPlatformFamily.family.currentPeriodEnd,
+                                ).toLocaleDateString()
+                              : "Not set"}
                           </p>
                         </div>
                       </div>

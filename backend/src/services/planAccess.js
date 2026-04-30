@@ -108,7 +108,7 @@ export function buildPlanAccess(record = {}) {
   const isTrial = plan === "trial" || status === "trialing";
   const trialExpired = isTrial && trialDaysLeft <= 0;
   const cancelled = ["canceled", "unpaid", "incomplete_expired"].includes(status);
-  const activePaid = ["family", "professional"].includes(plan) && ["active", "trialing"].includes(status);
+  const activePaid = ["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status);
   const beta = plan === "beta";
 
   let label = "Inactive";
@@ -151,18 +151,14 @@ export function buildPlanAccess(record = {}) {
     tone = "amber";
     reason = "expired";
   } else if (activePaid) {
-    label = "Active";
-    tone = "emerald";
-    reason = "active";
+    label = status === "past_due" ? "Payment issue" : "Active";
+    tone = status === "past_due" ? "amber" : "emerald";
+    reason = status === "past_due" ? "past_due" : "active";
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (status === "past_due") {
-    label = "View only";
-    tone = "amber";
-    reason = "past_due";
   }
 
   return {

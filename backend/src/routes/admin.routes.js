@@ -119,10 +119,9 @@ async function syncFamilySubscriptionFromStripe(familyId) {
     return null;
   }
 
-  const plan =
-    subscription.items?.data?.[0]?.price?.nickname ||
-    subscription.items?.data?.[0]?.price?.lookup_key ||
-    "family";
+  const plan = ["active", "trialing", "past_due"].includes(subscription.status)
+    ? "family"
+    : subscription.metadata?.plan || "family";
 
   const updated = await query(
     `
@@ -235,6 +234,7 @@ adminRouter.get(
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
           hasPriceId: Boolean(config.stripePriceId),
           priceId: config.stripePriceId || null,
+          priceEnv: "STRIPE_FAMILY_PRICE_ID",
           checkoutRoute: "/api/families/:familyId/subscription/checkout",
           webhookRoute: "/api/stripe/webhook",
           configFile: "backend/.env",

@@ -6,10 +6,14 @@ export const config = {
   port: Number(process.env.PORT || 4000),
   databaseUrl: process.env.DATABASE_URL || "",
   sessionSecret: process.env.SESSION_SECRET || "",
-  frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
+  frontendUrl:
+    process.env.PUBLIC_APP_URL ||
+    process.env.FRONTEND_URL ||
+    "http://localhost:5173",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
-  stripePriceId: process.env.STRIPE_PRICE_ID || "",
+  stripePriceId:
+    process.env.STRIPE_FAMILY_PRICE_ID || process.env.STRIPE_PRICE_ID || "",
   spacesKey: process.env.DO_SPACES_KEY || "",
   spacesSecret: process.env.DO_SPACES_SECRET || "",
   spacesBucket: process.env.DO_SPACES_BUCKET || "",

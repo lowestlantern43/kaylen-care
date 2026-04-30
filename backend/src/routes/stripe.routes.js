@@ -4,6 +4,7 @@ import {
   retrieveStripeSubscription,
   verifyStripeWebhookSignature,
 } from "../services/stripe.js";
+import { ensurePlanAccessSchema } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const stripeRouter = Router();
@@ -13,8 +14,14 @@ function normalisePeriodEnd(timestamp) {
 }
 
 async function updateSubscriptionFromStripe(subscription) {
+  await ensurePlanAccessSchema();
+
   const familyId = subscription.metadata?.family_id;
   if (!familyId) return;
+  const status = subscription.status || "inactive";
+  const plan = ["active", "trialing", "past_due"].includes(status)
+    ? "family"
+    : subscription.metadata?.plan || "family";
 
   await query(
     `
@@ -35,20 +42,41 @@ async function updateSubscriptionFromStripe(subscription) {
         status = EXCLUDED.status,
         plan = EXCLUDED.plan,
         current_period_end = EXCLUDED.current_period_end,
-        cancel_at_period_end = EXCLUDED.cancel_at_period_end
+        cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+        access_paused_at = CASE
+          WHEN EXCLUDED.status IN ('active', 'trialing') THEN NULL
+          ELSE subscriptions.access_paused_at
+        END,
+        access_pause_reason = CASE
+          WHEN EXCLUDED.status IN ('active', 'trialing') THEN ''
+          ELSE subscriptions.access_pause_reason
+        END
     `,
     [
       familyId,
       subscription.customer,
       subscription.id,
-      subscription.status || "inactive",
-      subscription.items?.data?.[0]?.price?.nickname ||
-        subscription.items?.data?.[0]?.price?.lookup_key ||
-        "family",
+      status,
+      plan,
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
     ],
   );
+}
+
+async function updateSubscriptionFromInvoice(invoice, fallbackStatus = null) {
+  const subscriptionId =
+    typeof invoice.subscription === "string"
+      ? invoice.subscription
+      : invoice.subscription?.id;
+
+  if (!subscriptionId) return;
+
+  const subscription = await retrieveStripeSubscription(subscriptionId);
+  if (fallbackStatus) {
+    subscription.status = fallbackStatus;
+  }
+  await updateSubscriptionFromStripe(subscription);
 }
 
 stripeRouter.post(
@@ -75,6 +103,14 @@ stripeRouter.post(
         const subscription = await retrieveStripeSubscription(session.subscription);
         await updateSubscriptionFromStripe(subscription);
       }
+    }
+
+    if (event.type === "invoice.payment_succeeded") {
+      await updateSubscriptionFromInvoice(event.data.object);
+    }
+
+    if (event.type === "invoice.payment_failed") {
+      await updateSubscriptionFromInvoice(event.data.object, "past_due");
     }
 
     res.json({ received: true });

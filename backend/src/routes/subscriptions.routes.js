@@ -26,11 +26,7 @@ function normalisePeriodEnd(timestamp) {
 }
 
 function getPlanName(subscription) {
-  return (
-    subscription.items?.data?.[0]?.price?.nickname ||
-    subscription.items?.data?.[0]?.price?.lookup_key ||
-    "family"
-  );
+  return subscription.metadata?.plan || "family";
 }
 
 async function syncSubscriptionRowFromStripe(subscription, familyId) {
@@ -58,7 +54,9 @@ async function syncSubscriptionRowFromStripe(subscription, familyId) {
       subscription.customer,
       subscription.id,
       subscription.status || "inactive",
-      getPlanName(subscription),
+      ["active", "trialing", "past_due"].includes(subscription.status)
+        ? "family"
+        : getPlanName(subscription),
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
       familyId,

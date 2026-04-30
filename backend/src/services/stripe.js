@@ -49,7 +49,7 @@ export async function createStripeCheckoutSession({
   familyName,
 }) {
   if (!config.stripePriceId) {
-    throw badRequest("Stripe price is not configured yet. Add STRIPE_PRICE_ID to the backend environment.");
+    throw badRequest("Stripe price is not configured yet. Add STRIPE_FAMILY_PRICE_ID to the backend environment.");
   }
 
   const params = new URLSearchParams();
@@ -65,8 +65,10 @@ export async function createStripeCheckoutSession({
   params.set("client_reference_id", familyId);
   params.set("metadata[family_id]", familyId);
   params.set("metadata[family_name]", familyName);
+  params.set("metadata[plan]", "family");
   params.set("subscription_data[metadata][family_id]", familyId);
   params.set("subscription_data[metadata][family_name]", familyName);
+  params.set("subscription_data[metadata][plan]", "family");
 
   return stripeRequest("/checkout/sessions", { body: params });
 }
