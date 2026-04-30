@@ -87,6 +87,274 @@ const landingPageLinks = [
   ["/care-report-app", "Care report app"],
 ];
 
+const seoLandingContent = {
+  "/autism-daily-tracker-app": {
+    eyebrow: "Autism daily care tracking",
+    intro:
+      "FamilyTrack gives parents and carers a simple place to record the everyday details that can matter for an autistic child: what they ate, how they slept, medication, toileting, health notes, routines and changes in behaviour. It is designed to be quick enough for busy family life and clear enough to use when speaking with school, doctors, carers or professionals.",
+    struggles: [
+      "Trying to remember sleep, food, medication and toileting patterns after a long day.",
+      "Sharing care updates with another parent, carer, school or professional without searching through messages.",
+      "Spotting changes in appetite, sleep or health before they become harder to explain.",
+      "Preparing for appointments when useful information is spread across notebooks, memory and phone notes.",
+    ],
+    helps: [
+      "Log daily food, drink, sleep, medication, toileting and health notes against the right child.",
+      "Keep notes parent-friendly, with enough detail to be useful later.",
+      "Use reports and PDF exports to summarise recent care activity for appointments and reviews.",
+      "Build a clearer picture of routines and changes without needing a complicated medical system.",
+    ],
+    sections: [
+      [
+        "Built for real family routines",
+        "FamilyTrack is made for quick daily recording, not long clinical forms. Parents and carers can add useful notes while the details are still fresh.",
+      ],
+      [
+        "Useful for non-verbal and additional needs care",
+        "When a child cannot easily explain how they feel, care notes can help families describe patterns around sleep, appetite, medication, toileting and health.",
+      ],
+      [
+        "Clearer conversations",
+        "Reports can help you walk into school meetings, reviews or appointments with a calmer summary of what has happened recently.",
+      ],
+    ],
+    faqs: [
+      [
+        "Can I track food, sleep and medication in one place?",
+        "Yes. FamilyTrack keeps food, drink, medication, sleep, toileting and health logs together for the selected child.",
+      ],
+      [
+        "Is FamilyTrack only for autistic children?",
+        "No. It can help many families, but the app was designed with SEN family life and additional needs care in mind.",
+      ],
+      [
+        "Can it help if my child is non-verbal?",
+        "Yes. Daily notes can help parents and carers record changes, routines and observations that may otherwise be hard to explain later.",
+      ],
+      [
+        "Can I use it on my phone?",
+        "Yes. FamilyTrack is mobile-first so care notes can be added quickly during normal family life.",
+      ],
+      [
+        "Can I create reports for appointments?",
+        "Yes. Reports can summarise recent logs for doctors, school meetings, EHCP conversations and reviews.",
+      ],
+    ],
+  },
+  "/special-needs-child-diary-app": {
+    eyebrow: "SEN diary app for families",
+    intro:
+      "FamilyTrack is a simple child diary app for families caring for a child with additional needs. It helps you keep daily care notes, routines, health changes and useful observations in one private place, so you are not relying on memory when you need to share information.",
+    struggles: [
+      "Daily care information can be easy to forget when every day is busy.",
+      "Different carers may record things in different places, making patterns harder to see.",
+      "School, EHCP and medical conversations often need clear examples from day-to-day life.",
+      "Parents may need a diary that is practical, not overwhelming.",
+    ],
+    helps: [
+      "Create food, drink, medication, sleep, toileting, health and general notes for each child.",
+      "Keep child care profiles with key needs, communication style, allergies, medication and emergency notes.",
+      "Use Care Snapshot and reports to share a clear summary with trusted people.",
+      "Keep the app simple enough to use on a phone without a large learning curve.",
+    ],
+    sections: [
+      [
+        "A care diary, not a complicated system",
+        "The app is focused on practical family logging: what happened, when it happened, and any note that may help later.",
+      ],
+      [
+        "Multiple children and family users",
+        "FamilyTrack supports shared family workspaces, so parents and carers can record care for the right child.",
+      ],
+      [
+        "Reports that make notes useful",
+        "Daily diary entries can become clearer reports for school meetings, EHCP reviews, carers and appointments.",
+      ],
+    ],
+    faqs: [
+      [
+        "What can I record in the diary?",
+        "You can log food, drink, medication, sleep, toileting, health, routines and general care notes.",
+      ],
+      [
+        "Can I use it for more than one child?",
+        "Yes. FamilyTrack is designed to support multiple children inside one family account.",
+      ],
+      [
+        "Is it useful for SEN families?",
+        "Yes. It is built around the kind of daily care details SEN families often need to remember and share.",
+      ],
+      [
+        "Can another parent or carer use it too?",
+        "Yes. FamilyTrack supports separate accounts for family members and carers in the same family workspace.",
+      ],
+      [
+        "Can I export diary notes?",
+        "Yes. Reports and care summaries can be exported or shared as PDFs where available.",
+      ],
+    ],
+  },
+  "/ehcp-report-tracker": {
+    eyebrow: "EHCP review preparation",
+    intro:
+      "FamilyTrack helps parents turn everyday care notes into clearer summaries for EHCP reviews, school meetings and professional conversations. Instead of trying to remember examples at the last minute, you can build a record of food, sleep, medication, toileting, health notes and important changes over time.",
+    struggles: [
+      "EHCP reviews often ask for examples, patterns and recent changes.",
+      "Useful details can be forgotten if they are not recorded when they happen.",
+      "Parents may need to explain sleep, appetite, toileting, medication or health changes clearly.",
+      "School and professional meetings can feel harder without organised notes.",
+    ],
+    helps: [
+      "Filter care logs by child, date and category to prepare a focused report.",
+      "Create daily grouped reports that are easier to read than scattered notes.",
+      "Include food, medication, sleep, toileting, health and general notes.",
+      "Use PDF reports for EHCP reviews, school meetings, appointments and carer handovers.",
+    ],
+    sections: [
+      [
+        "From daily notes to clearer evidence",
+        "FamilyTrack helps you capture examples as they happen, so review conversations can be based on recent care history rather than memory alone.",
+      ],
+      [
+        "Parent-friendly wording",
+        "Reports stay clear and practical. They are not medical records, but they can help explain what family life and care routines look like.",
+      ],
+      [
+        "Designed for meetings",
+        "Compact reports can support EHCP reviews, school meetings, hospital appointments and professional discussions.",
+      ],
+    ],
+    faqs: [
+      [
+        "Can FamilyTrack create EHCP reports automatically?",
+        "FamilyTrack creates useful care reports from the logs you enter. It does not replace EHCP paperwork, but it can help you prepare clearer supporting information.",
+      ],
+      [
+        "What kind of information can be included?",
+        "Reports can include food, medication, sleep, toileting, health notes, important events and general observations.",
+      ],
+      [
+        "Can I choose a date range?",
+        "Yes. Reports can be filtered by recent days or a date range where available.",
+      ],
+      [
+        "Can I share a PDF with school?",
+        "Yes. PDF export is designed for sharing with school, carers, doctors and review meetings.",
+      ],
+      [
+        "Is this a medical record?",
+        "No. FamilyTrack is a parent and carer care diary, designed to help summarise daily care activity clearly.",
+      ],
+    ],
+  },
+  "/child-medication-tracker": {
+    eyebrow: "Medication logging for children",
+    intro:
+      "FamilyTrack helps parents and carers record child medication in a simple, practical way. You can log medication name, dose, time, status and notes, then include medication history in reports for appointments, school, carers or reviews.",
+    struggles: [
+      "Remembering exact medication times can be difficult during a busy day.",
+      "Parents and carers may need to know whether a dose was given, missed, refused or late.",
+      "Medication notes are often needed later for appointments or school conversations.",
+      "Regular medication should be easy to select without retyping the same details every time.",
+    ],
+    helps: [
+      "Save regular medication in a child care profile and use it as a quick shortcut when logging.",
+      "Record dose, unit, time, notes and medication status.",
+      "Keep ad-hoc medication logging available for occasional medication.",
+      "Include medication history in care reports and Care Snapshot summaries.",
+    ],
+    sections: [
+      [
+        "Regular medication shortcuts",
+        "Set up common medication once in a child profile, then tap it to prefill the log form while keeping everything editable before saving.",
+      ],
+      [
+        "Clear medication history",
+        "Medication logs can show what was given, when it was given, dose details and any useful note.",
+      ],
+      [
+        "Useful for shared care",
+        "When more than one parent or carer is involved, medication logs help everyone see what has already been recorded.",
+      ],
+    ],
+    faqs: [
+      [
+        "Can I save regular medication?",
+        "Yes. Regular medication can be saved in the child care profile and used as shortcuts when logging.",
+      ],
+      [
+        "Can I log occasional medication?",
+        "Yes. Manual medication logging remains available for medication that is not part of the regular list.",
+      ],
+      [
+        "Can I record missed or refused medication?",
+        "Yes. FamilyTrack supports medication notes and status options where configured.",
+      ],
+      [
+        "Can medication appear in reports?",
+        "Yes. Medication logs can be included in reports and Care Snapshot summaries.",
+      ],
+      [
+        "Does FamilyTrack give medication advice?",
+        "No. FamilyTrack only helps record information. It does not provide medical advice.",
+      ],
+    ],
+  },
+  "/care-report-app": {
+    eyebrow: "Shareable care reports",
+    intro:
+      "FamilyTrack turns daily family logs into simple care reports that are easier to share. Parents and carers can record food, medication, sleep, toileting, health and notes, then create a clearer report for doctors, school meetings, EHCP reviews, carers or appointments.",
+    struggles: [
+      "Appointments often need a quick summary of what has happened recently.",
+      "Daily care notes can be too scattered to share clearly.",
+      "Professionals may need patterns around sleep, appetite, medication, toileting or health.",
+      "Parents need reports that are compact, readable and not overcomplicated.",
+    ],
+    helps: [
+      "Create daily grouped reports from recent care logs.",
+      "Use quick summaries and simple observations to explain patterns.",
+      "Export reports as PDF for doctors, school, carers and reviews.",
+      "Use Care Snapshot for a shorter emergency or appointment-friendly view.",
+    ],
+    sections: [
+      [
+        "Daily grouped timelines",
+        "Reports organise entries by day and category, making it easier to see what happened and when.",
+      ],
+      [
+        "Simple summaries",
+        "FamilyTrack can summarise logs such as medication, sleep, food, toileting and health notes without turning the report into a complex dashboard.",
+      ],
+      [
+        "Built for sharing",
+        "PDF reports are designed to be readable for school staff, carers, doctors, EHCP reviews and family handovers.",
+      ],
+    ],
+    faqs: [
+      [
+        "Can I create a report from daily logs?",
+        "Yes. FamilyTrack can turn daily care logs into a clearer report for the selected child and date range.",
+      ],
+      [
+        "What can be included in a care report?",
+        "Reports can include food, drink, medication, sleep, toileting, health notes, important events and general notes.",
+      ],
+      [
+        "Can I download a PDF?",
+        "Yes. PDF export is available so reports can be shared more easily.",
+      ],
+      [
+        "Is the report suitable for school or appointments?",
+        "Reports are designed to be clear and practical for school meetings, doctors, carers, EHCP reviews and appointments.",
+      ],
+      [
+        "Can I keep reports short?",
+        "Yes. Care Snapshot and report filters help keep information focused on what is useful.",
+      ],
+    ],
+  },
+};
+
 const inputClass =
   "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
@@ -864,28 +1132,9 @@ function LandingPage({ onStartFree, onLogin }) {
 }
 
 function SeoLandingPage({ page, onStartFree, onLogin }) {
-  const faqs = [
-    [
-      "Can I track food, sleep and medication in one place?",
-      "Yes. FamilyTrack lets you keep food, medication, sleep, toileting and health logs together for the selected child.",
-    ],
-    [
-      "Can I create reports for appointments?",
-      "Yes. Reports can turn daily logs into clearer summaries for appointments, school meetings and reviews.",
-    ],
-    [
-      "Is FamilyTrack useful for SEN parents?",
-      "FamilyTrack is designed to be useful for SEN families and children with additional needs, while staying simple and parent-friendly.",
-    ],
-    [
-      "Can I use it on my phone?",
-      "Yes. FamilyTrack is mobile-first, so parents and carers can log care notes quickly during normal family life.",
-    ],
-    [
-      "Can reports be shared as PDF?",
-      "Yes. FamilyTrack supports PDF-style report export for sharing care history more clearly.",
-    ],
-  ];
+  const path = new URL(page.canonical).pathname;
+  const content = seoLandingContent[path] || seoLandingContent["/care-report-app"];
+  const faqs = content.faqs;
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
@@ -898,7 +1147,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
       },
     })),
   };
-  const relatedLinks = landingPageLinks.filter(([href]) => href !== new URL(page.canonical).pathname);
+  const relatedLinks = landingPageLinks.filter(([href]) => href !== path);
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-950">
@@ -910,13 +1159,14 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
             <a href="/" className="text-sm font-black text-indigo-700">
               FamilyTrack home
             </a>
+            <p className="mt-6 text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
+              {content.eyebrow}
+            </p>
             <h1 className="mt-4 text-4xl font-black leading-tight tracking-tight text-slate-950 sm:text-5xl">
               {page.h1}
             </h1>
             <p className="mt-5 text-base font-medium leading-8 text-slate-600 sm:text-lg">
-              {page.focus} Log food, sleep, medication, toileting and health in
-              one simple place, then create useful reports for doctors, school,
-              carers and reviews.
+              {content.intro}
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={onStartFree} className={buttonClass}>
@@ -932,24 +1182,51 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
       </section>
 
       <section className="px-5 py-12">
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-3">
-          {[
-            [
-              "Common struggles",
-              "Daily care details can be spread across memory, messages, notebooks and different carers.",
-            ],
-            [
-              "How FamilyTrack helps",
-              "Keep care notes together by child, with fast logging and reports that are easier to share.",
-            ],
-            [
-              "What you can record",
-              "Food, drink, medication, doses, sleep, toileting, health notes, routines and care changes.",
-            ],
-          ].map(([title, copy]) => (
+        <div className="mx-auto grid max-w-6xl gap-4 lg:grid-cols-[0.95fr_1.05fr]">
+          <article className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-2xl font-black text-slate-950">
+              Common struggles
+            </h2>
+            <ul className="mt-5 space-y-3">
+              {content.struggles.map((item) => (
+                <li
+                  key={item}
+                  className="flex gap-3 text-sm font-semibold leading-6 text-slate-600"
+                >
+                  <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="rounded-[2rem] border border-indigo-100 bg-indigo-50 p-6 shadow-sm">
+            <h2 className="text-2xl font-black text-slate-950">
+              How FamilyTrack helps
+            </h2>
+            <ul className="mt-5 space-y-3">
+              {content.helps.map((item) => (
+                <li
+                  key={item}
+                  className="flex gap-3 text-sm font-semibold leading-6 text-slate-700"
+                >
+                  <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-indigo-700 shadow-sm">
+                    ✓
+                  </span>
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section className="bg-white px-5 py-12">
+        <div className="mx-auto grid max-w-6xl gap-5 md:grid-cols-3">
+          {content.sections.map(([title, copy]) => (
             <article
               key={title}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-5 shadow-sm"
             >
               <h2 className="text-lg font-black text-slate-950">{title}</h2>
               <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
@@ -960,7 +1237,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
         </div>
       </section>
 
-      <section className="bg-white px-5 py-12">
+      <section className="px-5 py-12">
         <div className="mx-auto max-w-4xl">
           <h2 className="text-2xl font-black text-slate-950">
             Frequently asked questions
