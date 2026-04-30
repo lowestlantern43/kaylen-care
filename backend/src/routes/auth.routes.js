@@ -16,7 +16,7 @@ import {
   requirePassword,
   requireString,
 } from "../validators/simple.js";
-import { buildPlanAccess } from "../services/planAccess.js";
+import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
 
 export const authRouter = Router();
 
@@ -33,6 +33,8 @@ function publicUser(row) {
 }
 
 async function loadMemberships(userId) {
+  await ensurePlanAccessSchema();
+
   const { rows } = await query(
     `
       SELECT
@@ -74,6 +76,7 @@ authRouter.post(
     const childFirstName = optionalString(req.body, "childFirstName");
     const childDateOfBirth = optionalDate(req.body, "childDateOfBirth");
     const passwordHash = await hashPassword(password);
+    await ensurePlanAccessSchema();
 
     const result = await withTransaction(async (client) => {
       const existing = await client.query(

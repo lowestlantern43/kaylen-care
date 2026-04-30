@@ -5,7 +5,12 @@ import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
-import { buildPlanAccess, normalisePlan, normaliseStatus } from "../services/planAccess.js";
+import {
+  buildPlanAccess,
+  ensurePlanAccessSchema,
+  normalisePlan,
+  normaliseStatus,
+} from "../services/planAccess.js";
 import { listStripeCustomerSubscriptions } from "../services/stripe.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
@@ -22,6 +27,12 @@ import {
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requirePlatformAdmin);
+adminRouter.use(
+  asyncHandler(async (req, res, next) => {
+    await ensurePlanAccessSchema();
+    next();
+  }),
+);
 
 const memberRoles = ["owner", "parent", "carer", "viewer"];
 const issueStatuses = ["new", "in_progress", "resolved"];

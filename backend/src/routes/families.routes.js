@@ -3,7 +3,7 @@ import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireFamilyMember, requireRole } from "../middleware/familyAccess.js";
 import { requirePlanAccess } from "../middleware/planAccess.js";
-import { buildPlanAccess } from "../services/planAccess.js";
+import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest } from "../utils/httpError.js";
 import { optionalString, requireString } from "../validators/simple.js";
@@ -11,6 +11,12 @@ import { optionalString, requireString } from "../validators/simple.js";
 export const familiesRouter = Router();
 
 familiesRouter.use(requireAuth);
+familiesRouter.use(
+  asyncHandler(async (req, res, next) => {
+    await ensurePlanAccessSchema();
+    next();
+  }),
+);
 
 function optionalEmergencyContacts(body) {
   const contacts = body?.emergencyContacts;

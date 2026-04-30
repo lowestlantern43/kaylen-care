@@ -8,11 +8,18 @@ import {
   createStripeCustomer,
   listStripeCustomerSubscriptions,
 } from "../services/stripe.js";
+import { ensurePlanAccessSchema } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const subscriptionsRouter = Router({ mergeParams: true });
 
 subscriptionsRouter.use(requireAuth, requireFamilyMember);
+subscriptionsRouter.use(
+  asyncHandler(async (req, res, next) => {
+    await ensurePlanAccessSchema();
+    next();
+  }),
+);
 
 function normalisePeriodEnd(timestamp) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
