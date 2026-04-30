@@ -274,7 +274,7 @@ const getStoredDrinkUnit = () => {
 };
 
 const dateTimeInputClass =
-  "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+  "mt-2 block box-border w-full min-w-0 max-w-full appearance-none rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
 const smallActionButtonClass =
   "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
@@ -440,7 +440,7 @@ export default function KaylenCareMonitorDashboard({
     otherMedicine: "",
     dose: "",
     status: "given",
-    time: nowTimeValue(),
+    time: "",
     givenBy: "",
     otherGivenBy: "",
     date: todayValue(),
@@ -826,6 +826,11 @@ export default function KaylenCareMonitorDashboard({
       ?.defaultValue ||
     profileMedicationOptions.find((option) => option.name === medicine)?.dose ||
     getDefaultDoseForMedicine(medicine);
+  const getMedicationSuggestedTimes = (medicine) =>
+    uniqueList(
+      profileMedicationOptions.find((option) => option.name === medicine)?.times ||
+        [],
+    );
   const getFoodDefaultNote = (food) =>
     customFoodOptions.find((option) => option.label === food)?.defaultValue || "";
 
@@ -1016,7 +1021,7 @@ export default function KaylenCareMonitorDashboard({
       otherMedicine: "",
       dose: "",
       status: "given",
-      time: nowTimeValue(),
+      time: "",
       givenBy: "",
       otherGivenBy: "",
       date: todayValue(),
@@ -3248,39 +3253,184 @@ export default function KaylenCareMonitorDashboard({
     }
   };
 
+  const handleExportCareSnapshotPdf = async () => {
+    try {
+      setIsExportingPdf(true);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      const exportNode = document.getElementById("snapshot-pdf-export");
+      const cards = Array.from(
+        exportNode?.querySelectorAll("[data-snapshot-pdf-card]") || [],
+      );
+
+      if (!exportNode || !cards.length) {
+        alert("Snapshot export area not found");
+        return;
+      }
+
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 8;
+      const gap = 3;
+      const usableWidth = pdfWidth - margin * 2;
+      const usableHeight = pdfHeight - margin * 2;
+      const halfWidth = (usableWidth - gap) / 2;
+      let cursorY = margin;
+      let column = 0;
+      let rowHeight = 0;
+
+      const finishHalfRow = () => {
+        if (column === 1) {
+          cursorY += rowHeight + gap;
+          column = 0;
+          rowHeight = 0;
+        }
+      };
+
+      for (const card of cards) {
+        const cardWidth = card.dataset.snapshotPdfCard === "full"
+          ? usableWidth
+          : halfWidth;
+        const isFullWidth = cardWidth === usableWidth;
+
+        if (isFullWidth) finishHalfRow();
+
+        const canvas = await html2canvas(card, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: "#ffffff",
+          logging: false,
+          windowWidth: 794,
+        });
+
+        const imageData = canvas.toDataURL("image/png");
+        let imageWidth = cardWidth;
+        let imageHeight = (canvas.height * imageWidth) / canvas.width;
+
+        if (imageHeight > usableHeight) {
+          const scale = usableHeight / imageHeight;
+          imageHeight = usableHeight;
+          imageWidth *= scale;
+        }
+
+        if (cursorY + imageHeight > pdfHeight - margin) {
+          pdf.addPage();
+          cursorY = margin;
+          column = 0;
+          rowHeight = 0;
+        }
+
+        const x = isFullWidth
+          ? margin
+          : margin + column * (halfWidth + gap);
+
+        pdf.addImage(imageData, "PNG", x, cursorY, imageWidth, imageHeight);
+
+        if (isFullWidth) {
+          cursorY += imageHeight + gap;
+        } else if (column === 0) {
+          rowHeight = imageHeight;
+          column = 1;
+        } else {
+          rowHeight = Math.max(rowHeight, imageHeight);
+          cursorY += rowHeight + gap;
+          column = 0;
+          rowHeight = 0;
+        }
+      }
+
+      finishHalfRow();
+
+      pdf.save(
+        `familytrack-care-snapshot-${childName
+          .toLowerCase()
+          .replace(/\s+/g, "-")}.pdf`,
+      );
+    } catch (error) {
+      console.error("Care Snapshot PDF export failed", error);
+      alert("Care Snapshot PDF export failed - check console");
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
+
   const renderTimeInput = ({
     label,
     value,
     onChange,
     onNow,
+    suggestedTimes = [],
+    onSuggestedTime,
     placeholder = "HH:MM",
     disabled = false,
-  }) => (
-    <div className={cardClassName}>
-      <label className="text-sm font-semibold text-slate-700">{label}</label>
-      <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
-        <input
-          type="text"
-          inputMode="numeric"
-          placeholder={placeholder}
-          className={`${dateTimeInputClass} mt-2 flex-1 ${
-            disabled ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""
-          }`}
-          value={value}
-          onChange={(e) => onChange(formatTimeInput(e.target.value))}
-          disabled={disabled}
-        />
-        <button
-          type="button"
-          onClick={onNow}
-          className={smallActionButtonClass}
-          disabled={disabled}
-        >
-          Now
-        </button>
+  }) => {
+    const cleanSuggestedTimes = uniqueList(suggestedTimes);
+
+    return (
+      <div className={cardClassName}>
+        <label className="text-sm font-semibold text-slate-700">{label}</label>
+        <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start">
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder={placeholder}
+            className={`${dateTimeInputClass} mt-2 flex-1 ${
+              disabled ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""
+            }`}
+            value={value}
+            onChange={(e) => onChange(formatTimeInput(e.target.value))}
+            disabled={disabled}
+          />
+          <button
+            type="button"
+            onClick={onNow}
+            className={smallActionButtonClass}
+            disabled={disabled}
+          >
+            Now
+          </button>
+        </div>
+        {cleanSuggestedTimes.length ? (
+          <div className="mt-2 flex min-w-0 flex-wrap gap-2">
+            {cleanSuggestedTimes.length === 1 ? (
+              <button
+                type="button"
+                onClick={() =>
+                  onSuggestedTime
+                    ? onSuggestedTime(cleanSuggestedTimes[0])
+                    : onChange(cleanSuggestedTimes[0])
+                }
+                className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700"
+                disabled={disabled}
+              >
+                Suggested {cleanSuggestedTimes[0]}
+              </button>
+            ) : (
+              <>
+                <span className="py-1.5 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                  Suggested
+                </span>
+                {cleanSuggestedTimes.map((time) => (
+                  <button
+                    key={time}
+                    type="button"
+                    onClick={() =>
+                      onSuggestedTime ? onSuggestedTime(time) : onChange(time)
+                    }
+                    className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700"
+                    disabled={disabled}
+                  >
+                    {time}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderFoodForm = () => {
     const typedFood = foodForm.otherItem?.trim() || "";
@@ -3680,6 +3830,12 @@ export default function KaylenCareMonitorDashboard({
     const selectedGivenBy = showOtherGivenBy
       ? medicationForm.otherGivenBy || "Other"
       : medicationForm.givenBy || "";
+    const medicationSuggestedTimes =
+      !showOtherMedication && medicationForm.medicine
+        ? getMedicationSuggestedTimes(medicationForm.medicine)
+        : showOtherMedication && medicationForm.otherMedicine
+          ? getMedicationSuggestedTimes(medicationForm.otherMedicine)
+          : [];
 
     const canSaveMedication =
       !!selectedMedicine.trim() &&
@@ -3821,6 +3977,9 @@ export default function KaylenCareMonitorDashboard({
           onChange: (time) => setMedicationForm({ ...medicationForm, time }),
           onNow: () =>
             setMedicationForm({ ...medicationForm, time: nowTimeValue() }),
+          suggestedTimes: medicationSuggestedTimes,
+          onSuggestedTime: (time) =>
+            setMedicationForm({ ...medicationForm, time }),
         })}
 
         <div className={cardClassName}>
@@ -4330,7 +4489,7 @@ export default function KaylenCareMonitorDashboard({
       medicine: medicationOptions.includes(medicine.name) ? medicine.name : "",
       otherMedicine: medicationOptions.includes(medicine.name) ? "" : medicine.name,
       dose: medicine.dose || getMedicationDefaultDose(medicine.name) || current.dose,
-      time: medicine.times?.[0] || current.time || nowTimeValue(),
+      time: current.time,
       notes: medicine.notes || current.notes,
       status: "given",
       date: todayValue(),
@@ -5285,6 +5444,7 @@ export default function KaylenCareMonitorDashboard({
     mode = "screen",
   ) => (
     <section
+      data-snapshot-pdf-card="half"
       className={`${
         mode === "pdf" ? "pdf-avoid-break rounded-xl p-2" : "rounded-2xl p-3"
       } border border-${tone}-200 bg-${tone}-50`}
@@ -5339,6 +5499,7 @@ export default function KaylenCareMonitorDashboard({
         }
       >
         <section
+          data-snapshot-pdf-card="full"
           className={`pdf-avoid-break border border-cyan-100 bg-cyan-50 ${
             isPdf ? "rounded-xl p-3" : "rounded-2xl p-4"
           }`}
@@ -5360,7 +5521,10 @@ export default function KaylenCareMonitorDashboard({
         </section>
 
         <section className={`${isPdf ? "grid grid-cols-2 gap-2" : "grid gap-2 md:grid-cols-2"}`}>
-          <div className={`pdf-avoid-break border border-amber-200 bg-amber-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}>
+          <div
+            data-snapshot-pdf-card="half"
+            className={`pdf-avoid-break border border-amber-200 bg-amber-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}
+          >
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-amber-800">
               Emergency details
             </h4>
@@ -5401,7 +5565,10 @@ export default function KaylenCareMonitorDashboard({
               <span className="font-bold">Allergies:</span> {allergies}
             </p>
           </div>
-          <div className={`pdf-avoid-break border border-rose-200 bg-rose-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}>
+          <div
+            data-snapshot-pdf-card="half"
+            className={`pdf-avoid-break border border-rose-200 bg-rose-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}
+          >
             <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-rose-800">
               Medications
             </h4>
@@ -5525,14 +5692,7 @@ export default function KaylenCareMonitorDashboard({
 
         <button
           type="button"
-          onClick={() =>
-            handleExportPdf(
-              "snapshot-pdf-export",
-              `familytrack-care-snapshot-${childName
-                .toLowerCase()
-                .replace(/\s+/g, "-")}.pdf`,
-            )
-          }
+          onClick={handleExportCareSnapshotPdf}
           disabled={isExportingPdf}
           className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm disabled:opacity-60"
         >

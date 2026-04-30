@@ -101,6 +101,9 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   input[type="time"],
   input[type="month"],
   select {
+    box-sizing: border-box;
+    display: block;
+    min-width: 0;
     width: 100%;
     max-width: 100%;
   }
@@ -108,6 +111,8 @@ input[type="month"]::-webkit-calendar-picker-indicator {
   input[type="date"],
   input[type="time"],
   input[type="month"] {
+    appearance: none;
+    -webkit-appearance: none;
     min-height: 2.75rem;
   }
 }
