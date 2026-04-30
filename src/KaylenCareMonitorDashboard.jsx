@@ -263,6 +263,7 @@ const isSignificantHealthEntry = (entry) => {
 const PIN_STORAGE_KEY = "kaylen-diary-pin-session";
 const PIN_INACTIVITY_LIMIT_MS = 5 * 60 * 60 * 1000;
 const DRINK_UNIT_STORAGE_KEY = "familytrack:drink-unit";
+const LOG_DRAFT_VERSION = 1;
 
 const getStoredDrinkUnit = () => {
   try {
@@ -278,6 +279,30 @@ const dateTimeInputClass =
 
 const smallActionButtonClass =
   "mt-2 shrink-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-xs font-bold uppercase tracking-[0.12em] text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50";
+
+const safeLocalStorageGet = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Draft recovery is helpful, but logging must keep working.
+  }
+};
+
+const safeLocalStorageRemove = (key) => {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Draft recovery is helpful, but logging must keep working.
+  }
+};
 
 const sectionTheme = {
   "Food Diary": {
@@ -413,6 +438,8 @@ export default function KaylenCareMonitorDashboard({
   const touchStartY = useRef(0);
   const touchCurrentY = useRef(0);
   const isPullingRef = useRef(false);
+  const initialDraftSnapshotRef = useRef(null);
+  const skipNextDraftSaveRef = useRef({});
 
   const [activeSaveAction, setActiveSaveAction] = useState("");
   const saveLockRef = useRef(false);
@@ -514,6 +541,7 @@ export default function KaylenCareMonitorDashboard({
   const [isSavingSleep, setIsSavingSleep] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedMedicationShortcut, setSelectedMedicationShortcut] = useState("");
+  const [draftPrompts, setDraftPrompts] = useState({});
   const [draggingCardTitle, setDraggingCardTitle] = useState("");
   const [isReorderMode, setIsReorderMode] = useState(false);
   const [dashboardOrder, setDashboardOrder] = useState(() => {
@@ -614,6 +642,277 @@ export default function KaylenCareMonitorDashboard({
     const missing = sections.filter((section) => !dashboardOrder.includes(section.title));
     return [...ordered, ...missing];
   }, [dashboardOrder, sections]);
+
+  const sectionDraftKind = (title = activeSection?.title) => {
+    switch (title) {
+      case "Food Diary":
+        return "food";
+      case "Medication":
+        return "medication";
+      case "Toileting":
+        return "toileting";
+      case "Health":
+        return "health";
+      case "Sleep":
+        return "sleep";
+      default:
+        return "";
+    }
+  };
+
+  const logDraftStorageKey = (kind) =>
+    `familytrack:log-draft:${familyId || "legacy"}:${childId || "legacy"}:${kind}`;
+
+  const getDraftPayload = (kind) => {
+    switch (kind) {
+      case "food":
+        return {
+          foodForm,
+          foodValue,
+          saveFoodForFuture,
+          saveLocationForFuture,
+        };
+      case "medication":
+        return {
+          medicationForm,
+          medicationValue,
+          selectedMedicationShortcut,
+          addOtherMedicationToProfile,
+          saveGivenByForFuture,
+        };
+      case "toileting":
+        return { toiletingForm };
+      case "health":
+        return { healthForm };
+      case "sleep":
+        return { sleepForm };
+      default:
+        return null;
+    }
+  };
+
+  if (!initialDraftSnapshotRef.current) {
+    initialDraftSnapshotRef.current = {
+      food: JSON.stringify(getDraftPayload("food")),
+      medication: JSON.stringify(getDraftPayload("medication")),
+      toileting: JSON.stringify(getDraftPayload("toileting")),
+      health: JSON.stringify(getDraftPayload("health")),
+      sleep: JSON.stringify(getDraftPayload("sleep")),
+    };
+  }
+
+  const hasMeaningfulDraft = (kind, payload) => {
+    if (!payload) return false;
+
+    switch (kind) {
+      case "food":
+        return Boolean(
+          payload.foodValue ||
+            payload.foodForm?.location ||
+            payload.foodForm?.otherLocation ||
+            payload.foodForm?.mealContext ||
+            payload.foodForm?.item ||
+            payload.foodForm?.otherItem ||
+            payload.foodForm?.amount ||
+            payload.foodForm?.description ||
+            payload.foodForm?.notes ||
+            payload.foodForm?.entryType === "Drink" ||
+            payload.foodForm?.intakeStatus !== "normal" ||
+            payload.saveFoodForFuture ||
+            payload.saveLocationForFuture,
+        );
+      case "medication":
+        return Boolean(
+          payload.medicationValue ||
+            payload.medicationForm?.medicine ||
+            payload.medicationForm?.otherMedicine ||
+            payload.medicationForm?.dose ||
+            payload.medicationForm?.time ||
+            payload.medicationForm?.givenBy ||
+            payload.medicationForm?.otherGivenBy ||
+            payload.medicationForm?.notes ||
+            payload.medicationForm?.status !== "given" ||
+            payload.addOtherMedicationToProfile ||
+            payload.saveGivenByForFuture,
+        );
+      case "toileting":
+        return Boolean(payload.toiletingForm?.entry || payload.toiletingForm?.notes);
+      case "health":
+        return Boolean(
+          payload.healthForm?.event ||
+            payload.healthForm?.duration ||
+            payload.healthForm?.happened ||
+            payload.healthForm?.action ||
+            payload.healthForm?.outcome ||
+            payload.healthForm?.notes ||
+            payload.healthForm?.weightKg ||
+            payload.healthForm?.heightCm,
+        );
+      case "sleep":
+        return (
+          JSON.stringify(payload) !== initialDraftSnapshotRef.current.sleep &&
+          Boolean(
+            payload.sleepForm?.bedtime ||
+              payload.sleepForm?.wakeTime ||
+              payload.sleepForm?.nightWakings ||
+              payload.sleepForm?.nap !== "No" ||
+              payload.sleepForm?.quality !== "Good" ||
+              payload.sleepForm?.notes,
+          )
+        );
+      default:
+        return JSON.stringify(payload) !== initialDraftSnapshotRef.current[kind];
+    }
+  };
+
+  const clearLogDraft = (kind) => {
+    if (!kind) return;
+    skipNextDraftSaveRef.current[kind] = true;
+    safeLocalStorageRemove(logDraftStorageKey(kind));
+    setDraftPrompts((current) => {
+      const next = { ...current };
+      delete next[kind];
+      return next;
+    });
+  };
+
+  const resumeLogDraft = (kind) => {
+    const draft = draftPrompts[kind]?.draft;
+    if (!draft) return;
+
+    skipNextDraftSaveRef.current[kind] = true;
+
+    if (kind === "food") {
+      setFoodForm({ ...foodForm, ...(draft.foodForm || {}) });
+      setFoodValue(draft.foodValue || "");
+      setSaveFoodForFuture(Boolean(draft.saveFoodForFuture));
+      setSaveLocationForFuture(Boolean(draft.saveLocationForFuture));
+    }
+
+    if (kind === "medication") {
+      setMedicationForm({ ...medicationForm, ...(draft.medicationForm || {}) });
+      setMedicationValue(draft.medicationValue || "");
+      setSelectedMedicationShortcut(draft.selectedMedicationShortcut || "");
+      setAddOtherMedicationToProfile(Boolean(draft.addOtherMedicationToProfile));
+      setSaveGivenByForFuture(Boolean(draft.saveGivenByForFuture));
+    }
+
+    if (kind === "toileting") {
+      setToiletingForm({ ...toiletingForm, ...(draft.toiletingForm || {}) });
+    }
+
+    if (kind === "health") {
+      setHealthForm({ ...healthForm, ...(draft.healthForm || {}) });
+    }
+
+    if (kind === "sleep") {
+      setSleepForm({ ...sleepForm, ...(draft.sleepForm || {}) });
+    }
+
+    setDraftPrompts((current) => ({
+      ...current,
+      [kind]: { ...current[kind], dismissed: true },
+    }));
+  };
+
+  const renderDraftRecoveryPrompt = (kind) => {
+    const prompt = draftPrompts[kind];
+    if (kind === "sleep" && sleepEntryId) return null;
+    if (!prompt?.draft || prompt.dismissed) return null;
+
+    return (
+      <div className="md:col-span-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 shadow-sm">
+        <p className="font-black">We've saved your previous entry.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => resumeLogDraft(kind)}
+            className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-bold text-white shadow-sm"
+          >
+            Resume
+          </button>
+          <button
+            type="button"
+            onClick={() => clearLogDraft(kind)}
+            className="rounded-xl border border-indigo-200 bg-white px-4 py-2 text-sm font-bold text-indigo-700 shadow-sm"
+          >
+            Start fresh
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  useEffect(() => {
+    const kind = sectionDraftKind();
+    if (!kind || draftPrompts[kind]?.checked || draftPrompts[kind]?.draft) {
+      return;
+    }
+
+    const rawDraft = safeLocalStorageGet(logDraftStorageKey(kind));
+    if (!rawDraft) {
+      setDraftPrompts((current) => ({
+        ...current,
+        [kind]: { checked: true },
+      }));
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(rawDraft);
+      const draft = parsed?.version === LOG_DRAFT_VERSION ? parsed.payload : parsed;
+      setDraftPrompts((current) => ({
+        ...current,
+        [kind]: { checked: true, draft },
+      }));
+    } catch {
+      safeLocalStorageRemove(logDraftStorageKey(kind));
+      setDraftPrompts((current) => ({
+        ...current,
+        [kind]: { checked: true },
+      }));
+    }
+  }, [activeSection?.title, childId, familyId]);
+
+  useEffect(() => {
+    const kind = sectionDraftKind();
+    if (!kind || !activeSection) return;
+    if (kind === "sleep" && sleepEntryId) return;
+
+    if (skipNextDraftSaveRef.current[kind]) {
+      skipNextDraftSaveRef.current[kind] = false;
+      return;
+    }
+
+    const payload = getDraftPayload(kind);
+    if (!hasMeaningfulDraft(kind, payload)) return;
+
+    safeLocalStorageSet(
+      logDraftStorageKey(kind),
+      JSON.stringify({
+        version: LOG_DRAFT_VERSION,
+        savedAt: new Date().toISOString(),
+        payload,
+      }),
+    );
+  }, [
+    activeSection?.title,
+    addOtherMedicationToProfile,
+    childId,
+    familyId,
+    foodForm,
+    foodValue,
+    healthForm,
+    medicationForm,
+    medicationValue,
+    saveFoodForFuture,
+    saveGivenByForFuture,
+    saveLocationForFuture,
+    selectedMedicationShortcut,
+    sleepForm,
+    sleepEntryId,
+    toiletingForm,
+  ]);
 
   const saveDashboardOrder = (next) => {
     setDashboardOrder(next);
@@ -2463,6 +2762,33 @@ export default function KaylenCareMonitorDashboard({
     };
   }, [last7DaysEntries, sharedLog]);
 
+  const onboardingChecklistItems = useMemo(() => {
+    const hasMedication =
+      profileMedicationOptions.length > 0 ||
+      sharedLog.some((entry) => entry.section === "Medication");
+
+    const items = [
+      {
+        label: "Add your child",
+        completed: Boolean(childId),
+      },
+      {
+        label: "Add first medication",
+        completed: hasMedication,
+      },
+      {
+        label: "Add first meal",
+        completed: sharedLog.some((entry) => entry.section === "Food Diary"),
+      },
+      {
+        label: "Add first sleep entry",
+        completed: sharedLog.some((entry) => entry.section === "Sleep"),
+      },
+    ];
+
+    return items.filter((item) => !item.completed);
+  }, [childId, profileMedicationOptions.length, sharedLog]);
+
   const measurementEntries = useMemo(
     () =>
       sharedLog
@@ -3474,6 +3800,8 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("food")}
+
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
@@ -3806,6 +4134,7 @@ export default function KaylenCareMonitorDashboard({
                   }
                 }
 
+                clearLogDraft("food");
                 resetFoodForm();
                 closeSection();
               })
@@ -3847,6 +4176,8 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("medication")}
+
         {profileMedicationOptions.length ? (
           <div className="md:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 shadow-sm">
             <h4 className="text-sm font-bold text-slate-900">
@@ -4114,6 +4445,7 @@ export default function KaylenCareMonitorDashboard({
                   );
                 }
 
+                clearLogDraft("medication");
                 resetMedicationForm();
                 closeSection();
               })
@@ -4138,6 +4470,8 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("toileting")}
+
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
@@ -4206,6 +4540,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                clearLogDraft("toileting");
                 resetToiletingForm();
                 closeSection();
               })
@@ -4230,6 +4565,8 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("health")}
+
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">Date</label>
           <input
@@ -4402,6 +4739,7 @@ export default function KaylenCareMonitorDashboard({
                 if (!saved) return;
 
                 await loadEntriesFromSupabase();
+                clearLogDraft("health");
                 resetHealthForm();
                 closeSection();
               })
@@ -4643,6 +4981,8 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <div className="mt-6 space-y-4">
+        {renderDraftRecoveryPrompt("sleep")}
+
         {sleepBanner ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
             {sleepBanner}
@@ -4706,7 +5046,8 @@ export default function KaylenCareMonitorDashboard({
               disabled={!canSaveSleep}
               onClick={() =>
                 runLockedSave("sleep-start", async () => {
-                  await saveSleepEntryToSupabase({ mode: "sleep" });
+                  const saved = await saveSleepEntryToSupabase({ mode: "sleep" });
+                  if (saved) clearLogDraft("sleep");
                 })
               }
               className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
@@ -4866,6 +5207,7 @@ export default function KaylenCareMonitorDashboard({
 
                   if (!saved) return;
 
+                  clearLogDraft("sleep");
                   resetSleepForm();
                   closeSection();
                 })
@@ -4879,7 +5221,10 @@ export default function KaylenCareMonitorDashboard({
 
             <button
               type="button"
-              onClick={resetSleepForm}
+              onClick={() => {
+                clearLogDraft("sleep");
+                resetSleepForm();
+              }}
               disabled={isSavingSleep || !!activeSaveAction}
               className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
@@ -6535,6 +6880,59 @@ export default function KaylenCareMonitorDashboard({
             Pull down from the top to refresh. Sync: {syncState}
           </div>
         )}
+
+        {onboardingChecklistItems.length ? (
+          <section className="mb-4 rounded-[1.5rem] border border-indigo-100 bg-indigo-50/80 p-4 shadow-sm">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
+                  Getting started
+                </p>
+                <h2 className="mt-1 text-base font-black text-slate-950">
+                  Finish setting up your diary
+                </h2>
+              </div>
+              <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-indigo-700 shadow-sm">
+                {4 - onboardingChecklistItems.length}/4 done
+              </span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {onboardingChecklistItems.map((item) => (
+                <div
+                  key={item.label}
+                  className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white/80 px-3 py-2 text-sm font-bold text-slate-700"
+                >
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200 text-[10px] text-indigo-500">
+                    +
+                  </span>
+                  {item.label}
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <section className="mb-5 rounded-[1.5rem] border border-cyan-100 bg-cyan-50/80 p-4 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">
+                Care Snapshot
+              </p>
+              <p className="mt-1 text-sm font-semibold text-slate-700">
+                Download a 72-hour summary any time, including view-only accounts.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                openSection(sections.find((section) => section.title === "Care Snapshot"))
+              }
+              className="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-black text-white shadow-sm sm:w-auto"
+            >
+              Download Care Snapshot
+            </button>
+          </div>
+        </section>
 
         <section className="mb-5">
           <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
