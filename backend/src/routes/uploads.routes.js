@@ -11,6 +11,8 @@ import {
   buildPublicSpacesUrl,
   createSignedAclUrl,
   createSignedPutUrl,
+  deleteSpacesObject,
+  getProfilePhotoObjectKeyFromPublicUrl,
 } from "../services/spaces.js";
 
 export const uploadsRouter = Router();
@@ -48,7 +50,9 @@ async function assertWritableChild({ familyId, childId, userId }) {
 
   const child = await query(
     `
-      SELECT id
+      SELECT
+        id,
+        avatar_url AS "avatarUrl"
       FROM children
       WHERE id = $1
         AND family_id = $2
@@ -61,6 +65,8 @@ async function assertWritableChild({ familyId, childId, userId }) {
   if (!child.rows[0]) {
     throw notFound("Child not found.");
   }
+
+  return child.rows[0];
 }
 
 async function applyPublicReadAcl(objectKey) {
@@ -136,7 +142,11 @@ uploadsRouter.post(
       throw badRequest("Choose a photo to upload.");
     }
 
-    await assertWritableChild({ familyId, childId, userId: req.user.id });
+    const existingChild = await assertWritableChild({
+      familyId,
+      childId,
+      userId: req.user.id,
+    });
 
     const objectKey = buildProfilePhotoObjectKey({
       familyId,
@@ -189,6 +199,16 @@ uploadsRouter.post(
 
     if (!rows[0]) {
       throw notFound("Child not found.");
+    }
+
+    const previousObjectKey = getProfilePhotoObjectKeyFromPublicUrl(
+      existingChild.avatarUrl,
+    );
+
+    if (previousObjectKey && previousObjectKey !== objectKey) {
+      deleteSpacesObject(previousObjectKey).catch((error) =>
+        console.error("Old child profile photo delete failed:", error.message),
+      );
     }
 
     res.json({

@@ -108,6 +108,47 @@ export function buildPublicSpacesUrl(objectKey) {
   return `${normalizePublicUrl(config.spacesPublicUrl)}/${encodeObjectKey(objectKey)}`;
 }
 
+export function getProfilePhotoObjectKeyFromPublicUrl(publicUrl) {
+  if (!publicUrl || typeof publicUrl !== "string") return null;
+
+  let parsedUrl;
+  let publicBase;
+
+  try {
+    parsedUrl = new URL(publicUrl);
+    publicBase = new URL(normalizePublicUrl(config.spacesPublicUrl));
+  } catch {
+    return null;
+  }
+
+  if (parsedUrl.origin !== publicBase.origin) return null;
+
+  const basePath = publicBase.pathname.replace(/\/+$/, "");
+  if (basePath && !parsedUrl.pathname.startsWith(`${basePath}/`)) {
+    return null;
+  }
+
+  const rawObjectPath = parsedUrl.pathname.slice(basePath.length).replace(/^\/+/, "");
+  if (!rawObjectPath) return null;
+
+  const objectKey = rawObjectPath
+    .split("/")
+    .map((segment) => {
+      try {
+        return decodeURIComponent(segment);
+      } catch {
+        return segment;
+      }
+    })
+    .join("/");
+
+  if (!/^families\/[^/]+\/children\/[^/]+\/profile-\d+\.(jpg|png|webp)$/i.test(objectKey)) {
+    return null;
+  }
+
+  return objectKey;
+}
+
 function buildBucketObjectUrl(objectKey) {
   const endpoint = new URL(normalizeEndpoint(config.spacesEndpoint));
   const bucketPrefix = `${config.spacesBucket}.`;
@@ -220,4 +261,67 @@ export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {
   aclUrl.search = queryParams.toString();
 
   return aclUrl.toString();
+}
+
+export function createSignedDeleteUrl({ objectKey, expiresInSeconds = 300 }) {
+  requireSpacesConfig();
+
+  const deleteUrl = buildBucketObjectUrl(objectKey);
+  const host = deleteUrl.host;
+  const { amzDate, dateStamp } = buildAmzDates();
+  const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
+  const signedHeaders = "host";
+
+  const queryParams = new URLSearchParams({
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${config.spacesKey}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+  });
+
+  const canonicalQueryString = buildCanonicalQueryString(queryParams);
+
+  const canonicalHeaders = `host:${host}\n`;
+  const canonicalRequest = [
+    "DELETE",
+    deleteUrl.pathname,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const signingKey = getSigningKey(
+    config.spacesSecret,
+    dateStamp,
+    config.spacesRegion,
+  );
+  const signature = hmac(signingKey, stringToSign, "hex");
+
+  queryParams.set("X-Amz-Signature", signature);
+  deleteUrl.search = queryParams.toString();
+
+  return deleteUrl.toString();
+}
+
+export async function deleteSpacesObject(objectKey) {
+  const response = await fetch(createSignedDeleteUrl({ objectKey }), {
+    method: "DELETE",
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const details = await response.text().catch(() => "");
+    throw new Error(
+      `DigitalOcean Spaces delete failed (${response.status}). ${details}`,
+    );
+  }
 }
