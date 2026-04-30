@@ -3,6 +3,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 
+const SUPPORT_EMAIL = "hello@familytrack.care";
+const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
+
 const inputClass =
   "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
@@ -541,6 +544,18 @@ function LandingPage({ onStartFree, onLogin }) {
           </div>
         </div>
       </section>
+
+      <footer className="border-t border-slate-200 bg-white px-5 py-8">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 text-sm font-semibold text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+          <p>FamilyTrack - Tracking what matters</p>
+          <a
+            href={SUPPORT_MAILTO}
+            className="font-black text-indigo-700 underline decoration-indigo-200 underline-offset-4"
+          >
+            {SUPPORT_EMAIL}
+          </a>
+        </div>
+      </footer>
     </main>
   );
 }
@@ -710,6 +725,15 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
               Back to website
             </button>
           ) : null}
+          <p className="mt-6 text-center text-xs font-semibold text-slate-500">
+            Need help?{" "}
+            <a
+              href={SUPPORT_MAILTO}
+              className="font-bold text-indigo-700 underline decoration-indigo-200 underline-offset-4"
+            >
+              {SUPPORT_EMAIL}
+            </a>
+          </p>
         </div>
       </div>
     </div>
@@ -830,7 +854,7 @@ function ReportIssueWidget({
       setMessage("");
       setSeverity("small");
       setIsOpen(false);
-      setNotice("Thanks — your issue has been sent.");
+      setNotice(`Thanks - your issue has been sent. Need us directly? ${SUPPORT_EMAIL}`);
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -853,7 +877,13 @@ function ReportIssueWidget({
 
       {notice ? (
         <div className="fixed bottom-16 left-4 z-40 max-w-[18rem] rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg">
-          {notice}
+          <p>{notice}</p>
+          <a
+            href={SUPPORT_MAILTO}
+            className="mt-1 inline-block text-xs font-black underline decoration-emerald-300 underline-offset-4"
+          >
+            Contact support
+          </a>
         </div>
       ) : null}
 
@@ -869,7 +899,8 @@ function ReportIssueWidget({
                   Report an issue
                 </h2>
                 <p className="mt-1 text-sm text-slate-600">
-                  We will include the current page and device details.
+                  We will include the current page and device details. You can
+                  also email {SUPPORT_EMAIL}.
                 </p>
               </div>
               <button
@@ -3530,6 +3561,15 @@ function WorkspaceGate({ session, onLogout }) {
                       This device is signed in now. Other-device management will
                       connect to the full session system later.
                     </p>
+                    <p className="mt-2 text-xs font-semibold text-slate-500">
+                      Need help with access?{" "}
+                      <a
+                        href={SUPPORT_MAILTO}
+                        className="font-bold text-indigo-700 underline decoration-indigo-200 underline-offset-4"
+                      >
+                        {SUPPORT_EMAIL}
+                      </a>
+                    </p>
                     <button
                       type="button"
                       onClick={() =>
@@ -4545,6 +4585,10 @@ function WorkspaceGate({ session, onLogout }) {
                       [
                         "Storage",
                         "Diary data is stored in the app database. Child photo uploads are prepared for DigitalOcean Spaces using a secure backend signed-upload flow.",
+                      ],
+                      [
+                        "Contact",
+                        `For support, account questions or privacy requests, email ${SUPPORT_EMAIL}.`,
                       ],
                     ].map(([title, copy]) => (
                       <div

@@ -3,6 +3,7 @@ import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, unauthorized } from "../utils/httpError.js";
+import { sendAppEmail, welcomeEmail } from "../services/email.js";
 import { hashPassword, verifyPassword } from "../utils/passwords.js";
 import {
   clearSessionCookie,
@@ -157,6 +158,14 @@ authRouter.post(
     });
 
     setSessionCookie(res, createSessionToken(result.user));
+    const welcome = welcomeEmail({ fullName: result.user.full_name });
+    sendAppEmail({
+      to: result.user.email,
+      ...welcome,
+      metadata: { type: "welcome", userId: result.user.id },
+    }).catch((error) =>
+      console.error("Welcome email failed:", error.message),
+    );
 
     res.status(201).json({
       data: {

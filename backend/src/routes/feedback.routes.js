@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
+import { config } from "../config.js";
+import { sendAppEmail } from "../services/email.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
@@ -198,6 +200,29 @@ feedbackRouter.post(
     }
 
     res.status(201).json({ data: rows[0], error: null });
+
+    sendAppEmail({
+      to: config.supportEmail,
+      subject: `FamilyTrack issue report: ${severity}`,
+      text: [
+        "A FamilyTrack issue report was submitted.",
+        "",
+        `User: ${req.user.email}`,
+        `Route: ${route || "Not captured"}`,
+        `Device: ${deviceType || browserInfo.deviceType || "Not captured"}`,
+        "",
+        message,
+      ].join("\n"),
+      metadata: {
+        type: "issue_report",
+        issueId: rows[0]?.id,
+        userId: req.user.id,
+        familyId,
+        childId,
+      },
+    }).catch((error) =>
+      console.error("Support issue email failed:", error.message),
+    );
   }),
 );
 

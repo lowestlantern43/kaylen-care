@@ -6,6 +6,11 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
 import {
+  issueResolvedEmail,
+  passwordResetEmail,
+  sendAppEmail,
+} from "../services/email.js";
+import {
   buildPlanAccess,
   ensurePlanAccessSchema,
   normalisePlan,
@@ -366,23 +371,31 @@ adminRouter.patch(
       await ensureIssueReportingSchema();
       const result = await query(
         `
+          WITH existing AS (
+            SELECT status AS previous_status
+            FROM issue_reports
+            WHERE id = $3
+          )
           UPDATE issue_reports
           SET status = $1,
               internal_note = $2,
               resolved = ($1 = 'resolved'),
               notified = CASE
-                WHEN $1 = 'resolved' AND status <> 'resolved' THEN false
+                WHEN $1 = 'resolved' AND issue_reports.status <> 'resolved' THEN false
                 ELSE notified
               END,
               updated_at = now()
-          WHERE id = $3
+          FROM existing
+          WHERE issue_reports.id = $3
           RETURNING
-            id,
-            status,
-            internal_note AS "internalNote",
-            resolved,
-            notified,
-            updated_at AS "updatedAt"
+            issue_reports.id,
+            issue_reports.user_id AS "userId",
+            issue_reports.status,
+            issue_reports.internal_note AS "internalNote",
+            issue_reports.resolved,
+            issue_reports.notified,
+            issue_reports.updated_at AS "updatedAt",
+            existing.previous_status AS "previousStatus"
         `,
         [status, internalNote, issueId],
       );
@@ -398,6 +411,35 @@ adminRouter.patch(
 
     if (!rows[0]) {
       throw notFound("Issue report not found.");
+    }
+
+    if (
+      rows[0].status === "resolved" &&
+      rows[0].previousStatus !== "resolved" &&
+      rows[0].userId
+    ) {
+      const user = await query(
+        `
+          SELECT email, full_name AS "fullName"
+          FROM users
+          WHERE id = $1
+            AND deleted_at IS NULL
+          LIMIT 1
+        `,
+        [rows[0].userId],
+      );
+      if (user.rows[0]?.email) {
+        const email = issueResolvedEmail({
+          fullName: user.rows[0].fullName,
+        });
+        sendAppEmail({
+          to: user.rows[0].email,
+          ...email,
+          metadata: { type: "issue_resolved", issueId },
+        }).catch((error) =>
+          console.error("Issue resolved email failed:", error.message),
+        );
+      }
     }
 
     await writeAudit(req, {
@@ -1228,11 +1270,24 @@ adminRouter.post(
       metadata: { email: rows[0].email },
     });
 
+    const resetUrl = `${config.frontendUrl}/reset-password?token=${token}`;
+    const email = passwordResetEmail({
+      fullName: rows[0].fullName,
+      resetUrl,
+    });
+    sendAppEmail({
+      to: rows[0].email,
+      ...email,
+      metadata: { type: "password_reset", userId },
+    }).catch((error) =>
+      console.error("Password reset email failed:", error.message),
+    );
+
     res.json({
       data: {
         id: rows[0].id,
         email: rows[0].email,
-        resetUrl: `${config.frontendUrl}/reset-password?token=${token}`,
+        resetUrl,
         expiresAt: rows[0].expiresAt,
       },
       error: null,
