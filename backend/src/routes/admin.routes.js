@@ -23,7 +23,7 @@ export const adminRouter = Router();
 adminRouter.use(requireAuth, requirePlatformAdmin);
 
 const memberRoles = ["owner", "parent", "carer", "viewer"];
-const issueStatuses = ["open", "reviewing", "fixed", "closed"];
+const issueStatuses = ["new", "in_progress", "resolved"];
 
 function isMissingFeedbackTable(error) {
   return error?.code === "42P01";
@@ -313,6 +313,11 @@ adminRouter.get(
             ir.app_version AS "appVersion",
             ir.screenshot_url AS "screenshotUrl",
             ir.status,
+            ir.internal_note AS "internalNote",
+            ir.resolved,
+            ir.notified,
+            ir.context_section AS "contextSection",
+            ir.device_type AS "deviceType",
             ir.created_at AS "createdAt",
             ir.updated_at AS "updatedAt"
           FROM issue_reports ir
@@ -339,6 +344,7 @@ adminRouter.patch(
   asyncHandler(async (req, res) => {
     const issueId = requireUuid(req.params.issueId, "Issue ID");
     const status = requireEnum(req.body, "status", issueStatuses, "Status");
+    const internalNote = optionalString(req.body, "internalNote");
 
     let rows = [];
 
@@ -348,14 +354,23 @@ adminRouter.patch(
         `
           UPDATE issue_reports
           SET status = $1,
+              internal_note = $2,
+              resolved = ($1 = 'resolved'),
+              notified = CASE
+                WHEN $1 = 'resolved' AND status <> 'resolved' THEN false
+                ELSE notified
+              END,
               updated_at = now()
-          WHERE id = $2
+          WHERE id = $3
           RETURNING
             id,
             status,
+            internal_note AS "internalNote",
+            resolved,
+            notified,
             updated_at AS "updatedAt"
         `,
-        [status, issueId],
+        [status, internalNote, issueId],
       );
       rows = result.rows;
     } catch (error) {
@@ -375,7 +390,7 @@ adminRouter.patch(
       entityType: "issue_report",
       entityId: issueId,
       action: "platform_issue_status_updated",
-      metadata: { status },
+      metadata: { status, internalNote },
     });
 
     res.json({ data: rows[0], error: null });

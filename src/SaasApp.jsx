@@ -20,10 +20,9 @@ const cleanFormText = (value) => {
 };
 
 const issueStatusLabels = {
-  open: "Open",
-  reviewing: "Reviewing",
-  fixed: "Fixed",
-  closed: "Closed",
+  new: "New",
+  in_progress: "In Progress",
+  resolved: "Resolved",
 };
 
 const issueSeverityLabels = {
@@ -559,6 +558,23 @@ function ReportIssueWidget({
     selectedChild?.name ||
     "selected child";
 
+  const getDeviceType = () => {
+    const userAgent = navigator.userAgent || "";
+    if (/iphone/i.test(userAgent)) return "iPhone";
+    if (/ipad/i.test(userAgent)) return "iPad";
+    if (/android/i.test(userAgent)) return "Android";
+    return window.innerWidth < 768 ? "Mobile" : "Desktop";
+  };
+
+  const getVisibleSection = () => {
+    const modalHeading = document.querySelector(
+      "[role='dialog'] h2, [role='dialog'] h3, .fixed h2, .fixed h3",
+    )?.textContent;
+    if (modalHeading?.trim()) return modalHeading.trim();
+    const activeHeading = document.querySelector("h1, h2")?.textContent;
+    return activeHeading?.trim() || "Current page";
+  };
+
   const captureScreenshot = async () => {
     try {
       const canvas = await html2canvas(document.body, {
@@ -607,6 +623,8 @@ function ReportIssueWidget({
           window.location.pathname +
           window.location.search +
           window.location.hash,
+        contextSection: getVisibleSection(),
+        deviceType: getDeviceType(),
         message,
         severity,
         browserInfo: {
@@ -614,6 +632,9 @@ function ReportIssueWidget({
           language: navigator.language,
           platform: navigator.platform,
           viewport: `${window.innerWidth}x${window.innerHeight}`,
+          deviceType: getDeviceType(),
+          section: getVisibleSection(),
+          timestamp: new Date().toISOString(),
           timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           familyName: selectedFamily?.familyName || selectedFamily?.name || "",
           childName,
@@ -754,13 +775,34 @@ function IssueAdminPanel({
   onToggleEnabled,
   onStatusChange,
 }) {
+  const [expanded, setExpanded] = useState({});
+  const [notes, setNotes] = useState({});
+
+  const noteForIssue = (issue) =>
+    notes[issue.id] ?? issue.internalNote ?? "";
+
+  const updateStatus = (issue, status) =>
+    onStatusChange(issue.id, {
+      status,
+      internalNote: noteForIssue(issue),
+    });
+
+  const deviceLabel = (issue) =>
+    issue.deviceType ||
+    issue.browserInfo?.deviceType ||
+    issue.browserInfo?.platform ||
+    "Unknown device";
+
+  const sectionLabel = (issue) =>
+    issue.contextSection || issue.browserInfo?.section || "Current page";
+
   return (
     <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h3 className="font-bold text-slate-900">Tester issue reports</h3>
+          <h3 className="font-bold text-slate-900">Issue reports inbox</h3>
           <p className="mt-1 text-sm text-slate-600">
-            New reports appear here with page, child, account and device context.
+            A simple support inbox for tester reports, screenshots and device context.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -788,7 +830,7 @@ function IssueAdminPanel({
           issues.map((issue) => (
             <article
               key={issue.id}
-              className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
             >
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
@@ -805,14 +847,17 @@ function IssueAdminPanel({
                         : "Unknown time"}
                     </span>
                   </div>
+                  <p className="mt-2 text-sm font-bold text-slate-800">
+                    Reported from: {sectionLabel(issue)} ({deviceLabel(issue)})
+                  </p>
                   <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-900">
                     {issue.message}
                   </p>
                   <p className="mt-2 break-all text-xs font-semibold text-slate-500">
-                    {issue.route || "No route captured"}
+                    Page/location: {issue.route || "No route captured"}
                   </p>
                   <p className="mt-2 text-sm text-slate-600">
-                    {issue.userName || issue.userEmail || "Unknown user"} -{" "}
+                    Account: {issue.userName || issue.userEmail || "Unknown user"} -{" "}
                     {issue.familyName || "No family"} -{" "}
                     {[
                       issue.childFirstName,
@@ -822,26 +867,72 @@ function IssueAdminPanel({
                       .join(" ") || "No child"}
                   </p>
                   <p className="mt-1 text-xs font-semibold text-slate-500">
-                    {issue.browserInfo?.platform || "Unknown platform"} -{" "}
-                    {issue.browserInfo?.viewport || "unknown viewport"}
+                    Device: {deviceLabel(issue)} -{" "}
+                    {issue.browserInfo?.viewport || "unknown viewport"} -{" "}
+                    {issue.browserInfo?.timezone || "unknown timezone"}
                   </p>
+                  {issue.internalNote ? (
+                    <p className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+                      Internal note: {issue.internalNote}
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="flex w-full flex-col gap-2 lg:w-48">
-                  <select
-                    className={inputClass}
-                    value={issue.status}
-                    disabled={isSaving}
-                    onChange={(event) =>
-                      onStatusChange(issue.id, event.target.value)
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => updateStatus(issue, "in_progress")}
+                      className="rounded-xl border border-indigo-200 bg-indigo-50 px-2 py-2 text-xs font-bold text-indigo-700 disabled:opacity-50"
+                    >
+                      In Progress
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => updateStatus(issue, "resolved")}
+                      className="rounded-xl border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs font-bold text-emerald-700 disabled:opacity-50"
+                    >
+                      Resolved
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpanded((current) => ({
+                        ...current,
+                        [issue.id]: !current[issue.id],
+                      }))
                     }
+                    className="rounded-xl border border-slate-200 bg-white px-2 py-2 text-xs font-bold text-slate-700"
                   >
-                    {Object.entries(issueStatusLabels).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
+                    {expanded[issue.id] ? "Hide note" : "Internal note"}
+                  </button>
+                  {expanded[issue.id] ? (
+                    <div className="rounded-xl border border-slate-200 bg-white p-2">
+                      <textarea
+                        className={`${inputClass} mt-0 px-3 py-2 text-xs`}
+                        rows={3}
+                        value={noteForIssue(issue)}
+                        onChange={(event) =>
+                          setNotes((current) => ({
+                            ...current,
+                            [issue.id]: event.target.value,
+                          }))
+                        }
+                        placeholder="Private owner note"
+                      />
+                      <button
+                        type="button"
+                        disabled={isSaving}
+                        onClick={() => updateStatus(issue, issue.status)}
+                        className="mt-2 w-full rounded-xl bg-slate-900 px-2 py-2 text-xs font-bold text-white disabled:opacity-50"
+                      >
+                        Save note
+                      </button>
+                    </div>
+                  ) : null}
                   {issue.screenshotUrl ? (
                     <a
                       href={issue.screenshotUrl}
@@ -1003,6 +1094,8 @@ function WorkspaceGate({ session, onLogout }) {
   const [platformAccountFilter, setPlatformAccountFilter] = useState("all");
   const [platformSnapshot, setPlatformSnapshot] = useState(null);
   const [platformViewAsUser, setPlatformViewAsUser] = useState(null);
+  const [resolvedIssueNotice, setResolvedIssueNotice] = useState("");
+  const [showSystemStatus, setShowSystemStatus] = useState(false);
   const [platformMemberForm, setPlatformMemberForm] = useState({
     email: "",
     role: "parent",
@@ -1086,6 +1179,31 @@ function WorkspaceGate({ session, onLogout }) {
     if (!showPlatformAdmin || platformAdminTab !== "issues") return;
     refreshPlatformIssues();
   }, [showPlatformAdmin, platformAdminTab]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadResolvedIssueNotifications() {
+      try {
+        const notifications = await api.resolvedIssueNotifications();
+        if (ignore || !notifications.length) return;
+
+        setResolvedIssueNotice(
+          notifications.length === 1
+            ? "Your reported issue has been resolved ✅"
+            : `${notifications.length} of your reported issues have been resolved ✅`,
+        );
+        await api.markResolvedIssueNotificationsSeen();
+      } catch {
+        // A support notification should never block the diary.
+      }
+    }
+
+    loadResolvedIssueNotifications();
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const selectChild = (childIdToSelect) => {
     setSelectedChildId(childIdToSelect);
@@ -1851,21 +1969,32 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
-  const updateIssueStatus = async (issueId, status) => {
+  const updateIssueStatus = async (issueId, payload) => {
     setIsPlatformSaving(true);
     setError("");
     setPlatformActionMessage("");
 
     try {
-      const updated = await api.adminUpdateIssueStatus(issueId, status);
+      const updated = await api.adminUpdateIssueStatus(issueId, payload);
       setPlatformIssues((current) =>
         current.map((issue) =>
           issue.id === issueId
-            ? { ...issue, status: updated.status, updatedAt: updated.updatedAt }
+            ? {
+                ...issue,
+                status: updated.status,
+                internalNote: updated.internalNote,
+                resolved: updated.resolved,
+                notified: updated.notified,
+                updatedAt: updated.updatedAt,
+              }
             : issue,
         ),
       );
-      setPlatformActionMessage("Issue status updated.");
+      setPlatformActionMessage(
+        updated.status === "resolved"
+          ? "Issue marked resolved. The user will see a one-time notification."
+          : "Issue updated.",
+      );
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -2723,6 +2852,56 @@ function WorkspaceGate({ session, onLogout }) {
               <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
                 {platformActionMessage}
               </p>
+            ) : null}
+
+            {showPlatformAdmin ? (
+              <section className="mt-3 rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => setShowSystemStatus((current) => !current)}
+                  className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+                >
+                  <span>
+                    <span className="block text-sm font-black text-slate-900">
+                      System status
+                    </span>
+                    <span className="block text-xs font-semibold text-slate-500">
+                      Collapsed owner-only health check
+                    </span>
+                  </span>
+                  <span className="rounded-full bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">
+                    API online
+                  </span>
+                </button>
+                {showSystemStatus ? (
+                  <div className="grid gap-2 border-t border-slate-100 p-3 sm:grid-cols-4">
+                    {[
+                      ["API status", "Online"],
+                      ["Last sync", new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })],
+                      [
+                        "App version",
+                        import.meta.env.VITE_APP_VERSION ||
+                          import.meta.env.VITE_APP_BUILD ||
+                          import.meta.env.MODE ||
+                          "local",
+                      ],
+                      ["Errors", error ? "Check alert" : "None shown"],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                      >
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          {label}
+                        </p>
+                        <p className="mt-0.5 text-sm font-black text-slate-900">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </section>
             ) : null}
 
             {platformActionMessage ? (
@@ -5574,6 +5753,20 @@ function WorkspaceGate({ session, onLogout }) {
                 </div>
               </section>
             </div>
+          </div>
+        </div>
+      ) : null}
+      {resolvedIssueNotice ? (
+        <div className="fixed bottom-20 right-4 z-[9998] max-w-[20rem] rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-800 shadow-xl">
+          <div className="flex items-start gap-3">
+            <p>{resolvedIssueNotice}</p>
+            <button
+              type="button"
+              onClick={() => setResolvedIssueNotice("")}
+              className="rounded-full bg-white px-2 py-0.5 text-xs font-black text-emerald-700"
+            >
+              OK
+            </button>
           </div>
         </div>
       ) : null}

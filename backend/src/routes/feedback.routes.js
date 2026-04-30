@@ -123,6 +123,8 @@ feedbackRouter.post(
     const message = requireString(req.body, "message", "Issue details");
     const severity = requireEnum(req.body, "severity", severities, "Severity");
     const route = optionalString(req.body, "route") || "";
+    const contextSection = optionalString(req.body, "contextSection");
+    const deviceType = optionalString(req.body, "deviceType");
     const appVersion = optionalString(req.body, "appVersion");
     const browserInfo =
       req.body?.browserInfo && typeof req.body.browserInfo === "object"
@@ -156,12 +158,16 @@ feedbackRouter.post(
             browser_info,
             app_version,
             screenshot_url,
+            context_section,
+            device_type,
             status
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'open')
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'new')
           RETURNING
             id,
             route,
+            context_section AS "contextSection",
+            device_type AS "deviceType",
             message,
             severity,
             status,
@@ -177,6 +183,8 @@ feedbackRouter.post(
           JSON.stringify(browserInfo),
           appVersion,
           screenshotUrl,
+          contextSection,
+          deviceType,
         ],
       );
       rows = result.rows;
@@ -190,5 +198,59 @@ feedbackRouter.post(
     }
 
     res.status(201).json({ data: rows[0], error: null });
+  }),
+);
+
+feedbackRouter.get(
+  "/issues/resolved-notifications",
+  asyncHandler(async (req, res) => {
+    await ensureIssueReportingSchema();
+
+    const { rows } = await query(
+      `
+        SELECT
+          id,
+          message,
+          route,
+          context_section AS "contextSection",
+          updated_at AS "updatedAt"
+        FROM issue_reports
+        WHERE user_id = $1
+          AND resolved = true
+          AND notified = false
+        ORDER BY updated_at DESC
+        LIMIT 20
+      `,
+      [req.user.id],
+    );
+
+    res.json({ data: rows, error: null });
+  }),
+);
+
+feedbackRouter.post(
+  "/issues/resolved-notifications/mark-seen",
+  asyncHandler(async (req, res) => {
+    await ensureIssueReportingSchema();
+
+    const { rows } = await query(
+      `
+        UPDATE issue_reports
+        SET notified = true,
+            updated_at = now()
+        WHERE user_id = $1
+          AND resolved = true
+          AND notified = false
+        RETURNING id
+      `,
+      [req.user.id],
+    );
+
+    res.json({
+      data: {
+        marked: rows.length,
+      },
+      error: null,
+    });
   }),
 );

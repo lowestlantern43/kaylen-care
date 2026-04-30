@@ -20,13 +20,18 @@ CREATE TABLE IF NOT EXISTS issue_reports (
   browser_info JSONB NOT NULL DEFAULT '{}'::JSONB,
   app_version TEXT,
   screenshot_url TEXT,
-  status TEXT NOT NULL DEFAULT 'open',
+  status TEXT NOT NULL DEFAULT 'new',
+  internal_note TEXT NOT NULL DEFAULT '',
+  resolved BOOLEAN NOT NULL DEFAULT false,
+  notified BOOLEAN NOT NULL DEFAULT false,
+  context_section TEXT NOT NULL DEFAULT '',
+  device_type TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT issue_reports_severity_check
     CHECK (severity IN ('small', 'annoying', 'blocking')),
   CONSTRAINT issue_reports_status_check
-    CHECK (status IN ('open', 'reviewing', 'fixed', 'closed'))
+    CHECK (status IN ('new', 'in_progress', 'resolved'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_issue_reports_created_at
@@ -40,3 +45,6 @@ CREATE INDEX IF NOT EXISTS idx_issue_reports_family_id
 
 CREATE INDEX IF NOT EXISTS idx_issue_reports_user_id
   ON issue_reports (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_issue_reports_resolved_notified_user
+  ON issue_reports (user_id, resolved, notified);

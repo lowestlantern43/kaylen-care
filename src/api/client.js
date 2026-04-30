@@ -225,6 +225,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  resolvedIssueNotifications: () =>
+    request("/feedback/issues/resolved-notifications"),
+  markResolvedIssueNotificationsSeen: () =>
+    request("/feedback/issues/resolved-notifications/mark-seen", {
+      method: "POST",
+    }),
   createCheckoutSession: (familyId) =>
     request(`/families/${familyId}/subscription/checkout`, {
       method: "POST",
@@ -276,10 +282,10 @@ export const api = {
       method: "POST",
     }),
   adminIssues: () => request("/admin/issues"),
-  adminUpdateIssueStatus: (issueId, status) =>
+  adminUpdateIssueStatus: (issueId, payload) =>
     request(`/admin/issues/${issueId}`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(payload),
     }),
   adminFeedbackSettings: () => request("/admin/feedback-settings"),
   adminUpdateFeedbackSettings: (payload) =>
