@@ -22,6 +22,26 @@ function encodePathSegment(value) {
   );
 }
 
+function awsEncode(value) {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (character) =>
+    `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+function buildCanonicalQueryString(queryParams) {
+  return [...queryParams.entries()]
+    .map(([key, value]) => [awsEncode(key), awsEncode(value)])
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
+      if (leftKey < rightKey) return -1;
+      if (leftKey > rightKey) return 1;
+      if (leftValue < rightValue) return -1;
+      if (leftValue > rightValue) return 1;
+      return 0;
+    })
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
 function encodeObjectKey(objectKey) {
   return objectKey.split("/").map(encodePathSegment).join("/");
 }
@@ -119,16 +139,7 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
     "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
   });
 
-  const canonicalQueryString = [...queryParams.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(
-      ([key, value]) =>
-        `${encodeURIComponent(key)}=${encodeURIComponent(value).replace(
-          /[!'()*]/g,
-          (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
-        )}`,
-    )
-    .join("&");
+  const canonicalQueryString = buildCanonicalQueryString(queryParams);
 
   const canonicalHeaders = `content-type:${fileType}\nhost:${host}\nx-amz-acl:public-read\n`;
   const canonicalRequest = [
@@ -179,16 +190,7 @@ export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {
     "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
   });
 
-  const canonicalQueryString = [...queryParams.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(
-      ([key, value]) =>
-        `${encodeURIComponent(key)}=${encodeURIComponent(value).replace(
-          /[!'()*]/g,
-          (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`,
-        )}`,
-    )
-    .join("&");
+  const canonicalQueryString = buildCanonicalQueryString(queryParams);
 
   const canonicalHeaders = `host:${host}\nx-amz-acl:public-read\n`;
   const canonicalRequest = [
