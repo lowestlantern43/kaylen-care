@@ -998,6 +998,7 @@ function WorkspaceGate({ session, onLogout }) {
   const [isUserDetailLoading, setIsUserDetailLoading] = useState(false);
   const [isPlatformSaving, setIsPlatformSaving] = useState(false);
   const [platformActionMessage, setPlatformActionMessage] = useState("");
+  const [platformAccountFilter, setPlatformAccountFilter] = useState("all");
   const [platformMemberForm, setPlatformMemberForm] = useState({
     email: "",
     role: "parent",
@@ -1795,6 +1796,10 @@ function WorkspaceGate({ session, onLogout }) {
       setPlatformData({ overview, families, users });
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
+      api
+        .adminIssues()
+        .then((issues) => setPlatformIssues(issues))
+        .catch(() => setPlatformIssues([]));
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -2089,6 +2094,119 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const platformSearchTerm = platformSearch.trim().toLowerCase();
+  const now = new Date();
+  const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+  const thirtyDaysInMs = 30 * 24 * 60 * 60 * 1000;
+
+  const safeDate = (value) => {
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+
+  const isSameDay = (date, comparison = now) =>
+    date &&
+    date.getFullYear() === comparison.getFullYear() &&
+    date.getMonth() === comparison.getMonth() &&
+    date.getDate() === comparison.getDate();
+
+  const lastSeenLabel = (value) => {
+    const date = safeDate(value);
+    if (!date) return "Never logged in";
+    if (isSameDay(date)) {
+      return `Today ${date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+    }
+
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (isSameDay(date, yesterday)) {
+      return `Yesterday ${date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })}`;
+    }
+
+    return date.toLocaleDateString([], {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    });
+  };
+
+  const accountHealthForUser = (user) => {
+    const lastLoginAt = safeDate(user?.lastLoginAt);
+    if (!lastLoginAt) {
+      return {
+        label: "Inactive",
+        tone: "red",
+        dotClass: "bg-rose-500",
+        badgeClass: "border-rose-200 bg-rose-50 text-rose-700",
+      };
+    }
+
+    const age = now.getTime() - lastLoginAt.getTime();
+    if (age <= sevenDaysInMs) {
+      return {
+        label: "Active",
+        tone: "green",
+        dotClass: "bg-emerald-500",
+        badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+
+    if (age <= thirtyDaysInMs) {
+      return {
+        label: "Low activity",
+        tone: "yellow",
+        dotClass: "bg-amber-500",
+        badgeClass: "border-amber-200 bg-amber-50 text-amber-700",
+      };
+    }
+
+    return {
+      label: "Inactive",
+      tone: "red",
+      dotClass: "bg-rose-500",
+      badgeClass: "border-rose-200 bg-rose-50 text-rose-700",
+    };
+  };
+
+  const matchesAccountFilter = (user) => {
+    const lastLoginAt = safeDate(user.lastLoginAt);
+    const age = lastLoginAt ? now.getTime() - lastLoginAt.getTime() : null;
+
+    if (platformAccountFilter === "active-today") {
+      return Boolean(lastLoginAt && isSameDay(lastLoginAt));
+    }
+    if (platformAccountFilter === "last-7-days") {
+      return Boolean(lastLoginAt && age <= sevenDaysInMs);
+    }
+    if (platformAccountFilter === "inactive") {
+      return !lastLoginAt || age > thirtyDaysInMs;
+    }
+    if (platformAccountFilter === "never") {
+      return !lastLoginAt;
+    }
+    return true;
+  };
+
+  const recentlyCreatedAccounts = platformData.users.filter((user) => {
+    const createdAt = safeDate(user.createdAt);
+    return createdAt && now.getTime() - createdAt.getTime() <= sevenDaysInMs;
+  }).length;
+
+  const inactiveUsersCount = platformData.users.filter(
+    (user) => accountHealthForUser(user).tone === "red",
+  ).length;
+
+  const openIssueCount = platformIssues.filter(
+    (issue) => issue.status === "open",
+  ).length;
+
   const filteredPlatformFamilies = platformData.families.filter((family) => {
     const haystack = [
       family.name,
@@ -2096,11 +2214,12 @@ function WorkspaceGate({ session, onLogout }) {
       family.ownerEmail,
       family.subscriptionStatus,
       family.platformStatus,
+      ...(Array.isArray(family.childNames) ? family.childNames : []),
     ]
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return haystack.includes(platformSearch.toLowerCase());
+    return haystack.includes(platformSearchTerm);
   });
 
   const filteredPlatformUsers = platformData.users.filter((user) => {
@@ -2108,8 +2227,61 @@ function WorkspaceGate({ session, onLogout }) {
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return haystack.includes(platformSearch.toLowerCase());
+    return haystack.includes(platformSearchTerm) && matchesAccountFilter(user);
   });
+
+  const platformSearchResults =
+    platformSearchTerm.length < 2
+      ? []
+      : [
+          ...platformData.users.map((user) => ({
+            id: user.id,
+            type: "Account",
+            title: user.fullName || user.email,
+            subtitle: user.email,
+            health: accountHealthForUser(user),
+            onSelect: () => openPlatformUser(user.id),
+            haystack: [user.fullName, user.email, user.platformStatus]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase(),
+          })),
+          ...platformData.families.map((family) => ({
+            id: family.id,
+            type: "Family",
+            title: family.name,
+            subtitle: family.ownerEmail || family.ownerName || "Family account",
+            onSelect: () => openPlatformFamily(family.id),
+            haystack: [
+              family.name,
+              family.ownerName,
+              family.ownerEmail,
+              family.subscriptionStatus,
+              family.platformStatus,
+              ...(Array.isArray(family.childNames) ? family.childNames : []),
+            ]
+              .filter(Boolean)
+              .join(" ")
+              .toLowerCase(),
+          })),
+          ...platformData.families.flatMap((family) =>
+            (Array.isArray(family.childNames) ? family.childNames : []).map(
+              (childName) => ({
+                id: `${family.id}-${childName}`,
+                type: "Child",
+                title: childName,
+                subtitle: family.name,
+                onSelect: () => openPlatformFamily(family.id),
+                haystack: [childName, family.name, family.ownerEmail]
+                  .filter(Boolean)
+                  .join(" ")
+                  .toLowerCase(),
+              }),
+            ),
+          ),
+        ]
+          .filter((item) => item.haystack.includes(platformSearchTerm))
+          .slice(0, 8);
 
   const filteredPlatformIssues = platformIssues.filter((issue) => {
     const haystack = [
@@ -2126,7 +2298,7 @@ function WorkspaceGate({ session, onLogout }) {
       .filter(Boolean)
       .join(" ")
       .toLowerCase();
-    return haystack.includes(platformSearch.toLowerCase());
+    return haystack.includes(platformSearchTerm);
   });
 
   if (isLoading) {
@@ -3486,16 +3658,127 @@ function WorkspaceGate({ session, onLogout }) {
               </div>
             ) : (
               <>
-                <div className="mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
+                <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
-                    Search platform data
+                    Quick search and jump
                   </label>
                   <input
                     className="mt-1.5 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
                     value={platformSearch}
                     onChange={(event) => setPlatformSearch(event.target.value)}
-                    placeholder="Search family, owner, user, email, subscription"
+                    placeholder="Search families, users or children"
                   />
+                  {platformSearchResults.length > 0 ? (
+                    <div className="absolute left-3 right-3 top-full z-20 mt-1 overflow-hidden rounded-2xl border border-indigo-100 bg-white shadow-xl">
+                      {platformSearchResults.map((result) => (
+                        <button
+                          type="button"
+                          key={`${result.type}-${result.id}`}
+                          onClick={result.onSelect}
+                          className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-2 text-left last:border-b-0 hover:bg-indigo-50"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate text-sm font-bold text-slate-900">
+                              {result.title}
+                            </span>
+                            <span className="block truncate text-xs font-semibold text-slate-500">
+                              {result.type} - {result.subtitle}
+                            </span>
+                          </span>
+                          {result.health ? (
+                            <span
+                              className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 text-[10px] font-bold ${result.health.badgeClass}`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full ${result.health.dotClass}`}
+                              />
+                              {result.health.label}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">
+                              Jump
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {[
+                    [
+                      "New issues",
+                      openIssueCount,
+                      "Open tester reports",
+                      "border-rose-100 bg-rose-50 text-rose-700",
+                      () => setPlatformAdminTab("issues"),
+                    ],
+                    [
+                      "New accounts",
+                      recentlyCreatedAccounts,
+                      "Created this week",
+                      "border-sky-100 bg-sky-50 text-sky-700",
+                      () => {
+                        setPlatformAccountFilter("all");
+                        setPlatformAdminTab("accounts");
+                      },
+                    ],
+                    [
+                      "Inactive users",
+                      inactiveUsersCount,
+                      "Needs a look",
+                      "border-amber-100 bg-amber-50 text-amber-700",
+                      () => {
+                        setPlatformAccountFilter("inactive");
+                        setPlatformAdminTab("accounts");
+                      },
+                    ],
+                  ].map(([label, value, detail, className, onClick]) => (
+                    <button
+                      type="button"
+                      key={label}
+                      onClick={onClick}
+                      className={`rounded-2xl border px-2 py-2 text-left shadow-sm ${className}`}
+                    >
+                      <p className="truncate text-[10px] font-black uppercase tracking-[0.12em]">
+                        {label}
+                      </p>
+                      <p className="mt-0.5 text-xl font-black leading-tight">
+                        {value}
+                      </p>
+                      <p className="truncate text-[10px] font-bold opacity-80">
+                        {detail}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  {[
+                    ["Logs today", platformData.overview?.logsToday],
+                    ["Logs this week", platformData.overview?.logsThisWeek],
+                    [
+                      "Active users 7d",
+                      platformData.overview?.activeUsersLast7Days,
+                    ],
+                    [
+                      "New accounts 7d",
+                      platformData.overview?.newAccountsThisWeek,
+                    ],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-2xl border border-indigo-100 bg-white px-3 py-2 shadow-sm"
+                    >
+                      <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                        {label}
+                      </p>
+                      <p className="mt-0.5 text-lg font-black text-slate-900">
+                        {value ?? 0}
+                      </p>
+                    </div>
+                  ))}
                 </div>
 
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
@@ -3740,8 +4023,32 @@ function WorkspaceGate({ session, onLogout }) {
                         {filteredPlatformUsers.length}
                       </span>
                     </div>
+                    <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+                      {[
+                        ["all", "All"],
+                        ["active-today", "Active today"],
+                        ["last-7-days", "Last 7 days"],
+                        ["inactive", "Inactive"],
+                        ["never", "Never logged in"],
+                      ].map(([filterId, label]) => (
+                        <button
+                          type="button"
+                          key={filterId}
+                          onClick={() => setPlatformAccountFilter(filterId)}
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold transition ${
+                            platformAccountFilter === filterId
+                              ? "bg-indigo-600 text-white shadow-sm"
+                              : "bg-slate-100 text-slate-600 hover:bg-indigo-50"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                     <div className="mt-3 max-h-[640px] space-y-2 overflow-y-auto pr-1">
-                      {filteredPlatformUsers.map((user) => (
+                      {filteredPlatformUsers.map((user) => {
+                        const health = accountHealthForUser(user);
+                        return (
                         <button
                           type="button"
                           key={user.id}
@@ -3757,6 +4064,14 @@ function WorkspaceGate({ session, onLogout }) {
                               {user.fullName}
                             </p>
                             <div className="flex flex-wrap gap-2">
+                              <span
+                                className={`inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-bold ${health.badgeClass}`}
+                              >
+                                <span
+                                  className={`h-2 w-2 rounded-full ${health.dotClass}`}
+                                />
+                                {health.label}
+                              </span>
                               <span className="rounded-full bg-white px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
                                 {user.platformStatus || "active"}
                               </span>
@@ -3770,14 +4085,11 @@ function WorkspaceGate({ session, onLogout }) {
                           <p className="mt-1 text-sm text-slate-600">{user.email}</p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">
                             {user.familyCount} families - {user.logCount || 0} logs
-                            {user.lastLoginAt
-                              ? ` - Last login ${new Date(
-                                  user.lastLoginAt,
-                                ).toLocaleDateString()}`
-                              : " - Never logged in"}
+                            {" - "}Last seen: {lastSeenLabel(user.lastLoginAt)}
                           </p>
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                     </div>
 

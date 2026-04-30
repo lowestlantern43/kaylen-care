@@ -147,7 +147,17 @@ async function syncFamilySubscriptionFromStripe(familyId) {
 adminRouter.get(
   "/overview",
   asyncHandler(async (req, res) => {
-    const [families, users, children, logs, subscriptions] = await Promise.all([
+    const [
+      families,
+      users,
+      children,
+      logs,
+      subscriptions,
+      logsToday,
+      logsThisWeek,
+      activeUsersLast7Days,
+      newAccountsThisWeek,
+    ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM children WHERE deleted_at IS NULL"),
@@ -160,6 +170,38 @@ adminRouter.get(
           FROM subscriptions
         `,
       ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM care_logs
+          WHERE deleted_at IS NULL
+            AND created_at >= date_trunc('day', now())
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM care_logs
+          WHERE deleted_at IS NULL
+            AND created_at >= now() - interval '7 days'
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM users
+          WHERE deleted_at IS NULL
+            AND last_login_at >= now() - interval '7 days'
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM users
+          WHERE deleted_at IS NULL
+            AND created_at >= now() - interval '7 days'
+        `,
+      ),
     ]);
 
     res.json({
@@ -170,6 +212,10 @@ adminRouter.get(
         careLogs: logs.rows[0].count,
         activeSubscriptions: subscriptions.rows[0].active,
         inactiveSubscriptions: subscriptions.rows[0].inactive,
+        logsToday: logsToday.rows[0].count,
+        logsThisWeek: logsThisWeek.rows[0].count,
+        activeUsersLast7Days: activeUsersLast7Days.rows[0].count,
+        newAccountsThisWeek: newAccountsThisWeek.rows[0].count,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
@@ -354,7 +400,12 @@ adminRouter.get(
           COALESCE(s.plan, 'free') AS plan,
           count(DISTINCT fm.id)::int AS "memberCount",
           count(DISTINCT c.id)::int AS "childCount",
-          count(DISTINCT cl.id)::int AS "logCount"
+          count(DISTINCT cl.id)::int AS "logCount",
+          COALESCE(
+            array_agg(DISTINCT trim(concat_ws(' ', c.first_name, c.last_name)))
+              FILTER (WHERE c.id IS NOT NULL),
+            '{}'
+          ) AS "childNames"
         FROM families f
         LEFT JOIN users u ON u.id = f.created_by_user_id
         LEFT JOIN subscriptions s ON s.family_id = f.id
