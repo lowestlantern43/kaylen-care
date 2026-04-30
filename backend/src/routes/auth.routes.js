@@ -16,6 +16,7 @@ import {
   requirePassword,
   requireString,
 } from "../validators/simple.js";
+import { buildPlanAccess } from "../services/planAccess.js";
 
 export const authRouter = Router();
 
@@ -38,19 +39,29 @@ async function loadMemberships(userId) {
         fm.family_id AS "familyId",
         fm.role,
         f.name AS "familyName",
-        f.platform_status AS "platformStatus"
+        f.platform_status AS "platformStatus",
+        COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+        COALESCE(s.plan, 'trial') AS plan,
+        s.trial_ends_at AS "trialEndsAt",
+        s.access_paused_at AS "accessPausedAt",
+        count(DISTINCT c.id)::int AS "childCount",
+        count(DISTINCT active_fm.id)::int AS "memberCount"
       FROM family_members fm
       INNER JOIN families f ON f.id = fm.family_id
+      LEFT JOIN subscriptions s ON s.family_id = f.id
+      LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
+      LEFT JOIN family_members active_fm ON active_fm.family_id = f.id AND active_fm.deleted_at IS NULL
       WHERE fm.user_id = $1
         AND fm.deleted_at IS NULL
         AND f.deleted_at IS NULL
         AND f.platform_status <> 'suspended'
+      GROUP BY fm.family_id, fm.role, f.name, f.platform_status, s.status, s.plan, s.trial_ends_at, s.access_paused_at, fm.joined_at
       ORDER BY fm.joined_at ASC
     `,
     [userId],
   );
 
-  return rows;
+  return rows.map((row) => ({ ...row, access: buildPlanAccess(row) }));
 }
 
 authRouter.post(
@@ -112,7 +123,16 @@ authRouter.post(
         );
 
         await client.query(
-          "INSERT INTO subscriptions (family_id, status, plan) VALUES ($1, 'inactive', 'free')",
+          `
+            INSERT INTO subscriptions (
+              family_id,
+              status,
+              plan,
+              trial_started_at,
+              trial_ends_at
+            )
+            VALUES ($1, 'trialing', 'trial', now(), now() + interval '30 days')
+          `,
           [family.id],
         );
 

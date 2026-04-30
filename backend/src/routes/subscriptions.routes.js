@@ -94,6 +94,9 @@ subscriptionsRouter.get(
           stripe_subscription_id AS "stripeSubscriptionId",
           status,
           plan,
+          trial_started_at AS "trialStartedAt",
+          trial_ends_at AS "trialEndsAt",
+          access_paused_at AS "accessPausedAt",
           current_period_end AS "currentPeriodEnd",
           cancel_at_period_end AS "cancelAtPeriodEnd"
         FROM subscriptions
@@ -106,8 +109,8 @@ subscriptionsRouter.get(
     const subscription = await syncFamilySubscriptionIfNeeded(
       rows[0] || {
         familyId: req.familyMember.family_id,
-        status: "inactive",
-        plan: "free",
+        status: "trialing",
+        plan: "trial",
       },
     );
 
@@ -150,8 +153,15 @@ subscriptionsRouter.post(
 
       await query(
         `
-          INSERT INTO subscriptions (family_id, stripe_customer_id, status, plan)
-          VALUES ($1, $2, 'inactive', 'free')
+          INSERT INTO subscriptions (
+            family_id,
+            stripe_customer_id,
+            status,
+            plan,
+            trial_started_at,
+            trial_ends_at
+          )
+          VALUES ($1, $2, 'trialing', 'trial', now(), now() + interval '30 days')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,

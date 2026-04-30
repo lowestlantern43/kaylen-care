@@ -5,6 +5,7 @@ import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
+import { buildPlanAccess, normalisePlan, normaliseStatus } from "../services/planAccess.js";
 import { listStripeCustomerSubscriptions } from "../services/stripe.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
@@ -24,6 +25,8 @@ adminRouter.use(requireAuth, requirePlatformAdmin);
 
 const memberRoles = ["owner", "parent", "carer", "viewer"];
 const issueStatuses = ["new", "in_progress", "resolved"];
+const planValues = ["trial", "family", "beta", "professional"];
+const statusValues = ["inactive", "trialing", "active", "past_due", "canceled", "cancelled"];
 
 function isMissingFeedbackTable(error) {
   return error?.code === "42P01";
@@ -165,8 +168,8 @@ adminRouter.get(
       query(
         `
           SELECT
-            count(*) FILTER (WHERE status IN ('active', 'trialing'))::int AS active,
-            count(*) FILTER (WHERE status NOT IN ('active', 'trialing'))::int AS inactive
+            count(*) FILTER (WHERE status IN ('active', 'trialing') OR plan = 'beta')::int AS active,
+            count(*) FILTER (WHERE status NOT IN ('active', 'trialing') AND plan <> 'beta')::int AS inactive
           FROM subscriptions
         `,
       ),
@@ -412,7 +415,10 @@ adminRouter.get(
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
           COALESCE(s.status, 'inactive') AS "subscriptionStatus",
-          COALESCE(s.plan, 'free') AS plan,
+          COALESCE(s.plan, 'trial') AS plan,
+          s.trial_ends_at AS "trialEndsAt",
+          s.access_paused_at AS "accessPausedAt",
+          s.access_pause_reason AS "accessPauseReason",
           count(DISTINCT fm.id)::int AS "memberCount",
           count(DISTINCT c.id)::int AS "childCount",
           count(DISTINCT cl.id)::int AS "logCount",
@@ -428,13 +434,16 @@ adminRouter.get(
         LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.family_id = f.id AND cl.deleted_at IS NULL
         WHERE f.deleted_at IS NULL
-        GROUP BY f.id, u.full_name, u.email, s.status, s.plan
+        GROUP BY f.id, u.full_name, u.email, s.status, s.plan, s.trial_ends_at, s.access_paused_at, s.access_pause_reason
         ORDER BY f.created_at DESC
         LIMIT 100
       `,
     );
 
-    res.json({ data: rows, error: null });
+    res.json({
+      data: rows.map((row) => ({ ...row, access: buildPlanAccess(row) })),
+      error: null,
+    });
   }),
 );
 
@@ -454,8 +463,12 @@ adminRouter.get(
           f.created_at AS "createdAt",
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
-          COALESCE(s.status, 'inactive') AS "subscriptionStatus",
-          COALESCE(s.plan, 'free') AS plan,
+          COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+          COALESCE(s.plan, 'trial') AS plan,
+          s.trial_started_at AS "trialStartedAt",
+          s.trial_ends_at AS "trialEndsAt",
+          s.access_paused_at AS "accessPausedAt",
+          s.access_pause_reason AS "accessPauseReason",
           s.current_period_end AS "currentPeriodEnd",
           s.stripe_customer_id AS "stripeCustomerId",
           s.stripe_subscription_id AS "stripeSubscriptionId",
@@ -557,6 +570,11 @@ adminRouter.get(
       data: {
         family: {
           ...family.rows[0],
+          access: buildPlanAccess({
+            ...family.rows[0],
+            childCount: children.rows.length,
+            memberCount: members.rows.length,
+          }),
           stripeCustomerUrl: stripeDashboardUrl(
             "customers",
             family.rows[0].stripeCustomerId,
@@ -616,6 +634,83 @@ adminRouter.patch(
     });
 
     res.json({ data: rows[0], error: null });
+  }),
+);
+
+adminRouter.patch(
+  "/families/:familyId/plan",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const plan = normalisePlan(requireEnum(req.body, "plan", planValues, "Plan"));
+    const status = normaliseStatus(
+      requireEnum(req.body, "status", statusValues, "Status"),
+      plan,
+    );
+    const trialEndsAt = optionalString(req.body, "trialEndsAt");
+    const accessPaused = Boolean(req.body.accessPaused);
+    const accessPauseReason = optionalString(req.body, "accessPauseReason") || "";
+
+    const family = await query(
+      "SELECT id FROM families WHERE id = $1 AND deleted_at IS NULL LIMIT 1",
+      [familyId],
+    );
+
+    if (!family.rows[0]) {
+      throw notFound("Family not found.");
+    }
+
+    const { rows } = await query(
+      `
+        INSERT INTO subscriptions (
+          family_id,
+          plan,
+          status,
+          trial_started_at,
+          trial_ends_at,
+          access_paused_at,
+          access_pause_reason
+        )
+        VALUES ($1, $2, $3, now(), $4, CASE WHEN $5 THEN now() ELSE NULL END, $6)
+        ON CONFLICT (family_id)
+        DO UPDATE SET
+          plan = EXCLUDED.plan,
+          status = EXCLUDED.status,
+          trial_started_at = COALESCE(subscriptions.trial_started_at, EXCLUDED.trial_started_at),
+          trial_ends_at = EXCLUDED.trial_ends_at,
+          access_paused_at = EXCLUDED.access_paused_at,
+          access_pause_reason = EXCLUDED.access_pause_reason
+        RETURNING
+          family_id AS "familyId",
+          plan,
+          status AS "subscriptionStatus",
+          trial_started_at AS "trialStartedAt",
+          trial_ends_at AS "trialEndsAt",
+          access_paused_at AS "accessPausedAt",
+          access_pause_reason AS "accessPauseReason",
+          current_period_end AS "currentPeriodEnd"
+      `,
+      [
+        familyId,
+        plan,
+        status,
+        trialEndsAt || null,
+        accessPaused,
+        accessPauseReason,
+      ],
+    );
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "subscription",
+      entityId: familyId,
+      action: "platform_plan_updated",
+      metadata: { plan, status, trialEndsAt, accessPaused, accessPauseReason },
+    });
+
+    res.json({
+      data: { ...rows[0], access: buildPlanAccess(rows[0]) },
+      error: null,
+    });
   }),
 );
 
@@ -830,18 +925,34 @@ adminRouter.get(
           u.created_at AS "createdAt",
           u.last_login_at AS "lastLoginAt",
           count(DISTINCT fm.family_id)::int AS "familyCount",
-          count(DISTINCT cl.id)::int AS "logCount"
+          count(DISTINCT cl.id)::int AS "logCount",
+          primary_subscription.plan AS "plan",
+          primary_subscription.status AS "subscriptionStatus",
+          primary_subscription.trial_ends_at AS "trialEndsAt",
+          primary_subscription.access_paused_at AS "accessPausedAt"
         FROM users u
         LEFT JOIN family_members fm ON fm.user_id = u.id AND fm.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.created_by_user_id = u.id AND cl.deleted_at IS NULL
+        LEFT JOIN LATERAL (
+          SELECT s.plan, s.status, s.trial_ends_at, s.access_paused_at
+          FROM family_members pfm
+          INNER JOIN subscriptions s ON s.family_id = pfm.family_id
+          WHERE pfm.user_id = u.id
+            AND pfm.deleted_at IS NULL
+          ORDER BY pfm.joined_at ASC
+          LIMIT 1
+        ) primary_subscription ON true
         WHERE u.deleted_at IS NULL
-        GROUP BY u.id
+        GROUP BY u.id, primary_subscription.plan, primary_subscription.status, primary_subscription.trial_ends_at, primary_subscription.access_paused_at
         ORDER BY u.created_at DESC
         LIMIT 100
       `,
     );
 
-    res.json({ data: rows, error: null });
+    res.json({
+      data: rows.map((row) => ({ ...row, access: buildPlanAccess(row) })),
+      error: null,
+    });
   }),
 );
 
@@ -883,7 +994,10 @@ adminRouter.get(
             f.id AS "familyId",
             f.name AS "familyName",
             f.platform_status AS "familyPlatformStatus",
-            COALESCE(s.status, 'inactive') AS "subscriptionStatus"
+            COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+            COALESCE(s.plan, 'trial') AS plan,
+            s.trial_ends_at AS "trialEndsAt",
+            s.access_paused_at AS "accessPausedAt"
           FROM family_members fm
           INNER JOIN families f ON f.id = fm.family_id
           LEFT JOIN subscriptions s ON s.family_id = f.id

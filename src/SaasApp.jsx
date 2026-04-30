@@ -19,6 +19,155 @@ const cleanFormText = (value) => {
   return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
 };
 
+const planBadgeToneClasses = {
+  sky: "border-sky-200 bg-sky-50 text-sky-700",
+  emerald: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  indigo: "border-indigo-200 bg-indigo-50 text-indigo-700",
+  amber: "border-amber-200 bg-amber-50 text-amber-800",
+  rose: "border-rose-200 bg-rose-50 text-rose-700",
+  slate: "border-slate-200 bg-slate-50 text-slate-700",
+};
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const asSafeDate = (value) => {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const planAccessFor = (record = {}) => {
+  const plan = String(record.plan || "trial").toLowerCase() === "free" ? "trial" : String(record.plan || "trial").toLowerCase();
+  const status = String(
+    record.subscriptionStatus || record.status || "trialing",
+  ).toLowerCase();
+  const trialEndsAt = record.trialEndsAt || record.trial_ends_at || "";
+  const paused = Boolean(record.accessPausedAt || record.access_paused_at);
+  const trialEndDate = asSafeDate(trialEndsAt);
+  const trialDaysLeft = trialEndDate
+    ? Math.max(0, Math.ceil((trialEndDate.getTime() - Date.now()) / DAY_MS))
+    : 0;
+  const isTrial = plan === "trial" || status === "trialing";
+  const trialExpired = isTrial && trialDaysLeft <= 0;
+  const cancelled = ["canceled", "cancelled", "unpaid", "incomplete_expired"].includes(status);
+  const childCount = Number(record.childCount || record.child_count || 0);
+  const memberCount = Number(record.memberCount || record.member_count || 0);
+
+  if (paused) {
+    return {
+      label: "View only",
+      tone: "amber",
+      reason: "paused",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
+
+  if (plan === "beta") {
+    return {
+      label: "Beta Tester",
+      tone: "indigo",
+      reason: "beta",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  if (cancelled) {
+    return {
+      label: "Cancelled",
+      tone: "rose",
+      reason: "cancelled",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
+
+  if (isTrial && !trialExpired) {
+    return {
+      label: `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`,
+      tone: "sky",
+      reason: "trial",
+      canAddLogs: true,
+      canAddChild: childCount < 1,
+      canInviteCarer: memberCount < 2,
+    };
+  }
+
+  if (isTrial && trialExpired) {
+    return {
+      label: "View only",
+      tone: "amber",
+      reason: "expired",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
+
+  if (["family", "professional"].includes(plan) && ["active", "trialing"].includes(status)) {
+    return {
+      label: "Active",
+      tone: "emerald",
+      reason: "active",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  return {
+    label: status === "inactive" ? "Inactive" : "View only",
+    tone: status === "inactive" ? "slate" : "amber",
+    reason: status || "inactive",
+    canAddLogs: false,
+    canAddChild: false,
+    canInviteCarer: false,
+  };
+};
+
+function PlanBadge({ record, className = "" }) {
+  const access = record?.access || planAccessFor(record);
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-black ${planBadgeToneClasses[access.tone] || planBadgeToneClasses.slate} ${className}`}
+    >
+      {access.label}
+    </span>
+  );
+}
+
+function AccountAccessPreview({ record }) {
+  const access = record?.access || planAccessFor(record);
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
+      <summary className="cursor-pointer font-bold text-slate-800">
+        Account Access Preview
+      </summary>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        {[
+          ["Can add logs", access.canAddLogs],
+          ["Can add child", access.canAddChild],
+          ["Can invite carer", access.canInviteCarer],
+          ["Reason", access.reason],
+        ].map(([label, value]) => (
+          <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              {label}
+            </p>
+            <p className="mt-0.5 font-black capitalize text-slate-900">
+              {typeof value === "boolean" ? (value ? "Yes" : "No") : value}
+            </p>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 const issueStatusLabels = {
   new: "New",
   in_progress: "In Progress",
@@ -1005,6 +1154,13 @@ function WorkspaceGate({ session, onLogout }) {
       ? family.emergencyContacts
       : family.emergency_contacts || [],
     role: family.role,
+    subscriptionStatus: family.subscriptionStatus || family.status || "trialing",
+    plan: family.plan || "trial",
+    trialEndsAt: family.trialEndsAt || family.trial_ends_at || "",
+    accessPausedAt: family.accessPausedAt || family.access_paused_at || "",
+    childCount: family.childCount || family.child_count || 0,
+    memberCount: family.memberCount || family.member_count || 0,
+    access: family.access || planAccessFor(family),
   });
   const childDisplayName = (child) =>
     child?.firstName || child?.first_name || "Child";
@@ -1144,6 +1300,12 @@ function WorkspaceGate({ session, onLogout }) {
   const [platformPasswordForm, setPlatformPasswordForm] = useState({
     password: "",
   });
+  const [platformPlanForm, setPlatformPlanForm] = useState({
+    plan: "trial",
+    status: "trialing",
+    trialEndsAt: "",
+    accessPaused: false,
+  });
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
@@ -1157,6 +1319,8 @@ function WorkspaceGate({ session, onLogout }) {
     () => children.find((child) => child.id === selectedChildId),
     [children, selectedChildId],
   );
+
+  const selectedFamilyAccess = selectedFamily?.access || planAccessFor(selectedFamily);
 
   const groupedCareOptions = useMemo(
     () => ({
@@ -1697,6 +1861,10 @@ function WorkspaceGate({ session, onLogout }) {
 
   const sendInvite = async (event) => {
     event.preventDefault();
+    if (!selectedFamilyAccess.canInviteCarer) {
+      setError("This account is currently view-only and cannot invite carers.");
+      return;
+    }
     setInviteResult("");
     setError("");
 
@@ -1765,6 +1933,10 @@ function WorkspaceGate({ session, onLogout }) {
 
   const addAdminChild = async (event) => {
     event.preventDefault();
+    if (!selectedFamilyAccess.canAddChild) {
+      setError("This plan cannot add another child right now.");
+      return;
+    }
     if (!selectedFamilyId || !childName.trim()) return;
 
     setIsSavingChild(true);
@@ -2218,7 +2390,16 @@ function WorkspaceGate({ session, onLogout }) {
     setPlatformActionMessage("");
 
     try {
-      setSelectedPlatformFamily(await api.adminFamilyDetail(familyId));
+      const detail = await api.adminFamilyDetail(familyId);
+      setSelectedPlatformFamily(detail);
+      setPlatformPlanForm({
+        plan: detail.family?.plan || "trial",
+        status: detail.family?.subscriptionStatus || "trialing",
+        trialEndsAt: detail.family?.trialEndsAt
+          ? String(detail.family.trialEndsAt).slice(0, 10)
+          : "",
+        accessPaused: Boolean(detail.family?.accessPausedAt),
+      });
       setPlatformAdminTab("families");
     } catch (caughtError) {
       setError(caughtError.message);
@@ -2421,6 +2602,53 @@ function WorkspaceGate({ session, onLogout }) {
     } finally {
       setIsPlatformSaving(false);
     }
+  };
+
+  const updatePlatformFamilyPlan = async (updates = {}) => {
+    if (!selectedPlatformFamily?.family?.id) return;
+
+    const payload = {
+      ...platformPlanForm,
+      ...updates,
+    };
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await api.adminUpdateFamilyPlan(selectedPlatformFamily.family.id, {
+        plan: payload.plan,
+        status: payload.status,
+        trialEndsAt: payload.trialEndsAt,
+        accessPaused: Boolean(payload.accessPaused),
+        accessPauseReason: payload.accessPaused ? "Paused by owner platform" : "",
+      });
+      const [overview, families] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+      ]);
+      setPlatformData((current) => ({ ...current, overview, families }));
+      await openPlatformFamily(selectedPlatformFamily.family.id);
+      setPlatformActionMessage("Plan and access controls updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const extendPlatformTrial = (days) => {
+    const current = asSafeDate(platformPlanForm.trialEndsAt) || new Date();
+    const next = new Date(current);
+    next.setDate(next.getDate() + days);
+    const trialEndsAt = next.toISOString().slice(0, 10);
+    setPlatformPlanForm((form) => ({ ...form, trialEndsAt }));
+    updatePlatformFamilyPlan({
+      plan: platformPlanForm.plan || "trial",
+      status: platformPlanForm.status || "trialing",
+      trialEndsAt,
+    });
   };
 
   const savePlatformUserControls = async () => {
@@ -2784,6 +3012,7 @@ function WorkspaceGate({ session, onLogout }) {
             title: user.fullName || user.email,
             subtitle: user.email,
             health: accountHealthForUser(user),
+            access: user.access || planAccessFor(user),
             onSelect: () => openPlatformUser(user.id),
             onSnapshot: () => openPlatformSnapshotForUser(user.id),
             onViewAs: () => startPlatformViewAsUser(user.id),
@@ -2797,6 +3026,7 @@ function WorkspaceGate({ session, onLogout }) {
             type: "Family",
             title: family.name,
             subtitle: family.ownerEmail || family.ownerName || "Family account",
+            access: family.access || planAccessFor(family),
             onSelect: () => openPlatformFamily(family.id),
             onSnapshot: () => openPlatformSnapshotForFamily(family.id),
             haystack: [
@@ -2944,9 +3174,17 @@ function WorkspaceGate({ session, onLogout }) {
               </p>
             ) : null}
 
-            <button className={buttonClass} disabled={isSavingChild}>
+            <button
+              className={buttonClass}
+              disabled={isSavingChild || !selectedFamilyAccess.canAddChild}
+            >
               {isSavingChild ? "Adding..." : "Add child"}
             </button>
+            {!selectedFamilyAccess.canAddChild ? (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                This account is view-only or has reached its child limit.
+              </p>
+            ) : null}
           </form>
         </div>
       </div>
@@ -2971,6 +3209,9 @@ function WorkspaceGate({ session, onLogout }) {
                   <p className="truncate text-sm font-semibold text-slate-600">
                     {selectedChild ? childDisplayName(selectedChild) : "Choose child"}
                   </p>
+                  <div className="mt-2">
+                    <PlanBadge record={selectedFamily} />
+                  </div>
                 </div>
               </div>
 
@@ -3552,7 +3793,17 @@ function WorkspaceGate({ session, onLogout }) {
                     <option value="carer">Carer</option>
                     <option value="viewer">Viewer</option>
                   </select>
-                  <button className={buttonClass}>Create invite</button>
+                  <button
+                    className={buttonClass}
+                    disabled={!selectedFamilyAccess.canInviteCarer}
+                  >
+                    Create invite
+                  </button>
+                  {!selectedFamilyAccess.canInviteCarer ? (
+                    <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                      This account is view-only or has reached the trial member limit.
+                    </p>
+                  ) : null}
                 </form>
 
                 {inviteResult ? (
@@ -3716,7 +3967,8 @@ function WorkspaceGate({ session, onLogout }) {
                         className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                         disabled={
                           isSavingChildProfile ||
-                          !childEditForm.firstName.trim()
+                          !childEditForm.firstName.trim() ||
+                          !selectedFamilyAccess.canAddLogs
                         }
                       >
                         {isSavingChildProfile ? "Saving..." : "Save child"}
@@ -3735,7 +3987,11 @@ function WorkspaceGate({ session, onLogout }) {
                       />
                       <button
                         className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={isSavingChild || !childName.trim()}
+                        disabled={
+                          isSavingChild ||
+                          !childName.trim() ||
+                          !selectedFamilyAccess.canAddChild
+                        }
                       >
                         {isSavingChild ? "Adding..." : "Add child"}
                       </button>
@@ -4497,6 +4753,9 @@ function WorkspaceGate({ session, onLogout }) {
                                 {result.health.label}
                               </span>
                             ) : null}
+                            {result.access ? (
+                              <PlanBadge record={result} className="text-[10px]" />
+                            ) : null}
                             {result.onSnapshot ? (
                               <span
                                 role="button"
@@ -4817,9 +5076,7 @@ function WorkspaceGate({ session, onLogout }) {
                             <p className="font-semibold text-slate-900">
                               {family.name}
                             </p>
-                            <span className="rounded-full bg-white px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                              {family.subscriptionStatus}
-                            </span>
+                            <PlanBadge record={family} />
                           </div>
                           <p className="mt-1 text-sm text-slate-600">
                             Owner: {family.ownerName || "Unknown"} ·{" "}
@@ -4938,6 +5195,7 @@ function WorkspaceGate({ session, onLogout }) {
                                   Admin
                                 </span>
                               ) : null}
+                              <PlanBadge record={user} />
                             </div>
                           </div>
                           <p className="mt-1 text-sm text-slate-600">{user.email}</p>
@@ -5309,9 +5567,9 @@ function WorkspaceGate({ session, onLogout }) {
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                             Subscription
                           </p>
-                          <p className="mt-1 font-bold text-slate-900">
-                            {selectedPlatformFamily.family.subscriptionStatus}
-                          </p>
+                          <div className="mt-1">
+                            <PlanBadge record={selectedPlatformFamily.family} />
+                          </div>
                           <p className="text-sm text-slate-600">
                             {selectedPlatformFamily.family.plan}
                           </p>
@@ -5326,6 +5584,8 @@ function WorkspaceGate({ session, onLogout }) {
                           </p>
                         </div>
                       </div>
+
+                      <AccountAccessPreview record={selectedPlatformFamily.family} />
 
                       <div className="grid gap-4 lg:grid-cols-3">
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -5454,6 +5714,99 @@ function WorkspaceGate({ session, onLogout }) {
                           <h4 className="font-bold text-slate-900">
                             Platform controls
                           </h4>
+                          <div className="mt-3 rounded-xl border border-indigo-100 bg-white p-3">
+                            <h5 className="text-sm font-black text-slate-900">
+                              Plan and trial access
+                            </h5>
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                                Plan
+                                <select
+                                  className={inputClass}
+                                  value={platformPlanForm.plan}
+                                  onChange={(event) =>
+                                    setPlatformPlanForm((form) => ({
+                                      ...form,
+                                      plan: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="trial">Trial</option>
+                                  <option value="family">Family</option>
+                                  <option value="beta">Beta</option>
+                                  <option value="professional">Professional</option>
+                                </select>
+                              </label>
+                              <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                                Status
+                                <select
+                                  className={inputClass}
+                                  value={platformPlanForm.status}
+                                  onChange={(event) =>
+                                    setPlatformPlanForm((form) => ({
+                                      ...form,
+                                      status: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="trialing">Trialing</option>
+                                  <option value="active">Active</option>
+                                  <option value="inactive">Inactive</option>
+                                  <option value="past_due">Past due</option>
+                                  <option value="canceled">Cancelled</option>
+                                </select>
+                              </label>
+                              <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
+                                Trial end date
+                                <input
+                                  className={inputClass}
+                                  type="date"
+                                  value={platformPlanForm.trialEndsAt}
+                                  onChange={(event) =>
+                                    setPlatformPlanForm((form) => ({
+                                      ...form,
+                                      trialEndsAt: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </label>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {[7, 14, 30].map((days) => (
+                                <button
+                                  key={days}
+                                  type="button"
+                                  onClick={() => extendPlatformTrial(days)}
+                                  disabled={isPlatformSaving}
+                                  className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-bold text-sky-800 disabled:opacity-60"
+                                >
+                                  +{days} days
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() => updatePlatformFamilyPlan()}
+                                disabled={isPlatformSaving}
+                                className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                              >
+                                Save plan
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updatePlatformFamilyPlan({
+                                    accessPaused: !platformPlanForm.accessPaused,
+                                  })
+                                }
+                                disabled={isPlatformSaving}
+                                className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 disabled:opacity-60"
+                              >
+                                {platformPlanForm.accessPaused
+                                  ? "Reactivate access"
+                                  : "Pause access"}
+                              </button>
+                            </div>
+                          </div>
                           <label className="mt-3 block text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                             Workspace status
                           </label>
@@ -5928,6 +6281,7 @@ function WorkspaceGate({ session, onLogout }) {
         onCreateCareOption={addCareOptionFromDiary}
         childProfile={childProfile}
         importantEvents={importantEvents}
+        accountAccess={selectedFamilyAccess}
         useSaasApi
       />
       </>

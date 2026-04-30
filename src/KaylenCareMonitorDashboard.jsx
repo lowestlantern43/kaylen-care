@@ -349,6 +349,7 @@ export default function KaylenCareMonitorDashboard({
   onCreateCareOption,
   childProfile = {},
   importantEvents = [],
+  accountAccess = null,
   useSaasApi = false,
 } = {}) {
   const APP_PASSWORD = "030920";
@@ -6519,6 +6520,12 @@ export default function KaylenCareMonitorDashboard({
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
+        {accountAccess && !accountAccess.canAddLogs ? (
+          <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+            This family account is view-only. Existing diary entries, reports and
+            Care Snapshot are still available, but adding or editing logs is disabled.
+          </div>
+        ) : null}
         {isRefreshing ? (
           <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 md:hidden">
             Refreshing diary...

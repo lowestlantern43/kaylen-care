@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireFamilyMember, requireRole } from "../middleware/familyAccess.js";
+import { requirePlanAccess } from "../middleware/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import { requireEmail, requireString, requireUuid } from "../validators/simple.js";
@@ -106,6 +107,7 @@ membersRouter.delete(
 membersRouter.get(
   "/invitations",
   requireRole("owner"),
+  requirePlanAccess("inviteCarer"),
   asyncHandler(async (req, res) => {
     const { rows } = await query(
       `

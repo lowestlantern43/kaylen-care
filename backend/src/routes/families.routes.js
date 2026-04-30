@@ -2,7 +2,10 @@ import { Router } from "express";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireFamilyMember, requireRole } from "../middleware/familyAccess.js";
+import { requirePlanAccess } from "../middleware/planAccess.js";
+import { buildPlanAccess } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { badRequest } from "../utils/httpError.js";
 import { optionalString, requireString } from "../validators/simple.js";
 
 export const familiesRouter = Router();
@@ -37,18 +40,31 @@ familiesRouter.get(
           f.address,
           f.emergency_contacts AS "emergencyContacts",
           fm.role,
+          COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+          COALESCE(s.plan, 'trial') AS plan,
+          s.trial_ends_at AS "trialEndsAt",
+          s.access_paused_at AS "accessPausedAt",
+          count(DISTINCT c.id)::int AS "childCount",
+          count(DISTINCT active_fm.id)::int AS "memberCount",
           f.created_at AS "createdAt"
         FROM family_members fm
         INNER JOIN families f ON f.id = fm.family_id
+        LEFT JOIN subscriptions s ON s.family_id = f.id
+        LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
+        LEFT JOIN family_members active_fm ON active_fm.family_id = f.id AND active_fm.deleted_at IS NULL
         WHERE fm.user_id = $1
           AND fm.deleted_at IS NULL
           AND f.deleted_at IS NULL
+        GROUP BY f.id, fm.role, s.status, s.plan, s.trial_ends_at, s.access_paused_at
         ORDER BY f.created_at ASC
       `,
       [req.user.id],
     );
 
-    res.json({ data: rows, error: null });
+    res.json({
+      data: rows.map((row) => ({ ...row, access: buildPlanAccess(row) })),
+      error: null,
+    });
   }),
 );
 
@@ -59,6 +75,22 @@ familiesRouter.post(
     const timezone = optionalString(req.body, "timezone") || "Europe/London";
 
     const family = await withTransaction(async (client) => {
+      const existingFamilies = await client.query(
+        `
+          SELECT count(*)::int AS count
+          FROM family_members fm
+          INNER JOIN families f ON f.id = fm.family_id
+          WHERE fm.user_id = $1
+            AND fm.deleted_at IS NULL
+            AND f.deleted_at IS NULL
+        `,
+        [req.user.id],
+      );
+
+      if (existingFamilies.rows[0]?.count > 0) {
+        throw badRequest("Trial accounts can use one family workspace.");
+      }
+
       const created = await client.query(
         `
           INSERT INTO families (name, timezone, created_by_user_id)
@@ -74,7 +106,16 @@ familiesRouter.post(
       );
 
       await client.query(
-        "INSERT INTO subscriptions (family_id, status, plan) VALUES ($1, 'inactive', 'free')",
+        `
+          INSERT INTO subscriptions (
+            family_id,
+            status,
+            plan,
+            trial_started_at,
+            trial_ends_at
+          )
+          VALUES ($1, 'trialing', 'trial', now(), now() + interval '30 days')
+        `,
         [created.rows[0].id],
       );
 
@@ -104,6 +145,7 @@ familiesRouter.patch(
   "/:familyId",
   requireFamilyMember,
   requireRole("owner"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const name = requireString(req.body, "name", "Family name");
     const timezone = optionalString(req.body, "timezone") || "Europe/London";

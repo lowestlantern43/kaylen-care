@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireAtLeastRole, requireFamilyMember } from "../middleware/familyAccess.js";
+import { requirePlanAccess } from "../middleware/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import {
@@ -134,6 +135,7 @@ careLogsRouter.get(
 careLogsRouter.post(
   "/",
   requireAtLeastRole("carer"),
+  requirePlanAccess("addLog"),
   asyncHandler(async (req, res) => {
     const familyId = req.familyMember.family_id;
     const childId = requireUuid(req.body.childId, "Child ID");
@@ -215,6 +217,7 @@ careLogsRouter.get(
 careLogsRouter.patch(
   "/:logId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("editLog"),
   asyncHandler(async (req, res) => {
     const familyId = req.familyMember.family_id;
     const logId = requireUuid(req.params.logId, "Log ID");
@@ -261,6 +264,7 @@ careLogsRouter.patch(
 careLogsRouter.delete(
   "/:logId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("deleteLog"),
   asyncHandler(async (req, res) => {
     const familyId = req.familyMember.family_id;
     const logId = requireUuid(req.params.logId, "Log ID");

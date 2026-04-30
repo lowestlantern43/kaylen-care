@@ -2,6 +2,7 @@ import { Router } from "express";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireAtLeastRole, requireFamilyMember } from "../middleware/familyAccess.js";
+import { requirePlanAccess } from "../middleware/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import {
@@ -102,6 +103,7 @@ childrenRouter.get(
 childrenRouter.post(
   "/",
   requireAtLeastRole("parent"),
+  requirePlanAccess("addChild"),
   asyncHandler(async (req, res) => {
     const firstName = requireString(req.body, "firstName", "First name");
     const lastName = optionalString(req.body, "lastName");
@@ -152,6 +154,7 @@ childrenRouter.post(
 childrenRouter.patch(
   "/:childId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     const firstName = requireString(req.body, "firstName", "First name");
@@ -245,6 +248,7 @@ childrenRouter.get(
 childrenRouter.put(
   "/:childId/profile",
   requireAtLeastRole("parent"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     await assertChildInFamily(childId, req.familyMember.family_id);
@@ -330,6 +334,7 @@ childrenRouter.get(
 childrenRouter.post(
   "/:childId/important-events",
   requireAtLeastRole("carer"),
+  requirePlanAccess("addLog"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     await assertChildInFamily(childId, req.familyMember.family_id);
@@ -396,6 +401,7 @@ childrenRouter.post(
 childrenRouter.delete(
   "/:childId/important-events/:eventId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("deleteLog"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     const eventId = requireUuid(req.params.eventId, "Important event ID");
@@ -452,6 +458,7 @@ childrenRouter.get(
 childrenRouter.post(
   "/:childId/care-options",
   requireAtLeastRole("parent"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     const category = requireEnum(req.body, "category", [
@@ -519,6 +526,7 @@ childrenRouter.post(
 childrenRouter.delete(
   "/:childId/care-options/:optionId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
     const optionId = requireUuid(req.params.optionId, "Option ID");
@@ -547,6 +555,7 @@ childrenRouter.delete(
 childrenRouter.delete(
   "/:childId",
   requireAtLeastRole("parent"),
+  requirePlanAccess("write"),
   asyncHandler(async (req, res) => {
     const childId = requireUuid(req.params.childId, "Child ID");
 

@@ -251,6 +251,11 @@ export const api = {
     request(`/admin/families/${familyId}/sync-stripe`, {
       method: "POST",
     }),
+  adminUpdateFamilyPlan: (familyId, payload) =>
+    request(`/admin/families/${familyId}/plan`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   adminAddFamilyMember: (familyId, payload) =>
     request(`/admin/families/${familyId}/members`, {
       method: "POST",

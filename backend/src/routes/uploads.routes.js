@@ -4,6 +4,7 @@ import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
+import { getFamilyPlanAccess } from "../services/planAccess.js";
 import { requireEnum, requireString, requireUuid } from "../validators/simple.js";
 import {
   buildProfilePhotoObjectKey,
@@ -38,6 +39,11 @@ async function assertWritableChild({ familyId, childId, userId }) {
 
   if (!writableRoles.has(membership.rows[0].role)) {
     throw forbidden("Only owners and parents can update child profile photos.");
+  }
+
+  const access = await getFamilyPlanAccess(familyId);
+  if (!access.canEditLogs) {
+    throw forbidden("This family account is currently view-only.");
   }
 
   const child = await query(
