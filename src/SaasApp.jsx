@@ -189,8 +189,8 @@ function ChildPhotoPreview({ child, url }) {
 
   if (hasFailed) {
     return (
-      <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 text-xs font-bold text-amber-800">
-        Check permissions
+      <div className="flex h-20 w-32 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-2 text-center text-xs font-bold text-amber-800">
+        Photo uploaded but cannot be viewed — check storage permissions.
       </div>
     );
   }
@@ -1057,6 +1057,13 @@ function WorkspaceGate({ session, onLogout }) {
   const [isSavingChild, setIsSavingChild] = useState(false);
   const [isSavingChildProfile, setIsSavingChildProfile] = useState(false);
   const [isUploadingChildPhoto, setIsUploadingChildPhoto] = useState(false);
+  const [childPhotoCrop, setChildPhotoCrop] = useState(null);
+  const [childPhotoCropZoom, setChildPhotoCropZoom] = useState(1);
+  const [childPhotoCropPosition, setChildPhotoCropPosition] = useState({
+    x: 0,
+    y: 0,
+  });
+  const [childPhotoCropDrag, setChildPhotoCropDrag] = useState(null);
   const [newRegularFood, setNewRegularFood] = useState("");
   const [newSavedLocation, setNewSavedLocation] = useState("");
   const [isSavingCareOption, setIsSavingCareOption] = useState(false);
@@ -1507,15 +1514,106 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
-  const uploadSelectedChildPhoto = async (event) => {
+  const prepareSelectedChildPhoto = async (event) => {
     const file = event.target.files?.[0];
     if (!file || !selectedFamilyId || !selectedChildId) return;
+
+    setError("");
+    setChildPhotoPreviewError("");
+    event.target.value = "";
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      setError("Profile photos must be JPG, PNG, or WebP images.");
+      return;
+    }
+
+    try {
+      const source = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error("Could not read that image."));
+        reader.readAsDataURL(file);
+      });
+
+      setChildPhotoCrop({
+        source,
+        fileName: file.name || "profile-photo",
+      });
+      setChildPhotoCropZoom(1);
+      setChildPhotoCropPosition({ x: 0, y: 0 });
+    } catch (caughtError) {
+      setError(caughtError.message);
+    }
+  };
+
+  const createCroppedChildPhotoFile = async () => {
+    if (!childPhotoCrop?.source) {
+      throw new Error("Choose a photo first.");
+    }
+
+    const image = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error("Could not load that image."));
+      img.src = childPhotoCrop.source;
+    });
+
+    const outputSize = 720;
+    const canvas = document.createElement("canvas");
+    canvas.width = outputSize;
+    canvas.height = outputSize;
+    const context = canvas.getContext("2d");
+
+    const smallestSide = Math.min(image.naturalWidth, image.naturalHeight);
+    const cropSize = smallestSide / childPhotoCropZoom;
+    const maxShiftX = Math.max(0, (image.naturalWidth - cropSize) / 2);
+    const maxShiftY = Math.max(0, (image.naturalHeight - cropSize) / 2);
+    const sourceX =
+      image.naturalWidth / 2 -
+      cropSize / 2 +
+      (-childPhotoCropPosition.x / 100) * maxShiftX;
+    const sourceY =
+      image.naturalHeight / 2 -
+      cropSize / 2 +
+      (-childPhotoCropPosition.y / 100) * maxShiftY;
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, outputSize, outputSize);
+    context.drawImage(
+      image,
+      Math.max(0, Math.min(image.naturalWidth - cropSize, sourceX)),
+      Math.max(0, Math.min(image.naturalHeight - cropSize, sourceY)),
+      cropSize,
+      cropSize,
+      0,
+      0,
+      outputSize,
+      outputSize,
+    );
+
+    const blob = await new Promise((resolve, reject) =>
+      canvas.toBlob(
+        (createdBlob) =>
+          createdBlob
+            ? resolve(createdBlob)
+            : reject(new Error("Could not crop that photo.")),
+        "image/jpeg",
+        0.86,
+      ),
+    );
+
+    return new File([blob], "profile-photo.jpg", { type: "image/jpeg" });
+  };
+
+  const uploadCroppedChildPhoto = async () => {
+    if (!selectedFamilyId || !selectedChildId) return;
 
     setIsUploadingChildPhoto(true);
     setError("");
     setChildPhotoPreviewError("");
 
     try {
+      const file = await createCroppedChildPhotoFile();
       const upload = await api.uploadProfilePhoto({
         familyId: selectedFamilyId,
         childId: selectedChildId,
@@ -1531,13 +1629,44 @@ function WorkspaceGate({ session, onLogout }) {
       setChildren((current) =>
         current.map((child) => (child.id === updated.id ? updated : child)),
       );
+      setChildPhotoCrop(null);
       setAccountMessage("Child photo uploaded and saved.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
       setIsUploadingChildPhoto(false);
-      event.target.value = "";
     }
+  };
+
+  const startChildPhotoCropDrag = (event) => {
+    event.preventDefault();
+    setChildPhotoCropDrag({
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: childPhotoCropPosition.x,
+      originY: childPhotoCropPosition.y,
+    });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveChildPhotoCropDrag = (event) => {
+    if (!childPhotoCropDrag) return;
+    const nextX =
+      childPhotoCropDrag.originX +
+      ((event.clientX - childPhotoCropDrag.startX) / 120) * 100;
+    const nextY =
+      childPhotoCropDrag.originY +
+      ((event.clientY - childPhotoCropDrag.startY) / 120) * 100;
+
+    setChildPhotoCropPosition({
+      x: Math.max(-100, Math.min(100, nextX)),
+      y: Math.max(-100, Math.min(100, nextY)),
+    });
+  };
+
+  const stopChildPhotoCropDrag = () => {
+    setChildPhotoCropDrag(null);
   };
 
   const loadAdmin = async () => {
@@ -3510,33 +3639,15 @@ function WorkspaceGate({ session, onLogout }) {
                             type="file"
                             accept="image/jpeg,image/png,image/webp"
                             className="hidden"
-                            onChange={uploadSelectedChildPhoto}
+                            onChange={prepareSelectedChildPhoto}
                             disabled={isUploadingChildPhoto}
                           />
                         </label>
                       </div>
-                      {childEditForm.avatarUrl ? (
-                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2">
-                          <p className="break-all text-xs font-medium text-slate-500">
-                            Photo URL: {childEditForm.avatarUrl}
-                          </p>
-                          {childPhotoPreviewError ? (
-                            <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
-                              {childPhotoPreviewError}
-                            </p>
-                          ) : null}
-                          <img
-                            src={childEditForm.avatarUrl}
-                            alt=""
-                            className="mt-3 h-28 w-28 rounded-2xl object-cover"
-                            onLoad={() => setChildPhotoPreviewError("")}
-                            onError={() =>
-                              setChildPhotoPreviewError(
-                                "Photo uploaded but cannot be viewed — check storage permissions.",
-                              )
-                            }
-                          />
-                        </div>
+                      {childPhotoPreviewError ? (
+                        <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                          {childPhotoPreviewError}
+                        </p>
                       ) : null}
                       <div className="grid gap-3 sm:grid-cols-2">
                         <input
@@ -5968,6 +6079,86 @@ function WorkspaceGate({ session, onLogout }) {
                   ) : null}
                 </div>
               </section>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {childPhotoCrop ? (
+        <div className="fixed inset-0 z-[60] flex items-end bg-slate-950/50 p-3 sm:items-center sm:justify-center">
+          <div className="w-full rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-2xl sm:max-w-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-950">
+                  Crop child photo
+                </h3>
+                <p className="mt-1 text-sm font-medium text-slate-600">
+                  Drag to reposition and use zoom before uploading.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setChildPhotoCrop(null)}
+                disabled={isUploadingChildPhoto}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-4 flex justify-center">
+              <div
+                className="relative h-72 w-72 max-w-full touch-none overflow-hidden rounded-[2rem] border-4 border-white bg-slate-100 shadow-inner ring-1 ring-slate-200"
+                onPointerDown={startChildPhotoCropDrag}
+                onPointerMove={moveChildPhotoCropDrag}
+                onPointerUp={stopChildPhotoCropDrag}
+                onPointerCancel={stopChildPhotoCropDrag}
+              >
+                <img
+                  src={childPhotoCrop.source}
+                  alt=""
+                  draggable={false}
+                  className="h-full w-full select-none object-cover"
+                  style={{
+                    transform: `translate(${childPhotoCropPosition.x * 0.45}px, ${childPhotoCropPosition.y * 0.45}px) scale(${childPhotoCropZoom})`,
+                    transformOrigin: "center",
+                  }}
+                />
+                <div className="pointer-events-none absolute inset-0 rounded-[1.75rem] ring-2 ring-inset ring-white/80" />
+              </div>
+            </div>
+
+            <label className="mt-4 block text-sm font-bold text-slate-700">
+              Zoom
+              <input
+                type="range"
+                min="1"
+                max="3"
+                step="0.05"
+                value={childPhotoCropZoom}
+                onChange={(event) =>
+                  setChildPhotoCropZoom(Number(event.target.value))
+                }
+                className="mt-2 w-full"
+              />
+            </label>
+
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setChildPhotoCrop(null)}
+                disabled={isUploadingChildPhoto}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={uploadCroppedChildPhoto}
+                disabled={isUploadingChildPhoto}
+                className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              >
+                {isUploadingChildPhoto ? "Uploading..." : "Save photo"}
+              </button>
             </div>
           </div>
         </div>
