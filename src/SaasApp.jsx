@@ -5,6 +5,7 @@ import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 
 const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
+const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 
 const inputClass =
   "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -32,6 +33,22 @@ const planBadgeToneClasses = {
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+const safeLocalStorageGet = (key) => {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const safeLocalStorageSet = (key, value) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Local UI preferences should never block the app.
+  }
+};
 
 const asSafeDate = (value) => {
   if (!value) return null;
@@ -1337,6 +1354,7 @@ function WorkspaceGate({ session, onLogout }) {
     trialEndsAt: "",
     accessPaused: false,
   });
+  const [dismissedUpgradeBanners, setDismissedUpgradeBanners] = useState({});
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
@@ -1352,6 +1370,13 @@ function WorkspaceGate({ session, onLogout }) {
   );
 
   const selectedFamilyAccess = selectedFamily?.access || planAccessFor(selectedFamily);
+  const upgradeBannerStorageKey = selectedFamilyId
+    ? `familytrack:upgrade-banner-dismissed-until:${session?.user?.id || "user"}:${selectedFamilyId}`
+    : "";
+  const dismissedUpgradeUntil = dismissedUpgradeBanners[selectedFamilyId] || 0;
+  const showTrialUpgradeBanner =
+    selectedFamilyAccess?.reason === "trial" &&
+    Date.now() >= dismissedUpgradeUntil;
 
   const groupedCareOptions = useMemo(
     () => ({
@@ -1389,6 +1414,16 @@ function WorkspaceGate({ session, onLogout }) {
       // Local display preference only.
     }
   }, [timeZonePreference]);
+
+  useEffect(() => {
+    if (!selectedFamilyId || !upgradeBannerStorageKey) return;
+
+    const dismissedUntil = Number(safeLocalStorageGet(upgradeBannerStorageKey) || 0);
+    setDismissedUpgradeBanners((current) => ({
+      ...current,
+      [selectedFamilyId]: dismissedUntil,
+    }));
+  }, [selectedFamilyId, upgradeBannerStorageKey]);
 
   useEffect(() => {
     let ignore = false;
@@ -1920,6 +1955,11 @@ function WorkspaceGate({ session, onLogout }) {
     await loadAdmin();
   };
 
+  const openChildSetupFromDashboard = async () => {
+    setSettingsTab("children");
+    await openAdmin();
+  };
+
   const sendInvite = async (event) => {
     event.preventDefault();
     if (!selectedFamilyAccess.canInviteCarer) {
@@ -2296,6 +2336,17 @@ function WorkspaceGate({ session, onLogout }) {
       setError(caughtError.message);
       setIsCheckoutLoading(false);
     }
+  };
+
+  const dismissUpgradeBanner = () => {
+    if (!selectedFamilyId || !upgradeBannerStorageKey) return;
+
+    const dismissedUntil = Date.now() + UPGRADE_BANNER_SNOOZE_DAYS * DAY_MS;
+    safeLocalStorageSet(upgradeBannerStorageKey, String(dismissedUntil));
+    setDismissedUpgradeBanners((current) => ({
+      ...current,
+      [selectedFamilyId]: dismissedUntil,
+    }));
   };
 
   const openBillingPortal = async () => {
@@ -3335,8 +3386,8 @@ function WorkspaceGate({ session, onLogout }) {
 
       {!showAdmin && !showPlatformAdmin && selectedFamilyAccess ? (
         <div className="mx-auto max-w-6xl px-3 pt-3">
-          {selectedFamilyAccess.reason === "trial" ? (
-            <div className="flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          {showTrialUpgradeBanner ? (
+            <div className="relative flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 pr-12 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-black text-sky-900">
                   Trial: {selectedFamilyAccess.trialDaysLeft || 0} day
@@ -3353,6 +3404,14 @@ function WorkspaceGate({ session, onLogout }) {
                 className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
               >
                 {isCheckoutLoading ? "Opening..." : "Upgrade now"}
+              </button>
+              <button
+                type="button"
+                onClick={dismissUpgradeBanner}
+                className="absolute right-3 top-3 rounded-full border border-sky-200 bg-white/80 px-2 py-1 text-xs font-black text-sky-700 shadow-sm"
+                aria-label="Hide trial reminder for 7 days"
+              >
+                ×
               </button>
             </div>
           ) : null}
@@ -6445,6 +6504,7 @@ function WorkspaceGate({ session, onLogout }) {
         children={children}
         selectedChildId={selectedChildId}
         onSelectChild={selectChild}
+        onOpenChildSetup={openChildSetupFromDashboard}
         onAddRegularMedication={addRegularMedicationFromDiary}
         customFoodOptions={groupedCareOptions.food}
         customMedicationOptions={groupedCareOptions.medication}

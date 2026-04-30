@@ -366,6 +366,7 @@ export default function KaylenCareMonitorDashboard({
   children = [],
   selectedChildId = "",
   onSelectChild,
+  onOpenChildSetup,
   onAddRegularMedication,
   customFoodOptions = [],
   customMedicationOptions = [],
@@ -446,6 +447,13 @@ export default function KaylenCareMonitorDashboard({
   const [overviewIndex, setOverviewIndex] = useState(0);
   const [reportOverviewIndex, setReportOverviewIndex] = useState(0);
   const offlineQueueKey = `familytrack:offline-log-queue:${familyId || "legacy"}`;
+  const careSnapshotPromptKey = `familytrack:care-snapshot-prompt-dismissed:${familyId || "legacy"}:${childId || "legacy"}`;
+  const careSnapshotViewedKey = `familytrack:care-snapshot-viewed:${familyId || "legacy"}:${childId || "legacy"}`;
+  const [isCareSnapshotPromptDismissed, setIsCareSnapshotPromptDismissed] =
+    useState(() => safeLocalStorageGet(careSnapshotPromptKey) === "true");
+  const [hasViewedCareSnapshot, setHasViewedCareSnapshot] = useState(
+    () => safeLocalStorageGet(careSnapshotViewedKey) === "true",
+  );
 
   const [foodForm, setFoodForm] = useState({
     date: todayValue(),
@@ -843,6 +851,44 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
+  const dismissCareSnapshotPrompt = () => {
+    safeLocalStorageSet(careSnapshotPromptKey, "true");
+    setIsCareSnapshotPromptDismissed(true);
+  };
+
+  const openCareSnapshot = () => {
+    const snapshotSection = sections.find(
+      (section) => section.title === "Care Snapshot",
+    );
+    if (!snapshotSection) return;
+
+    safeLocalStorageSet(careSnapshotViewedKey, "true");
+    setHasViewedCareSnapshot(true);
+    openSection(snapshotSection);
+  };
+
+  const openOnboardingItem = (action) => {
+    switch (action) {
+      case "child":
+        if (onOpenChildSetup) onOpenChildSetup();
+        return;
+      case "medication":
+        openSection(sections.find((section) => section.title === "Medication"));
+        return;
+      case "food":
+        openSection(sections.find((section) => section.title === "Food Diary"));
+        return;
+      case "sleep":
+        openSection(sections.find((section) => section.title === "Sleep"));
+        return;
+      case "snapshot":
+        openCareSnapshot();
+        return;
+      default:
+        return;
+    }
+  };
+
   useEffect(() => {
     const kind = sectionDraftKind();
     if (!kind || draftPrompts[kind]?.checked || draftPrompts[kind]?.draft) {
@@ -873,6 +919,16 @@ export default function KaylenCareMonitorDashboard({
       }));
     }
   }, [activeSection?.title, childId, familyId]);
+
+  useEffect(() => {
+    setIsCareSnapshotPromptDismissed(
+      safeLocalStorageGet(careSnapshotPromptKey) === "true",
+    );
+  }, [careSnapshotPromptKey]);
+
+  useEffect(() => {
+    setHasViewedCareSnapshot(safeLocalStorageGet(careSnapshotViewedKey) === "true");
+  }, [careSnapshotViewedKey]);
 
   useEffect(() => {
     const kind = sectionDraftKind();
@@ -2771,23 +2827,36 @@ export default function KaylenCareMonitorDashboard({
       {
         label: "Add your child",
         completed: Boolean(childId),
+        action: "child",
       },
       {
         label: "Add first medication",
         completed: hasMedication,
+        action: "medication",
       },
       {
         label: "Add first meal",
         completed: sharedLog.some((entry) => entry.section === "Food Diary"),
+        action: "food",
       },
       {
         label: "Add first sleep entry",
         completed: sharedLog.some((entry) => entry.section === "Sleep"),
+        action: "sleep",
+      },
+      {
+        label: "View Care Snapshot",
+        completed: hasViewedCareSnapshot,
+        action: "snapshot",
       },
     ];
 
-    return items.filter((item) => !item.completed);
-  }, [childId, profileMedicationOptions.length, sharedLog]);
+    return items;
+  }, [childId, hasViewedCareSnapshot, profileMedicationOptions.length, sharedLog]);
+
+  const showOnboardingChecklist = onboardingChecklistItems.some(
+    (item) => !item.completed,
+  );
 
   const measurementEntries = useMemo(
     () =>
@@ -6881,7 +6950,7 @@ export default function KaylenCareMonitorDashboard({
           </div>
         )}
 
-        {onboardingChecklistItems.length ? (
+        {showOnboardingChecklist ? (
           <section className="mb-4 rounded-[1.5rem] border border-indigo-100 bg-indigo-50/80 p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -6893,26 +6962,50 @@ export default function KaylenCareMonitorDashboard({
                 </h2>
               </div>
               <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-indigo-700 shadow-sm">
-                {4 - onboardingChecklistItems.length}/4 done
+                {onboardingChecklistItems.filter((item) => item.completed).length}/
+                {onboardingChecklistItems.length} done
               </span>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {onboardingChecklistItems.map((item) => (
-                <div
+                <button
+                  type="button"
                   key={item.label}
-                  className="flex items-center gap-2 rounded-xl border border-indigo-100 bg-white/80 px-3 py-2 text-sm font-bold text-slate-700"
+                  onClick={() => openOnboardingItem(item.action)}
+                  className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${
+                    item.completed
+                      ? "border-emerald-100 bg-emerald-50 text-emerald-800"
+                      : "border-indigo-100 bg-white/90 text-slate-700 hover:border-indigo-200 hover:bg-white"
+                  }`}
                 >
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full border border-indigo-200 text-[10px] text-indigo-500">
-                    +
+                  <span
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-[10px] ${
+                      item.completed
+                        ? "border-emerald-200 bg-emerald-100 text-emerald-700"
+                        : "border-indigo-200 text-indigo-500"
+                    }`}
+                  >
+                    {item.completed ? "✓" : "+"}
                   </span>
-                  {item.label}
-                </div>
+                  <span className={item.completed ? "line-through decoration-emerald-400" : ""}>
+                    {item.label}
+                  </span>
+                </button>
               ))}
             </div>
           </section>
         ) : null}
 
-        <section className="mb-5 rounded-[1.5rem] border border-cyan-100 bg-cyan-50/80 p-4 shadow-sm">
+        {!isCareSnapshotPromptDismissed ? (
+        <section className="relative mb-5 rounded-[1.5rem] border border-cyan-100 bg-cyan-50/80 p-4 pr-12 shadow-sm">
+          <button
+            type="button"
+            onClick={dismissCareSnapshotPrompt}
+            className="absolute right-3 top-3 rounded-full border border-cyan-200 bg-white/80 px-2 py-1 text-xs font-black text-cyan-700 shadow-sm"
+            aria-label="Hide Care Snapshot dashboard prompt"
+          >
+            ×
+          </button>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">
@@ -6924,15 +7017,14 @@ export default function KaylenCareMonitorDashboard({
             </div>
             <button
               type="button"
-              onClick={() =>
-                openSection(sections.find((section) => section.title === "Care Snapshot"))
-              }
+              onClick={openCareSnapshot}
               className="w-full rounded-2xl bg-cyan-600 px-4 py-3 text-sm font-black text-white shadow-sm sm:w-auto"
             >
               Download Care Snapshot
             </button>
           </div>
         </section>
+        ) : null}
 
         <section className="mb-5">
           <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
