@@ -807,10 +807,15 @@ function MarketingScreenshot({
   alt,
   priority = false,
   className = "",
+  size = "default",
 }) {
   const [failed, setFailed] = useState(false);
   const bundledSrc = screenshotAssets[src];
   const displaySrc = failed && bundledSrc ? bundledSrc : src;
+  const sizeClass =
+    size === "compact"
+      ? "mx-auto w-full max-w-[280px] sm:max-w-[320px] lg:max-w-[340px]"
+      : "mx-auto w-full max-w-[360px] sm:max-w-[420px] lg:max-w-[460px]";
 
   if (failed && !bundledSrc) {
     return (
@@ -838,7 +843,7 @@ function MarketingScreenshot({
       src={displaySrc}
       alt={alt}
       loading={priority ? "eager" : "lazy"}
-      className={`w-full max-w-full rounded-[1.5rem] border border-slate-200 bg-white object-cover shadow-xl ${className}`}
+      className={`${sizeClass} rounded-[1.5rem] border border-slate-200 bg-white object-contain shadow-xl ${className}`}
       onError={() => setFailed(true)}
     />
   );
@@ -1052,6 +1057,7 @@ function LandingPage({ onStartFree, onLogin }) {
             src="/screenshots/dashboard.png"
             alt="FamilyTrack dashboard showing care logging cards for a selected child"
             priority
+            size="default"
           />
         </div>
       </section>
@@ -1091,6 +1097,7 @@ function LandingPage({ onStartFree, onLogin }) {
           <MarketingScreenshot
             src="/screenshots/logging-food.png"
             alt="FamilyTrack food and drink logging form from the real app"
+            size="compact"
           />
         </div>
       </section>
@@ -1100,6 +1107,7 @@ function LandingPage({ onStartFree, onLogin }) {
           <MarketingScreenshot
             src="/screenshots/reports-page.png"
             alt="FamilyTrack reports page with daily grouped logs and filters"
+            size="compact"
           />
           <div>
             <h2 className="text-3xl font-black tracking-tight text-slate-950">
@@ -1189,7 +1197,12 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
               </a>
             </div>
           </div>
-          <MarketingScreenshot src={page.screenshot} alt={page.screenshotAlt} priority />
+          <MarketingScreenshot
+            src={page.screenshot}
+            alt={page.screenshotAlt}
+            priority
+            size="compact"
+          />
         </div>
       </section>
 
