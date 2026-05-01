@@ -171,6 +171,8 @@ adminRouter.get(
       children,
       logs,
       subscriptions,
+      revenue,
+      planBreakdown,
       logsToday,
       logsThisWeek,
       activeUsersLast7Days,
@@ -186,6 +188,28 @@ adminRouter.get(
             count(*) FILTER (WHERE status IN ('active', 'trialing') OR plan = 'beta')::int AS active,
             count(*) FILTER (WHERE status NOT IN ('active', 'trialing') AND plan <> 'beta')::int AS inactive
           FROM subscriptions
+          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
+        `,
+      ),
+      query(
+        `
+          SELECT count(DISTINCT family_id)::int AS active_paid
+          FROM subscriptions
+          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
+            AND plan = 'family'
+            AND status IN ('active', 'trialing', 'past_due')
+        `,
+      ),
+      query(
+        `
+          SELECT
+            COALESCE(plan, 'trial') AS plan,
+            COALESCE(status, 'inactive') AS status,
+            count(*)::int AS count
+          FROM subscriptions
+          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
+          GROUP BY COALESCE(plan, 'trial'), COALESCE(status, 'inactive')
+          ORDER BY plan ASC, status ASC
         `,
       ),
       query(
@@ -222,6 +246,9 @@ adminRouter.get(
       ),
     ]);
 
+    const activePaidFamilies = revenue.rows[0]?.active_paid || 0;
+    const monthlyPriceGbp = Number(config.familyPlanMonthlyPriceGbp || 9);
+
     res.json({
       data: {
         families: families.rows[0].count,
@@ -230,6 +257,13 @@ adminRouter.get(
         careLogs: logs.rows[0].count,
         activeSubscriptions: subscriptions.rows[0].active,
         inactiveSubscriptions: subscriptions.rows[0].inactive,
+        revenue: {
+          currency: "GBP",
+          monthlyPriceGbp,
+          activePaidFamilies,
+          estimatedMrrGbp: activePaidFamilies * monthlyPriceGbp,
+          planBreakdown: planBreakdown.rows,
+        },
         logsToday: logsToday.rows[0].count,
         logsThisWeek: logsThisWeek.rows[0].count,
         activeUsersLast7Days: activeUsersLast7Days.rows[0].count,
@@ -934,6 +968,66 @@ adminRouter.patch(
     });
 
     res.json({ data: rows[0], error: null });
+  }),
+);
+
+adminRouter.delete(
+  "/families/:familyId",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const confirmText = requireString(req.body, "confirmText", "Confirmation");
+
+    if (confirmText !== "DELETE") {
+      throw badRequest("Type DELETE to confirm family deletion.");
+    }
+
+    const { rows } = await query(
+      `
+        UPDATE families
+        SET deleted_at = now(),
+            platform_status = 'suspended',
+            platform_admin_notes = concat_ws(
+              E'\n',
+              NULLIF(platform_admin_notes, ''),
+              'Soft deleted by owner platform on ' || to_char(now(), 'YYYY-MM-DD HH24:MI')
+            )
+        WHERE id = $1
+          AND deleted_at IS NULL
+        RETURNING id, name
+      `,
+      [familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Family not found.");
+    }
+
+    await query(
+      `
+        UPDATE family_members
+        SET deleted_at = now()
+        WHERE family_id = $1
+          AND deleted_at IS NULL
+      `,
+      [familyId],
+    );
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_family_soft_deleted",
+      metadata: { name: rows[0].name },
+    });
+
+    res.json({
+      data: {
+        id: rows[0].id,
+        name: rows[0].name,
+        deleted: true,
+      },
+      error: null,
+    });
   }),
 );
 

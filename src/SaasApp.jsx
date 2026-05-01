@@ -2142,6 +2142,11 @@ function WorkspaceGate({ session, onLogout }) {
     user: null,
     confirmText: "",
   });
+  const [deleteFamilyConfirm, setDeleteFamilyConfirm] = useState({
+    isOpen: false,
+    family: null,
+    confirmText: "",
+  });
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
 
@@ -3823,6 +3828,54 @@ function WorkspaceGate({ session, onLogout }) {
       setError(caughtError.message);
       showToast({
         message: "Account could not be deleted",
+        type: "error",
+      });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const deletePlatformFamily = async (event) => {
+    event.preventDefault();
+    if (
+      !deleteFamilyConfirm.family?.id ||
+      deleteFamilyConfirm.confirmText !== "DELETE"
+    ) {
+      return;
+    }
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await api.adminDeleteFamily(deleteFamilyConfirm.family.id, {
+        confirmText: deleteFamilyConfirm.confirmText,
+      });
+      setPlatformData((current) => ({
+        ...current,
+        families: current.families.filter(
+          (family) => family.id !== deleteFamilyConfirm.family.id,
+        ),
+      }));
+      if (selectedPlatformFamily?.family?.id === deleteFamilyConfirm.family.id) {
+        setSelectedPlatformFamily(null);
+      }
+      setDeleteFamilyConfirm({ isOpen: false, family: null, confirmText: "" });
+      setPlatformActionMessage("Family access removed and data preserved.");
+      showToast({
+        message: "Family access removed",
+        type: "warning",
+      });
+      const [overview, families] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+      ]);
+      setPlatformData((current) => ({ ...current, overview, families }));
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({
+        message: "Family could not be deleted",
         type: "error",
       });
     } finally {
@@ -6050,10 +6103,51 @@ function WorkspaceGate({ session, onLogout }) {
                   ))}
                 </div>
 
+                <section className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 shadow-sm sm:p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">
+                        Revenue dashboard
+                      </p>
+                      <h3 className="mt-1 text-xl font-black text-slate-950">
+                        £
+                        {Number(
+                          platformData.overview?.revenue?.estimatedMrrGbp || 0,
+                        ).toLocaleString("en-GB")}{" "}
+                        / month
+                      </h3>
+                      <p className="mt-1 text-sm font-semibold text-emerald-900">
+                        {platformData.overview?.revenue?.activePaidFamilies || 0}{" "}
+                        active paid families at £
+                        {platformData.overview?.revenue?.monthlyPriceGbp || 9}
+                        /month
+                      </p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:min-w-[16rem]">
+                      {(platformData.overview?.revenue?.planBreakdown || [])
+                        .slice(0, 4)
+                        .map((item) => (
+                          <div
+                            key={`${item.plan}-${item.status}`}
+                            className="rounded-xl border border-emerald-100 bg-white px-3 py-2"
+                          >
+                            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                              {item.plan} / {item.status}
+                            </p>
+                            <p className="text-lg font-black text-slate-900">
+                              {item.count}
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </section>
+
                 <div className="mt-3 overflow-x-auto rounded-2xl border border-indigo-100 bg-white p-1.5 shadow-sm">
                   <div className="flex min-w-max gap-1.5">
                   {[
                     ["overview", "Overview"],
+                    ["revenue", "Revenue"],
                     ["accounts", "Accounts"],
                     ["families", "Families"],
                     ["issues", "Issues"],
@@ -6116,6 +6210,87 @@ function WorkspaceGate({ session, onLogout }) {
                           support status.
                         </p>
                       </button>
+                    </div>
+                  </section>
+                ) : null}
+
+                {platformAdminTab === "revenue" ? (
+                  <section className="mt-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">
+                          Revenue dashboard
+                        </p>
+                        <h3 className="mt-1 text-2xl font-black text-slate-950">
+                          £
+                          {Number(
+                            platformData.overview?.revenue?.estimatedMrrGbp || 0,
+                          ).toLocaleString("en-GB")}{" "}
+                          / month
+                        </h3>
+                        <p className="mt-1 text-sm font-semibold text-slate-600">
+                          Estimated from active paid families and the configured
+                          monthly plan price.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
+                        £{platformData.overview?.revenue?.monthlyPriceGbp || 9}
+                        /family
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-emerald-700">
+                          Active subscribers
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-slate-950">
+                          {platformData.overview?.revenue?.activePaidFamilies || 0}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-indigo-700">
+                          Active subs
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-slate-950">
+                          {platformData.overview?.activeSubscriptions || 0}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3">
+                        <p className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">
+                          Inactive subs
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-slate-950">
+                          {platformData.overview?.inactiveSubscriptions || 0}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <h4 className="text-sm font-black text-slate-900">
+                        Breakdown by plan
+                      </h4>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                        {(platformData.overview?.revenue?.planBreakdown || []).length ? (
+                          platformData.overview.revenue.planBreakdown.map((item) => (
+                            <div
+                              key={`${item.plan}-${item.status}`}
+                              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+                            >
+                              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                                {item.plan} / {item.status}
+                              </p>
+                              <p className="text-xl font-black text-slate-900">
+                                {item.count}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
+                            No subscription records yet.
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </section>
                 ) : null}
@@ -6266,13 +6441,26 @@ function WorkspaceGate({ session, onLogout }) {
                                 "Snapshot",
                                 () => openPlatformSnapshotForFamily(family.id),
                               ],
+                              [
+                                "Delete",
+                                () =>
+                                  setDeleteFamilyConfirm({
+                                    isOpen: true,
+                                    family,
+                                    confirmText: "",
+                                  }),
+                              ],
                             ].map(([label, onClick]) => (
                               <button
                                 type="button"
                                 key={label}
                                 onClick={onClick}
                                 disabled={isPlatformSaving}
-                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-slate-700 shadow-sm disabled:opacity-50"
+                                className={`rounded-full border px-2.5 py-1 text-[11px] font-bold shadow-sm disabled:opacity-50 ${
+                                  label === "Delete"
+                                    ? "border-rose-200 bg-rose-50 text-rose-800"
+                                    : "border-slate-200 bg-white text-slate-700"
+                                }`}
                               >
                                 {label}
                               </button>
@@ -6716,6 +6904,20 @@ function WorkspaceGate({ session, onLogout }) {
                           className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 shadow-sm disabled:opacity-50"
                         >
                           View Snapshot
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDeleteFamilyConfirm({
+                              isOpen: true,
+                              family: selectedPlatformFamily.family,
+                              confirmText: "",
+                            })
+                          }
+                          disabled={isPlatformSaving}
+                          className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 shadow-sm disabled:opacity-50"
+                        >
+                          Delete family
                         </button>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
@@ -7688,6 +7890,67 @@ function WorkspaceGate({ session, onLogout }) {
                 className="rounded-2xl bg-rose-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                 disabled={
                   isPlatformSaving || deleteUserConfirm.confirmText !== "DELETE"
+                }
+              >
+                Delete
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {deleteFamilyConfirm.isOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+          <form
+            className="w-full rounded-[1.75rem] border border-rose-200 bg-white p-4 shadow-2xl sm:max-w-md"
+            onSubmit={deletePlatformFamily}
+          >
+            <h3 className="text-lg font-black text-rose-900">
+              Delete family access
+            </h3>
+            <p className="mt-2 text-sm font-semibold leading-6 text-rose-800">
+              This will remove access to this family and hide it from owner
+              platform lists. Use this only when you are sure.
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              The backend will soft delete the family workspace, remove active
+              memberships, and preserve logs for audit or recovery.
+            </p>
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800">
+              {deleteFamilyConfirm.family?.name || "Selected family"}
+            </div>
+            <label className="mt-4 block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              Type DELETE to confirm
+              <input
+                className={inputClass}
+                value={deleteFamilyConfirm.confirmText}
+                onChange={(event) =>
+                  setDeleteFamilyConfirm((current) => ({
+                    ...current,
+                    confirmText: event.target.value,
+                  }))
+                }
+                placeholder="DELETE"
+              />
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() =>
+                  setDeleteFamilyConfirm({
+                    isOpen: false,
+                    family: null,
+                    confirmText: "",
+                  })
+                }
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-rose-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                disabled={
+                  isPlatformSaving ||
+                  deleteFamilyConfirm.confirmText !== "DELETE"
                 }
               >
                 Delete

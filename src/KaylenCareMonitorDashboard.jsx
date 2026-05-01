@@ -1262,11 +1262,21 @@ export default function KaylenCareMonitorDashboard({
   const effectiveReportDays =
     reportDays === "custom"
       ? Math.max(1, Number(customReportDays) || 7)
-      : Math.max(1, Number(reportDays) || 7);
+      : reportDays === "24h"
+        ? 1
+        : reportDays === "72h"
+          ? 3
+          : Math.max(1, Number(reportDays) || 7);
 
   const reportRangeStart =
     reportDays === "custom"
       ? parseIsoDate(reportStartDate)
+      : reportDays === "24h" || reportDays === "72h"
+        ? (() => {
+            const start = new Date();
+            start.setHours(start.getHours() - (reportDays === "24h" ? 24 : 72));
+            return start;
+          })()
       : (() => {
           const start = new Date();
           start.setHours(0, 0, 0, 0);
@@ -1277,11 +1287,22 @@ export default function KaylenCareMonitorDashboard({
   const reportRangeEnd =
     reportDays === "custom"
       ? parseIsoDate(reportEndDate, true)
+      : reportDays === "24h" || reportDays === "72h"
+        ? new Date()
       : (() => {
           const end = new Date();
           end.setHours(23, 59, 59, 999);
           return end;
         })();
+
+  const reportRangeLabel =
+    reportDays === "custom"
+      ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
+      : reportDays === "24h"
+        ? "Last 24 hours"
+        : reportDays === "72h"
+          ? "Last 72 hours"
+          : `Last ${effectiveReportDays} day${effectiveReportDays === 1 ? "" : "s"}`;
 
   const openSection = (section) => {
     setActiveSection(section);
@@ -2296,7 +2317,10 @@ export default function KaylenCareMonitorDashboard({
   const recentEntries = useMemo(() => {
     return sharedLog
       .filter((entry) => {
-      const entryDate = parseDisplayDate(entry.date);
+      const entryDate =
+        reportDays === "24h" || reportDays === "72h"
+          ? parseDisplayDateTime(entry.date, entry.time)
+          : parseDisplayDate(entry.date);
       if (!entryDate || !reportRangeStart || !reportRangeEnd) return false;
       if (entryDate < reportRangeStart || entryDate > reportRangeEnd) return false;
 
@@ -2341,12 +2365,27 @@ export default function KaylenCareMonitorDashboard({
 
     return sharedLog
       .filter((entry) => {
-        const parsed = parseDisplayDateTime(entry.date, entry.time);
+        const createdAtDate = entry.createdAt ? new Date(entry.createdAt) : null;
+        const parsed =
+          parseDisplayDateTime(entry.date, entry.time) ||
+          (createdAtDate && !Number.isNaN(createdAtDate.getTime())
+            ? createdAtDate
+            : null);
         return parsed && parsed >= start && parsed <= end;
       })
       .sort((a, b) => {
-        const dateA = parseDisplayDateTime(a.date, a.time)?.getTime() || 0;
-        const dateB = parseDisplayDateTime(b.date, b.time)?.getTime() || 0;
+        const createdA = a.createdAt ? new Date(a.createdAt) : null;
+        const createdB = b.createdAt ? new Date(b.createdAt) : null;
+        const dateA =
+          parseDisplayDateTime(a.date, a.time)?.getTime() ||
+          (createdA && !Number.isNaN(createdA.getTime())
+            ? createdA.getTime()
+            : 0);
+        const dateB =
+          parseDisplayDateTime(b.date, b.time)?.getTime() ||
+          (createdB && !Number.isNaN(createdB.getTime())
+            ? createdB.getTime()
+            : 0);
         return dateB - dateA;
       });
   }, [sharedLog]);
@@ -2855,6 +2894,45 @@ export default function KaylenCareMonitorDashboard({
     };
   }, [last7DaysEntries, sharedLog]);
 
+  const reportChartData = useMemo(() => {
+    const countSection = (section) =>
+      recentEntries.filter((entry) => entry.section === section).length;
+    const totalSleepMinutes = recentEntries
+      .filter((entry) => entry.section === "Sleep")
+      .reduce((sum, entry) => sum + Number(entry.durationMinutes || 0), 0);
+
+    return [
+      {
+        label: "Food frequency",
+        value: countSection("Food Diary"),
+        max: Math.max(1, recentEntries.length),
+        meta: "food logs",
+        tone: "bg-amber-500",
+      },
+      {
+        label: "Medication frequency",
+        value: countSection("Medication"),
+        max: Math.max(1, recentEntries.length),
+        meta: "medication logs",
+        tone: "bg-rose-500",
+      },
+      {
+        label: "Sleep duration",
+        value: Math.round(totalSleepMinutes / 60),
+        max: Math.max(1, effectiveReportDays * 12),
+        meta: "hours total",
+        tone: "bg-indigo-500",
+      },
+      {
+        label: "Toileting patterns",
+        value: countSection("Toileting"),
+        max: Math.max(1, recentEntries.length),
+        meta: "toileting logs",
+        tone: "bg-sky-500",
+      },
+    ];
+  }, [effectiveReportDays, recentEntries]);
+
   const onboardingChecklistItems = useMemo(() => {
     const hasMedication =
       profileMedicationOptions.length > 0 ||
@@ -2978,7 +3056,7 @@ export default function KaylenCareMonitorDashboard({
   const legacyReportText = useMemo(() => {
     if (reportLayout === "daily") {
       return [
-        `FamilyTrack Report - Last ${effectiveReportDays} days`,
+        `FamilyTrack Report - ${reportRangeLabel}`,
         `Daily view${
           reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
         }`,
@@ -2996,7 +3074,7 @@ export default function KaylenCareMonitorDashboard({
     const order = ["Food Diary", "Medication", "Toileting", "Health", "Sleep"];
 
     return [
-      `FamilyTrack Report - Last ${effectiveReportDays} days`,
+      `FamilyTrack Report - ${reportRangeLabel}`,
       `Summary view${
         reportCategoryFilter !== "All" ? ` - ${reportCategoryFilter}` : ""
       }`,
@@ -3017,21 +3095,17 @@ export default function KaylenCareMonitorDashboard({
       ...(recentEntries.length ? [] : ["No entries found for this date range."]),
     ].join("\n");
   }, [
-    effectiveReportDays,
     groupedReportEntries,
     recentEntries,
     reportCategoryFilter,
-      reportLayout,
+    reportLayout,
+    reportRangeLabel,
   ]);
 
   const reportText = useMemo(() => {
     return [
       `FamilyTrack Care Report - ${childName}`,
-      `Date range: ${
-        reportDays === "custom"
-          ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-          : `Last ${effectiveReportDays} days`
-      }`,
+      `Date range: ${reportRangeLabel}`,
       `Generated: ${new Date().toLocaleDateString("en-GB")}`,
       reportNotes.trim() ? `Parent/carer notes: ${reportNotes.trim()}` : "",
       "",
@@ -3108,16 +3182,13 @@ export default function KaylenCareMonitorDashboard({
   }, [
     childName,
     dailyReportGroups,
-    effectiveReportDays,
     atAGlance,
     profileItems,
     quickReportSummary,
     recentEntries.length,
     reportImportantEvents,
-    reportDays,
-    reportEndDate,
     reportNotes,
-    reportStartDate,
+    reportRangeLabel,
     reportTrendObservations,
     reportType,
     professionalLanguage,
@@ -3658,8 +3729,8 @@ export default function KaylenCareMonitorDashboard({
       throw new Error("PDF export area not found");
     }
 
-    const pdfWidth = 210;
-    const pdfHeight = 297;
+    const pdfWidth = 297;
+    const pdfHeight = 210;
     const margin = 8;
     const usableWidth = pdfWidth - margin * 2;
     const usableHeight = pdfHeight - margin * 2;
@@ -3668,11 +3739,11 @@ export default function KaylenCareMonitorDashboard({
       useCORS: true,
       backgroundColor: "#ffffff",
       logging: false,
-      windowWidth: 794,
+      windowWidth: 1120,
     });
 
     const imgData = canvas.toDataURL("image/png");
-    const pdf = new jsPDF("p", "mm", "a4");
+    const pdf = new jsPDF("l", "mm", "a4");
 
     const imgWidth = usableWidth;
     const imgHeight = (canvas.height * imgWidth) / canvas.width;
@@ -3743,17 +3814,13 @@ export default function KaylenCareMonitorDashboard({
       const filename = defaultReportPdfFilename();
       const pdf = await createReportPdf();
       const pdfBase64 = await blobToBase64(pdf.output("blob"));
-      const dateRange =
-        reportDays === "custom"
-          ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-          : `Last ${effectiveReportDays} days`;
 
       await api.sendReportEmail(familyId, {
         recipientEmail: reportEmailForm.recipientEmail,
         message: reportEmailForm.message,
         childId,
         childName,
-        dateRange,
+        dateRange: reportRangeLabel,
         filename,
         pdfBase64,
       });
@@ -5763,12 +5830,48 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 
+  const renderReportChartCards = (mode = "screen") => (
+    <section
+      className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(
+        mode,
+      )}`}
+    >
+      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
+        Simple trends
+      </h3>
+      <div className={`mt-3 grid gap-3 ${mode === "pdf" ? "grid-cols-4" : "md:grid-cols-2 xl:grid-cols-4"}`}>
+        {reportChartData.map((item) => {
+          const width = Math.max(4, Math.min(100, (item.value / item.max) * 100));
+          return (
+            <div
+              key={item.label}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                {item.label}
+              </p>
+              <p className="mt-1 text-lg font-black text-slate-900">
+                {item.value}
+              </p>
+              <p className="text-xs font-semibold text-slate-500">
+                {item.meta}
+              </p>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+                <div
+                  className={`h-full rounded-full ${item.tone}`}
+                  style={{ width: `${width}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+
   const renderShareableCareReport = ({ mode = "screen" } = {}) => {
     const isPdf = mode === "pdf";
-    const rangeLabel =
-      reportDays === "custom"
-        ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-        : `Last ${effectiveReportDays} day${effectiveReportDays === 1 ? "" : "s"}`;
+    const rangeLabel = reportRangeLabel;
     const generatedDate = new Date().toLocaleDateString("en-GB", {
       day: "numeric",
       month: "long",
@@ -5838,6 +5941,8 @@ export default function KaylenCareMonitorDashboard({
             {renderSummaryCard("Health", atAGlance.health, mode)}
           </div>
         </section>
+
+        {showReportCharts ? renderReportChartCards(mode) : null}
 
         <section className={`rounded-2xl border border-amber-200 bg-amber-50 ${compactSectionPadding(mode)}`}>
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-amber-800">
@@ -5978,7 +6083,7 @@ export default function KaylenCareMonitorDashboard({
     <div className="fixed left-[-99999px] top-0 z-[-1]">
       <div
         id="report-pdf-export"
-        className="pdf-export-document w-[794px] bg-white p-4 text-slate-900"
+        className="pdf-export-document w-[1120px] bg-white p-4 text-slate-900"
       >
         {renderShareableCareReport({ mode: "pdf" })}
       </div>
@@ -6456,6 +6561,8 @@ export default function KaylenCareMonitorDashboard({
                     value={reportDays}
                     onChange={(e) => setReportDays(e.target.value)}
                   >
+                    <option value="24h">Last 24 hours</option>
+                    <option value="72h">Last 72 hours</option>
                     <option value="7">Last 7 days</option>
                     <option value="14">Last 14 days</option>
                     <option value="30">Last 30 days</option>
@@ -6473,7 +6580,7 @@ export default function KaylenCareMonitorDashboard({
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
                     <option value="All">All categories</option>
-                    <option value="Food Diary">Food Diary</option>
+                    <option value="Food Diary">Food</option>
                     <option value="Medication">Medication</option>
                     <option value="Toileting">Toileting</option>
                     <option value="Health">Health</option>
@@ -6532,6 +6639,8 @@ export default function KaylenCareMonitorDashboard({
                     value={reportDays}
                     onChange={(e) => setReportDays(e.target.value)}
                   >
+                    <option value="24h">Last 24 hours</option>
+                    <option value="72h">Last 72 hours</option>
                     <option value="7">Last 7 days</option>
                     <option value="14">Last 14 days</option>
                     <option value="30">Last 30 days</option>
@@ -6548,7 +6657,7 @@ export default function KaylenCareMonitorDashboard({
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
                     <option value="All">All categories</option>
-                    <option value="Food Diary">Food Diary</option>
+                    <option value="Food Diary">Food</option>
                     <option value="Medication">Medication</option>
                     <option value="Toileting">Toileting</option>
                     <option value="Health">Health</option>
@@ -6590,9 +6699,7 @@ export default function KaylenCareMonitorDashboard({
                 <div className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600">
                   <span className="rounded-full bg-slate-100 px-3 py-1">{filtersLabel}</span>
                   <span className="rounded-full bg-slate-100 px-3 py-1">
-                    {reportDays === "custom"
-                      ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-                      : `Last ${effectiveReportDays} days`}
+                    {reportRangeLabel}
                   </span>
                 </div>
               </div>
@@ -6630,7 +6737,7 @@ export default function KaylenCareMonitorDashboard({
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
                     <option value="All">All categories</option>
-                    <option value="Food Diary">Food Diary</option>
+                    <option value="Food Diary">Food</option>
                     <option value="Medication">Medication</option>
                     <option value="Toileting">Toileting</option>
                     <option value="Health">Health</option>
@@ -6782,9 +6889,7 @@ export default function KaylenCareMonitorDashboard({
 
                     <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
                       Child: {childName}. Range:{" "}
-                      {reportDays === "custom"
-                        ? `${reportStartDate || "Start"} to ${reportEndDate || "End"}`
-                        : `Last ${effectiveReportDays} days`}
+                      {reportRangeLabel}
                       . Filter: {reportCategoryFilter}.
                     </div>
 
@@ -6872,6 +6977,8 @@ export default function KaylenCareMonitorDashboard({
                   value={reportDays}
                   onChange={(event) => setReportDays(event.target.value)}
                 >
+                  <option value="24h">Last 24 hours</option>
+                  <option value="72h">Last 72 hours</option>
                   <option value="7">Last 7 days</option>
                   <option value="14">Last 14 days</option>
                   <option value="30">Last 30 days</option>

@@ -14,6 +14,9 @@ export const config = {
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripePriceId:
     process.env.STRIPE_FAMILY_PRICE_ID || process.env.STRIPE_PRICE_ID || "",
+  familyPlanMonthlyPriceGbp: Number(
+    process.env.FAMILY_PLAN_MONTHLY_PRICE_GBP || 9,
+  ),
   supportEmail: process.env.SUPPORT_EMAIL || "hello@familytrack.care",
   emailFrom: process.env.EMAIL_FROM || "FamilyTrack <hello@familytrack.care>",
   emailProvider: process.env.EMAIL_PROVIDER || "resend",

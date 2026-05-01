@@ -262,6 +262,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  adminDeleteFamily: (familyId, payload) =>
+    request(`/admin/families/${familyId}`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    }),
   adminSyncFamilyStripe: (familyId) =>
     request(`/admin/families/${familyId}/sync-stripe`, {
       method: "POST",
