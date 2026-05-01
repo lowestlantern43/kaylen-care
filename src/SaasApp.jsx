@@ -2,11 +2,21 @@ import html2canvas from "html2canvas";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
+import dashboardScreenshot from "./assets/screenshots/dashboard.png";
+import foodScreenshot from "./assets/screenshots/logging-food.png";
+import medicationScreenshot from "./assets/screenshots/medication-log.png";
+import sleepScreenshot from "./assets/screenshots/sleep-log.png";
 
 const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
+const screenshotAssets = {
+  "/screenshots/dashboard.png": dashboardScreenshot,
+  "/screenshots/logging-food.png": foodScreenshot,
+  "/screenshots/medication-log.png": medicationScreenshot,
+  "/screenshots/sleep-log.png": sleepScreenshot,
+};
 
 const publicPages = {
   "/": {
@@ -799,8 +809,10 @@ function MarketingScreenshot({
   className = "",
 }) {
   const [failed, setFailed] = useState(false);
+  const bundledSrc = screenshotAssets[src];
+  const displaySrc = failed && bundledSrc ? bundledSrc : src;
 
-  if (failed) {
+  if (failed && !bundledSrc) {
     return (
       <div
         className={`flex min-h-64 items-center justify-center rounded-[1.5rem] border-2 border-dashed border-indigo-200 bg-white px-5 py-8 text-center shadow-sm ${className}`}
@@ -823,7 +835,7 @@ function MarketingScreenshot({
 
   return (
     <img
-      src={src}
+      src={displaySrc}
       alt={alt}
       loading={priority ? "eager" : "lazy"}
       className={`w-full max-w-full rounded-[1.5rem] border border-slate-200 bg-white object-cover shadow-xl ${className}`}
