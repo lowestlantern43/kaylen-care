@@ -3734,31 +3734,49 @@ export default function KaylenCareMonitorDashboard({
     const margin = 8;
     const usableWidth = pdfWidth - margin * 2;
     const usableHeight = pdfHeight - margin * 2;
-    const canvas = await html2canvas(exportNode, {
-      scale: 2,
-      useCORS: true,
-      backgroundColor: "#ffffff",
-      logging: false,
-      windowWidth: 1120,
-    });
-
-    const imgData = canvas.toDataURL("image/png");
     const pdf = new jsPDF("l", "mm", "a4");
+    const reportContent = exportNode.firstElementChild || exportNode;
+    const blocks = Array.from(reportContent.children).filter(
+      (block) => block instanceof HTMLElement,
+    );
 
-    const imgWidth = usableWidth;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    if (!blocks.length) {
+      throw new Error("No report content found for PDF export");
+    }
 
-    let heightLeft = imgHeight;
-    let position = margin;
+    let cursorY = margin;
 
-    pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
-    heightLeft -= usableHeight;
+    for (const block of blocks) {
+      const canvas = await html2canvas(block, {
+        scale: 1.5,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: "#ffffff",
+        logging: false,
+        windowWidth: 1120,
+        scrollX: 0,
+        scrollY: 0,
+      });
 
-    while (heightLeft > 0) {
-      position = heightLeft - imgHeight + margin;
-      pdf.addPage();
-      pdf.addImage(imgData, "PNG", margin, position, imgWidth, imgHeight);
-      heightLeft -= usableHeight;
+      if (!canvas.width || !canvas.height) continue;
+
+      const imgData = canvas.toDataURL("image/png");
+      let imgWidth = usableWidth;
+      let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      if (imgHeight > usableHeight) {
+        const scale = usableHeight / imgHeight;
+        imgHeight = usableHeight;
+        imgWidth *= scale;
+      }
+
+      if (cursorY > margin && cursorY + imgHeight > pdfHeight - margin) {
+        pdf.addPage();
+        cursorY = margin;
+      }
+
+      pdf.addImage(imgData, "PNG", margin, cursorY, imgWidth, imgHeight);
+      cursorY += imgHeight + 4;
     }
 
     return pdf;
