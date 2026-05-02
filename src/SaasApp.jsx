@@ -814,8 +814,8 @@ function MarketingScreenshot({
   const displaySrc = failed && bundledSrc ? bundledSrc : src;
   const sizeClass =
     size === "compact"
-      ? "mx-auto w-full max-w-[150px] sm:max-w-[170px] lg:max-w-[180px]"
-      : "mx-auto w-full max-w-[190px] sm:max-w-[220px] lg:max-w-[240px]";
+      ? "mx-auto w-full max-w-[195px] sm:max-w-[220px] lg:max-w-[235px]"
+      : "mx-auto w-full max-w-[250px] sm:max-w-[285px] lg:max-w-[315px]";
 
   if (failed && !bundledSrc) {
     return (
