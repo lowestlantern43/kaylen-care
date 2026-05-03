@@ -6141,7 +6141,7 @@ export default function KaylenCareMonitorDashboard({
       </h4>
       {entries.length ? (
         <div className="mt-2 space-y-2">
-          {entries.slice(0, limit).map((entry) => (
+          {entries.map((entry) => (
             <div
               key={entry.id}
               className="pdf-avoid-break rounded-xl bg-white/85 px-3 py-2 text-sm"
