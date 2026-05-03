@@ -3744,6 +3744,44 @@ export default function KaylenCareMonitorDashboard({
     const usableWidth = pdfWidth - margin * 2;
     const pdf = new jsPDF("l", "mm", "a4");
     let cursorY = margin;
+    const pdfGeneratedDate = new Date().toLocaleDateString("en-GB");
+    const tones = {
+      sky: {
+        fill: [240, 249, 255],
+        stroke: [186, 230, 253],
+        accent: [2, 132, 199],
+      },
+      amber: {
+        fill: [255, 251, 235],
+        stroke: [253, 230, 138],
+        accent: [217, 119, 6],
+      },
+      rose: {
+        fill: [255, 241, 242],
+        stroke: [254, 205, 211],
+        accent: [190, 18, 60],
+      },
+      indigo: {
+        fill: [238, 242, 255],
+        stroke: [199, 210, 254],
+        accent: [79, 70, 229],
+      },
+      emerald: {
+        fill: [236, 253, 245],
+        stroke: [167, 243, 208],
+        accent: [5, 150, 105],
+      },
+      slate: {
+        fill: [248, 250, 252],
+        stroke: [226, 232, 240],
+        accent: [71, 85, 105],
+      },
+      violet: {
+        fill: [245, 243, 255],
+        stroke: [221, 214, 254],
+        accent: [124, 58, 237],
+      },
+    };
 
     const setText = (size, color = [15, 23, 42], style = "normal") => {
       pdf.setFont("helvetica", style);
@@ -3767,9 +3805,9 @@ export default function KaylenCareMonitorDashboard({
       lines = [],
       x = margin,
       width = usableWidth,
-      fill = [248, 250, 252],
-      stroke = [226, 232, 240],
-      titleColor = [71, 85, 105],
+      fill = tones.slate.fill,
+      stroke = tones.slate.stroke,
+      titleColor = tones.slate.accent,
     }) => {
       const cleanLines = lines
         .flatMap((line) =>
@@ -3792,19 +3830,22 @@ export default function KaylenCareMonitorDashboard({
     const drawMetricGrid = (items) => {
       const columns = 4;
       const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
-      const cardHeight = 18;
+      const cardHeight = 20;
       items.forEach((item, index) => {
+        const tone = item.tone || tones.slate;
         const column = index % columns;
         if (column === 0) ensureSpace(cardHeight);
         const x = margin + column * (cardWidth + gap);
         const y = cursorY;
-        pdf.setFillColor(255, 255, 255);
-        pdf.setDrawColor(226, 232, 240);
+        pdf.setFillColor(...tone.fill);
+        pdf.setDrawColor(...tone.stroke);
         pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
-        setText(6.5, [100, 116, 139], "bold");
+        pdf.setFillColor(...tone.accent);
+        pdf.roundedRect(x + 2.5, y + 3, 1.6, cardHeight - 6, 1, 1, "F");
+        setText(6.5, tone.accent, "bold");
         pdf.text(String(item.label || "").toUpperCase(), x + 3, y + 5);
         setText(11, [15, 23, 42], "bold");
-        pdf.text(String(item.value ?? ""), x + 3, y + 12);
+        pdf.text(String(item.value ?? ""), x + 6, y + 13);
         if (column === columns - 1 || index === items.length - 1) {
           cursorY += cardHeight + gap;
         }
@@ -3814,30 +3855,117 @@ export default function KaylenCareMonitorDashboard({
     const drawTrendGrid = () => {
       const columns = 4;
       const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
-      const cardHeight = 25;
+      const cardHeight = 28;
       reportChartData.forEach((item, index) => {
+        const tone =
+          item.label.includes("Food")
+            ? tones.amber
+            : item.label.includes("Medication")
+              ? tones.rose
+              : item.label.includes("Sleep")
+                ? tones.indigo
+                : tones.sky;
         const column = index % columns;
         if (column === 0) ensureSpace(cardHeight);
         const x = margin + column * (cardWidth + gap);
         const y = cursorY;
         const width = Math.max(4, Math.min(100, (item.value / item.max) * 100));
-        pdf.setFillColor(248, 250, 252);
-        pdf.setDrawColor(226, 232, 240);
+        pdf.setFillColor(...tone.fill);
+        pdf.setDrawColor(...tone.stroke);
         pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
-        setText(6.5, [100, 116, 139], "bold");
+        setText(6.5, tone.accent, "bold");
         pdf.text(String(item.label).toUpperCase(), x + 3, y + 5);
         setText(12, [15, 23, 42], "bold");
         pdf.text(String(item.value), x + 3, y + 13);
         setText(7, [100, 116, 139], "normal");
         pdf.text(String(item.meta), x + 16, y + 13);
-        pdf.setFillColor(226, 232, 240);
-        pdf.roundedRect(x + 3, y + 18, cardWidth - 6, 2.5, 1, 1, "F");
-        pdf.setFillColor(59, 130, 246);
-        pdf.roundedRect(x + 3, y + 18, ((cardWidth - 6) * width) / 100, 2.5, 1, 1, "F");
+        pdf.setFillColor(255, 255, 255);
+        pdf.roundedRect(x + 3, y + 19, cardWidth - 6, 3, 1.5, 1.5, "F");
+        pdf.setFillColor(...tone.accent);
+        pdf.roundedRect(
+          x + 3,
+          y + 19,
+          ((cardWidth - 6) * width) / 100,
+          3,
+          1.5,
+          1.5,
+          "F",
+        );
         if (column === columns - 1 || index === reportChartData.length - 1) {
           cursorY += cardHeight + gap;
         }
       });
+    };
+
+    const drawDailyActivityChart = () => {
+      const groups = [...dailyReportGroups].reverse().slice(-12);
+      if (!groups.length) return;
+
+      const chartHeight = 44;
+      ensureSpace(chartHeight);
+
+      const x = margin;
+      const y = cursorY;
+      const width = usableWidth;
+      const plotX = x + 9;
+      const plotY = y + 13;
+      const plotWidth = width - 18;
+      const plotHeight = 22;
+      const maxTotal = Math.max(
+        1,
+        ...groups.map((group) => group.entries.length),
+      );
+      const barGap = 3;
+      const barWidth = Math.max(
+        4,
+        (plotWidth - barGap * (groups.length - 1)) / groups.length,
+      );
+      const categories = [
+        ["Food Diary", tones.amber.accent],
+        ["Medication", tones.rose.accent],
+        ["Sleep", tones.indigo.accent],
+        ["Toileting", tones.sky.accent],
+        ["Health", tones.emerald.accent],
+      ];
+
+      pdf.setFillColor(...tones.slate.fill);
+      pdf.setDrawColor(...tones.slate.stroke);
+      pdf.roundedRect(x, y, width, chartHeight, 3, 3, "FD");
+      setText(7, tones.slate.accent, "bold");
+      pdf.text("DAILY ACTIVITY PATTERN", x + 4, y + 6);
+      setText(6.5, [100, 116, 139], "normal");
+      pdf.text("Stacked bars show food, medication, sleep, toileting and health logs by day.", x + 4, y + 10);
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.line(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight);
+
+      groups.forEach((group, index) => {
+        const barX = plotX + index * (barWidth + barGap);
+        let barBottom = plotY + plotHeight;
+
+        categories.forEach(([section, color]) => {
+          const count = group.entries.filter((entry) => entry.section === section).length;
+          if (!count) return;
+          const segmentHeight = Math.max(1.2, (count / maxTotal) * plotHeight);
+          barBottom -= segmentHeight;
+          pdf.setFillColor(...color);
+          pdf.roundedRect(barX, barBottom, barWidth, segmentHeight, 1, 1, "F");
+        });
+
+        setText(5.5, [100, 116, 139], "normal");
+        pdf.text(group.date.slice(0, 5), barX, y + chartHeight - 3);
+      });
+
+      const legendY = y + chartHeight - 8;
+      categories.forEach(([label, color], index) => {
+        const legendX = x + 90 + index * 34;
+        pdf.setFillColor(...color);
+        pdf.circle(legendX, legendY - 1, 1.2, "F");
+        setText(5.5, [71, 85, 105], "normal");
+        pdf.text(reportCategoryLabel(label), legendX + 3, legendY);
+      });
+
+      cursorY += chartHeight + gap;
     };
 
     const addSectionTitle = (title) => {
@@ -3856,17 +3984,19 @@ export default function KaylenCareMonitorDashboard({
       )}${details}`;
     };
 
-    pdf.setFillColor(240, 249, 255);
-    pdf.setDrawColor(186, 230, 253);
+    pdf.setFillColor(...tones.sky.fill);
+    pdf.setDrawColor(...tones.sky.stroke);
     pdf.roundedRect(margin, cursorY, usableWidth, 28, 4, 4, "FD");
-    setText(8, [2, 132, 199], "bold");
+    pdf.setFillColor(...tones.sky.accent);
+    pdf.roundedRect(margin, cursorY, 3, 28, 1.5, 1.5, "F");
+    setText(8, tones.sky.accent, "bold");
     pdf.text("SHAREABLE CARE REPORT", margin + 5, cursorY + 7);
     setText(18, [15, 23, 42], "bold");
     pdf.text(childName || "Child", margin + 5, cursorY + 16);
     setText(8, [51, 65, 85], "normal");
     pdf.text(`Date range: ${reportRangeLabel}`, margin + 5, cursorY + 23);
     pdf.text(
-      `Generated: ${new Date().toLocaleDateString("en-GB")}`,
+      `Generated: ${pdfGeneratedDate}`,
       margin + 120,
       cursorY + 23,
     );
@@ -3876,35 +4006,36 @@ export default function KaylenCareMonitorDashboard({
       drawCard({
         title: "Parent/carer notes",
         lines: [reportNotes.trim()],
-        fill: [240, 249, 255],
-        stroke: [186, 230, 253],
-        titleColor: [2, 132, 199],
+        fill: tones.sky.fill,
+        stroke: tones.sky.stroke,
+        titleColor: tones.sky.accent,
       });
     }
 
     addSectionTitle("Quick summary");
     drawMetricGrid([
-      { label: "Food logs", value: quickReportSummary.food },
-      { label: "Medication", value: quickReportSummary.medication },
-      { label: "Sleep logs", value: quickReportSummary.sleep },
-      { label: "Toileting", value: quickReportSummary.toileting },
-      { label: "Health", value: quickReportSummary.health },
-      { label: "Missed doses", value: quickReportSummary.missedMedication },
-      { label: "Late doses", value: quickReportSummary.lateMedication },
-      { label: "Total entries", value: recentEntries.length },
+      { label: "Food logs", value: quickReportSummary.food, tone: tones.amber },
+      { label: "Medication", value: quickReportSummary.medication, tone: tones.rose },
+      { label: "Sleep logs", value: quickReportSummary.sleep, tone: tones.indigo },
+      { label: "Toileting", value: quickReportSummary.toileting, tone: tones.sky },
+      { label: "Health", value: quickReportSummary.health, tone: tones.emerald },
+      { label: "Missed doses", value: quickReportSummary.missedMedication, tone: tones.rose },
+      { label: "Late doses", value: quickReportSummary.lateMedication, tone: tones.amber },
+      { label: "Total entries", value: recentEntries.length, tone: tones.slate },
     ]);
 
     addSectionTitle("At a glance");
     drawMetricGrid([
-      { label: "Sleep", value: atAGlance.sleep },
-      { label: "Medication", value: atAGlance.medication },
-      { label: "Appetite", value: atAGlance.appetite },
-      { label: "Health", value: atAGlance.health },
+      { label: "Sleep", value: atAGlance.sleep, tone: tones.indigo },
+      { label: "Medication", value: atAGlance.medication, tone: tones.rose },
+      { label: "Appetite", value: atAGlance.appetite, tone: tones.amber },
+      { label: "Health", value: atAGlance.health, tone: tones.emerald },
     ]);
 
     if (showReportCharts) {
       addSectionTitle("Simple trends");
       drawTrendGrid();
+      drawDailyActivityChart();
     }
 
     addSectionTitle("Simple observations");
@@ -3925,7 +4056,7 @@ export default function KaylenCareMonitorDashboard({
           ].filter(Boolean),
           fill: [255, 241, 242],
           stroke: [254, 205, 211],
-          titleColor: [190, 18, 60],
+          titleColor: tones.rose.accent,
         });
       });
     }
@@ -3936,6 +4067,9 @@ export default function KaylenCareMonitorDashboard({
         drawCard({
           title: "No logs found",
           lines: ["No logs were found for this date range."],
+          fill: tones.slate.fill,
+          stroke: tones.slate.stroke,
+          titleColor: tones.slate.accent,
         });
       } else {
         dailyReportGroups.forEach((group) => {
@@ -3949,9 +4083,22 @@ export default function KaylenCareMonitorDashboard({
                 ...entries.map((entry) => `- ${formatEntryLine(entry)}`),
               ];
             }),
+            fill: [255, 255, 255],
+            stroke: tones.slate.stroke,
+            titleColor: tones.slate.accent,
           });
         });
       }
+    }
+
+    const pageCount = pdf.getNumberOfPages();
+    for (let page = 1; page <= pageCount; page += 1) {
+      pdf.setPage(page);
+      pdf.setDrawColor(226, 232, 240);
+      pdf.line(margin, pdfHeight - 7, pdfWidth - margin, pdfHeight - 7);
+      setText(6.5, [100, 116, 139], "normal");
+      pdf.text(`FamilyTrack report - ${childName}`, margin, pdfHeight - 3);
+      pdf.text(`Page ${page} of ${pageCount}`, pdfWidth - margin - 22, pdfHeight - 3);
     }
 
     return pdf;
