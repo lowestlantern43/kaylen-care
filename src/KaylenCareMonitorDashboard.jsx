@@ -260,6 +260,40 @@ const formatMetric = (value, suffix) => {
   return `${value}${suffix}`;
 };
 
+const toFiniteNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const roundTo = (value, decimals = 1) =>
+  Number(Number(value || 0).toFixed(decimals));
+
+const formatSignedNumber = (value, suffix = "", decimals = 1) => {
+  const rounded = roundTo(value, decimals);
+  if (!rounded) return `0${suffix}`;
+  return `${rounded > 0 ? "+" : ""}${rounded}${suffix}`;
+};
+
+const getFluidMlFromEntry = (entry) => {
+  if (!entry?.isMilk) return 0;
+  if (entry.amountMl !== undefined && entry.amountMl !== null) {
+    return toFiniteNumber(entry.amountMl);
+  }
+  if (entry.amountOz !== undefined && entry.amountOz !== null) {
+    return toFiniteNumber(entry.amountOz) * 29.5735;
+  }
+  const text = `${entry.summary || ""} ${(entry.details || []).join(" ")}`;
+  const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml/i);
+  if (mlMatch) return toFiniteNumber(mlMatch[1]);
+  const ozMatch = text.match(/(\d+(?:\.\d+)?)\s*oz/i);
+  return ozMatch ? toFiniteNumber(ozMatch[1]) * 29.5735 : 0;
+};
+
+const getEntryDateTime = (entry) =>
+  getCareSnapshotEntryDate(entry) ||
+  parseDisplayDateTime(entry?.date, entry?.time) ||
+  parseDisplayDate(entry?.date);
+
 const significantHealthEvents = [
   "seizure",
   "injury",
@@ -1722,6 +1756,7 @@ export default function KaylenCareMonitorDashboard({
     const isDrink = row.data?.type === "drink" || row.data?.type === "milk";
     const amount = row.data?.amount || "";
     const unit = row.data?.unit || "oz";
+    const amountNumber = toFiniteNumber(amount);
 
     return {
       id: `care-${row.id}`,
@@ -1729,7 +1764,13 @@ export default function KaylenCareMonitorDashboard({
       section: "Food Diary",
       date: formatDisplayDateFromIso(row.logDate) || todayValue(),
       time: row.logTime || "",
-      amountOz: isDrink && unit === "oz" ? Number(amount || 0) : undefined,
+      amountOz: isDrink && unit === "oz" ? amountNumber : undefined,
+      amountMl:
+        isDrink && amountNumber
+          ? unit === "ml"
+            ? amountNumber
+            : amountNumber * 29.5735
+          : undefined,
       isMilk: isDrink,
       summary: `${row.data?.item || (isDrink ? "Drink" : "Food entry")} - ${
         isDrink ? `${amount || 0}${unit}` : amount || "No amount"
@@ -2017,6 +2058,7 @@ export default function KaylenCareMonitorDashboard({
         date: entryDate,
         time: entryTime,
         amountOz: Number(row.amount || 0),
+        amountMl: Number(row.amount || 0) * 29.5735,
         isMilk: true,
         summary: `${parseNotesValue(row.notes, "Item") || "Drink"} - ${
           row.amount || 0
@@ -2598,6 +2640,36 @@ export default function KaylenCareMonitorDashboard({
     return groups;
   }, [recentEntries]);
 
+  const previousReportEntries = useMemo(() => {
+    if (!reportRangeStart || !reportRangeEnd) return [];
+
+    const rangeDuration = Math.max(
+      24 * 60 * 60 * 1000,
+      reportRangeEnd.getTime() - reportRangeStart.getTime(),
+    );
+    const previousEnd = new Date(reportRangeStart.getTime() - 1);
+    const previousStart = new Date(previousEnd.getTime() - rangeDuration);
+
+    return sharedLog
+      .filter((entry) => {
+        const entryDate = getEntryDateTime(entry);
+        if (!entryDate) return false;
+        if (entryDate < previousStart || entryDate > previousEnd) return false;
+        if (
+          reportCategoryFilter !== "All" &&
+          entry.section !== reportCategoryFilter
+        ) {
+          return false;
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = getEntryDateTime(a)?.getTime() || 0;
+        const dateB = getEntryDateTime(b)?.getTime() || 0;
+        return dateA - dateB;
+      });
+  }, [reportCategoryFilter, reportRangeEnd, reportRangeStart, sharedLog]);
+
   const quickReportSummary = useMemo(() => {
     const countBySection = (section) =>
       recentEntries.filter((entry) => entry.section === section).length;
@@ -2661,6 +2733,368 @@ export default function KaylenCareMonitorDashboard({
       disruptedSleep,
     };
   }, [recentEntries]);
+
+  const reportTrendModel = useMemo(() => {
+    const rangeDays = Math.max(
+      1,
+      Math.ceil(
+        ((reportRangeEnd?.getTime?.() || Date.now()) -
+          (reportRangeStart?.getTime?.() || Date.now()) +
+          1) /
+          (24 * 60 * 60 * 1000),
+      ),
+    );
+    const typicalMedicationPerDay = profileMedicationOptions.reduce(
+      (sum, medicine) => sum + Math.max(1, medicine.times?.length || 0),
+      0,
+    );
+
+    const getDayKey = (entry) => {
+      if (entry.date) return entry.date;
+      const parsed = getEntryDateTime(entry);
+      return parsed ? formatDisplayDateFromIso(parsed.toISOString()) : "Unknown";
+    };
+
+    const classifyToileting = (entry) => {
+      const text = `${entry.summary || ""} ${(entry.details || []).join(" ")}`.toLowerCase();
+      return {
+        wet: /wet|wee|urine|nappy|toilet/.test(text) ? 1 : 0,
+        soiled: /bowel|poo|stool|soiled|bm/.test(text) ? 1 : 0,
+      };
+    };
+
+    const summariseEntries = (entries) => {
+      const sorted = [...entries].sort((a, b) => {
+        const dateA = getEntryDateTime(a)?.getTime() || 0;
+        const dateB = getEntryDateTime(b)?.getTime() || 0;
+        return dateA - dateB;
+      });
+      const dayMap = new Map();
+      const weights = [];
+      let sleepMinutes = 0;
+      let sleepLogsWithDuration = 0;
+      let fluidMl = 0;
+      let medicationCount = 0;
+      let medicationConcernCount = 0;
+      let toiletingCount = 0;
+      let soiledCount = 0;
+
+      sorted.forEach((entry) => {
+        const key = getDayKey(entry);
+        if (!dayMap.has(key)) {
+          dayMap.set(key, {
+            date: key,
+            label: formatReportDateLabel(key) || key,
+            fluidMl: 0,
+            sleepMinutes: 0,
+            medication: 0,
+            toileting: 0,
+            wet: 0,
+            soiled: 0,
+          });
+        }
+        const day = dayMap.get(key);
+
+        if (entry.section === "Food Diary") {
+          const drinkMl = getFluidMlFromEntry(entry);
+          fluidMl += drinkMl;
+          day.fluidMl += drinkMl;
+        }
+
+        if (entry.section === "Sleep") {
+          const minutes = toFiniteNumber(entry.durationMinutes);
+          if (minutes > 0) {
+            sleepMinutes += minutes;
+            sleepLogsWithDuration += 1;
+            day.sleepMinutes += minutes;
+          }
+        }
+
+        if (entry.section === "Medication") {
+          medicationCount += 1;
+          day.medication += 1;
+          if (
+            ["missed", "late", "refused"].includes(
+              String(entry.medicationStatus || "").toLowerCase(),
+            )
+          ) {
+            medicationConcernCount += 1;
+          }
+        }
+
+        if (entry.section === "Toileting") {
+          const toileting = classifyToileting(entry);
+          toiletingCount += 1;
+          soiledCount += toileting.soiled;
+          day.toileting += 1;
+          day.wet += toileting.wet;
+          day.soiled += toileting.soiled;
+        }
+
+        if (entry.section === "Health" && entry.weightKg) {
+          const weight = toFiniteNumber(entry.weightKg);
+          if (weight > 0) {
+            weights.push({
+              date: key,
+              label: key.slice(0, 5),
+              value: weight,
+            });
+          }
+        }
+      });
+
+      const daily = Array.from(dayMap.values()).sort((a, b) => {
+        const dateA = parseDisplayDate(a.date)?.getTime() || 0;
+        const dateB = parseDisplayDate(b.date)?.getTime() || 0;
+        return dateA - dateB;
+      });
+      const latestWeight = weights[weights.length - 1]?.value || 0;
+      const firstWeight = weights[0]?.value || 0;
+
+      return {
+        entries: sorted,
+        daily,
+        days: Math.max(rangeDays, daily.length || 1),
+        sleepMinutes,
+        avgSleepHours: sleepLogsWithDuration
+          ? sleepMinutes / sleepLogsWithDuration / 60
+          : 0,
+        fluidMl,
+        avgFluidMl: fluidMl / Math.max(rangeDays, 1),
+        medicationCount,
+        typicalMedicationCount: typicalMedicationPerDay
+          ? typicalMedicationPerDay * Math.max(rangeDays, 1)
+          : 0,
+        medicationConcernCount,
+        toiletingCount,
+        toiletingAvg: toiletingCount / Math.max(rangeDays, 1),
+        soiledCount,
+        weights,
+        weightChange:
+          weights.length >= 2 ? latestWeight - firstWeight : 0,
+      };
+    };
+
+    const current = summariseEntries(recentEntries);
+    const previous = summariseEntries(previousReportEntries);
+
+    const trendBadge = (diff, positiveGood = true) => {
+      const threshold = Math.abs(diff) < 0.05;
+      if (threshold) {
+        return {
+          label: "Stable",
+          icon: "->",
+          className: "bg-slate-100 text-slate-600",
+        };
+      }
+      const isGood = positiveGood ? diff > 0 : diff < 0;
+      return {
+        label: isGood ? "Improving" : "Declining",
+        icon: diff > 0 ? "↑" : "↓",
+        className: isGood
+          ? "bg-emerald-50 text-emerald-700"
+          : "bg-rose-50 text-rose-700",
+      };
+    };
+
+    const medicationPercent = current.typicalMedicationCount
+      ? Math.min(100, Math.round((current.medicationCount / current.typicalMedicationCount) * 100))
+      : current.medicationCount
+        ? 100
+        : 0;
+    const previousMedicationPercent = previous.typicalMedicationCount
+      ? Math.min(100, Math.round((previous.medicationCount / previous.typicalMedicationCount) * 100))
+      : previous.medicationCount
+        ? 100
+        : 0;
+
+    const summaryStats = [
+      {
+        key: "sleep",
+        label: "Avg Sleep",
+        value: current.avgSleepHours ? `${roundTo(current.avgSleepHours)}h` : "No data",
+        change: formatSignedNumber(current.avgSleepHours - previous.avgSleepHours, "h"),
+        trend: trendBadge(current.avgSleepHours - previous.avgSleepHours, true),
+        tone: "indigo",
+      },
+      {
+        key: "fluids",
+        label: "Avg Fluid Intake",
+        value: `${Math.round(current.avgFluidMl)}ml`,
+        change: formatSignedNumber(current.avgFluidMl - previous.avgFluidMl, "ml", 0),
+        trend: trendBadge(current.avgFluidMl - previous.avgFluidMl, true),
+        tone: "sky",
+      },
+      {
+        key: "medication",
+        label: "Medication Routine",
+        value: current.typicalMedicationCount
+          ? `${current.medicationCount} of ${current.typicalMedicationCount}`
+          : `${current.medicationCount} logged`,
+        change: formatSignedNumber(medicationPercent - previousMedicationPercent, "%", 0),
+        trend: trendBadge(medicationPercent - previousMedicationPercent, true),
+        tone: "rose",
+      },
+      {
+        key: "toileting",
+        label: "Toileting Avg",
+        value: `${roundTo(current.toiletingAvg)} / day`,
+        change: formatSignedNumber(current.toiletingAvg - previous.toiletingAvg, "", 1),
+        trend: trendBadge(current.toiletingAvg - previous.toiletingAvg, true),
+        tone: "cyan",
+      },
+      {
+        key: "weight",
+        label: "Weight Change",
+        value: current.weights.length >= 2 ? `${formatSignedNumber(current.weightChange, "kg")}` : "No trend",
+        change: previous.weights.length >= 2
+          ? `${formatSignedNumber(current.weightChange - previous.weightChange, "kg")}`
+          : "No previous",
+        trend: trendBadge(current.weightChange - previous.weightChange, true),
+        tone: "emerald",
+      },
+    ];
+
+    const currentDailyDesc = [...current.daily].reverse();
+    const countStreak = (predicate) => {
+      let streak = 0;
+      for (const day of currentDailyDesc) {
+        if (!predicate(day)) break;
+        streak += 1;
+      }
+      return streak;
+    };
+
+    const hydrationStreak = countStreak((day) => day.fluidMl > 0);
+    const medicationStreak = countStreak((day) => day.medication > 0);
+    const sleepStreak = countStreak((day) => day.sleepMinutes >= 8 * 60);
+
+    const lowFluidDays = current.daily.filter(
+      (day) => day.fluidMl > 0 && day.fluidMl < Math.max(250, previous.avgFluidMl * 0.75),
+    ).length;
+    const recentThree = currentDailyDesc.slice(0, 3);
+    const noBowelThreeDays =
+      recentThree.length >= 3 && recentThree.every((day) => day.soiled === 0);
+
+    const keyChanges = [];
+    const sleepDiff = current.avgSleepHours - previous.avgSleepHours;
+    const fluidDiff = current.avgFluidMl - previous.avgFluidMl;
+    const weightDiff = current.weightChange;
+
+    if (Math.abs(sleepDiff) >= 0.3) {
+      keyChanges.push({
+        type: sleepDiff > 0 ? "increase" : "decrease",
+        icon: sleepDiff > 0 ? "↑" : "↓",
+        title: sleepDiff > 0 ? "Sleep increased" : "Sleep decreased",
+        text: `${formatSignedNumber(sleepDiff, "h")} vs previous period`,
+      });
+    }
+
+    if (Math.abs(fluidDiff) >= 100) {
+      keyChanges.push({
+        type: fluidDiff > 0 ? "increase" : "decrease",
+        icon: fluidDiff > 0 ? "↑" : "↓",
+        title: fluidDiff > 0 ? "Fluids increased" : "Fluids decreased",
+        text: `${formatSignedNumber(fluidDiff, "ml", 0)} average per day`,
+      });
+    }
+
+    if (current.weights.length >= 2 && Math.abs(weightDiff) >= 0.2) {
+      keyChanges.push({
+        type: weightDiff >= 0 ? "increase" : "warning",
+        icon: weightDiff >= 0 ? "↑" : "!",
+        title: weightDiff >= 0 ? "Weight increased" : "Weight dropped",
+        text: `${formatSignedNumber(weightDiff, "kg")} in this range`,
+      });
+    }
+
+    if (noBowelThreeDays) {
+      keyChanges.push({
+        type: "warning",
+        icon: "!",
+        title: "No bowel movement logged",
+        text: "No soiled/bowel entry in the latest 3 logged days",
+      });
+    }
+
+    if (current.typicalMedicationCount && medicationPercent < 80) {
+      keyChanges.push({
+        type: "warning",
+        icon: "!",
+        title: "Medication routine changed",
+        text: `${medicationPercent}% of typical doses logged`,
+      });
+    }
+
+    if (!keyChanges.length) {
+      keyChanges.push({
+        type: "stable",
+        icon: "->",
+        title: "No major changes found",
+        text: "Recent logs look broadly stable for this range",
+      });
+    }
+
+    const insights = [
+      lowFluidDays
+        ? `Fluid intake below typical levels on ${lowFluidDays} day${lowFluidDays === 1 ? "" : "s"}.`
+        : "",
+      Math.abs(sleepDiff) >= 0.3
+        ? `Sleep has ${sleepDiff > 0 ? "increased" : "decreased"} by ${Math.abs(roundTo(sleepDiff))} hours on average.`
+        : "",
+      current.toiletingAvg + 0.2 < previous.toiletingAvg
+        ? "Toileting frequency is lower than the previous period."
+        : "",
+      current.typicalMedicationCount && medicationPercent < 90
+        ? "Medication routine is slightly inconsistent."
+        : "",
+      noBowelThreeDays ? "No bowel movement has been logged in the latest 3 logged days." : "",
+    ].filter(Boolean);
+
+    return {
+      current,
+      previous,
+      summaryStats,
+      keyChanges: keyChanges.slice(0, 4),
+      insights: insights.length ? insights.slice(0, 5) : ["No major trends found."],
+      streaks: [
+        { label: `Hydration streak: ${hydrationStreak} day${hydrationStreak === 1 ? "" : "s"}`, tone: "bg-sky-50 text-sky-700" },
+        { label: `Medication: ${medicationStreak} day${medicationStreak === 1 ? "" : "s"}`, tone: "bg-rose-50 text-rose-700" },
+        { label: `Sleep goal met: ${sleepStreak} day${sleepStreak === 1 ? "" : "s"}`, tone: "bg-indigo-50 text-indigo-700" },
+      ],
+      graphs: {
+        weight: current.weights.map((point, index, array) => ({
+          ...point,
+          isDrop: index > 0 && point.value < array[index - 1].value,
+        })),
+        fluid: current.daily.map((day) => ({
+          label: day.date.slice(0, 5),
+          value: Math.round(day.fluidMl),
+        })),
+        sleep: current.daily.map((day) => ({
+          label: day.date.slice(0, 5),
+          value: roundTo(day.sleepMinutes / 60),
+        })),
+        toileting: current.daily.map((day) => ({
+          label: day.date.slice(0, 5),
+          wet: day.wet,
+          soiled: day.soiled,
+          value: day.toileting,
+        })),
+        medication: {
+          percent: medicationPercent,
+          logged: current.medicationCount,
+          typical: current.typicalMedicationCount,
+        },
+      },
+    };
+  }, [
+    previousReportEntries,
+    profileMedicationOptions,
+    recentEntries,
+    reportRangeEnd,
+    reportRangeStart,
+  ]);
 
   const reportTrendObservations = useMemo(() => {
     const observations = [];
@@ -3856,20 +4290,19 @@ export default function KaylenCareMonitorDashboard({
       const columns = 4;
       const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
       const cardHeight = 28;
-      reportChartData.forEach((item, index) => {
-        const tone =
-          item.label.includes("Food")
-            ? tones.amber
-            : item.label.includes("Medication")
-              ? tones.rose
-              : item.label.includes("Sleep")
-                ? tones.indigo
-                : tones.sky;
+      const toneForStat = {
+        indigo: tones.indigo,
+        sky: tones.sky,
+        rose: tones.rose,
+        cyan: tones.sky,
+        emerald: tones.emerald,
+      };
+      reportTrendModel.summaryStats.forEach((item, index) => {
+        const tone = toneForStat[item.tone] || tones.slate;
         const column = index % columns;
         if (column === 0) ensureSpace(cardHeight);
         const x = margin + column * (cardWidth + gap);
         const y = cursorY;
-        const width = Math.max(4, Math.min(100, (item.value / item.max) * 100));
         pdf.setFillColor(...tone.fill);
         pdf.setDrawColor(...tone.stroke);
         pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
@@ -3878,20 +4311,20 @@ export default function KaylenCareMonitorDashboard({
         setText(12, [15, 23, 42], "bold");
         pdf.text(String(item.value), x + 3, y + 13);
         setText(7, [100, 116, 139], "normal");
-        pdf.text(String(item.meta), x + 16, y + 13);
+        pdf.text(`${item.trend.icon} ${item.trend.label} (${item.change})`, x + 3, y + 19);
         pdf.setFillColor(255, 255, 255);
-        pdf.roundedRect(x + 3, y + 19, cardWidth - 6, 3, 1.5, 1.5, "F");
+        pdf.roundedRect(x + 3, y + 23, cardWidth - 6, 2, 1, 1, "F");
         pdf.setFillColor(...tone.accent);
         pdf.roundedRect(
           x + 3,
-          y + 19,
-          ((cardWidth - 6) * width) / 100,
-          3,
-          1.5,
-          1.5,
+          y + 23,
+          cardWidth - 6,
+          2,
+          1,
+          1,
           "F",
         );
-        if (column === columns - 1 || index === reportChartData.length - 1) {
+        if (column === columns - 1 || index === reportTrendModel.summaryStats.length - 1) {
           cursorY += cardHeight + gap;
         }
       });
@@ -4015,17 +4448,40 @@ export default function KaylenCareMonitorDashboard({
       });
     }
 
-    addSectionTitle("Quick summary");
-    drawMetricGrid([
-      { label: "Food logs", value: quickReportSummary.food, tone: tones.amber },
-      { label: "Medication", value: quickReportSummary.medication, tone: tones.rose },
-      { label: "Sleep logs", value: quickReportSummary.sleep, tone: tones.indigo },
-      { label: "Toileting", value: quickReportSummary.toileting, tone: tones.sky },
-      { label: "Health", value: quickReportSummary.health, tone: tones.emerald },
-      { label: "Missed doses", value: quickReportSummary.missedMedication, tone: tones.rose },
-      { label: "Late doses", value: quickReportSummary.lateMedication, tone: tones.amber },
-      { label: "Total entries", value: recentEntries.length, tone: tones.slate },
-    ]);
+    addSectionTitle("Key changes");
+    reportTrendModel.keyChanges.forEach((item) => {
+      const tone =
+        item.type === "increase"
+          ? tones.emerald
+          : item.type === "decrease"
+            ? tones.rose
+            : item.type === "warning"
+              ? tones.amber
+              : tones.slate;
+      drawCard({
+        title: item.title,
+        lines: [item.text],
+        fill: tone.fill,
+        stroke: tone.stroke,
+        titleColor: tone.accent,
+      });
+    });
+
+    addSectionTitle("Summary stats");
+    drawMetricGrid(
+      reportTrendModel.summaryStats.map((item) => ({
+        label: item.label,
+        value: item.value,
+        tone:
+          item.tone === "indigo"
+            ? tones.indigo
+            : item.tone === "rose"
+              ? tones.rose
+              : item.tone === "emerald"
+                ? tones.emerald
+                : tones.sky,
+      })),
+    );
 
     addSectionTitle("At a glance");
     drawMetricGrid([
@@ -4036,15 +4492,15 @@ export default function KaylenCareMonitorDashboard({
     ]);
 
     if (showReportCharts) {
-      addSectionTitle("Simple trends");
+      addSectionTitle("Trends and patterns");
       drawTrendGrid();
       drawDailyActivityChart();
     }
 
-    addSectionTitle("Simple observations");
+    addSectionTitle("Insights");
     drawCard({
-      title: "Observations",
-      lines: reportTrendObservations.map((item) => `- ${item}`),
+      title: "Insights",
+      lines: reportTrendModel.insights.map((item) => `- ${item}`),
     });
 
     if (reportImportantEvents.length) {
@@ -6177,42 +6633,368 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 
-  const renderReportChartCards = (mode = "screen") => (
+  const keyChangeToneClass = (type) => {
+    if (type === "increase") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+    if (type === "decrease") return "border-rose-200 bg-rose-50 text-rose-800";
+    if (type === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
+    return "border-slate-200 bg-slate-50 text-slate-700";
+  };
+
+  const statToneClass = (tone) => {
+    const classes = {
+      indigo: "border-indigo-100 bg-indigo-50 text-indigo-800",
+      sky: "border-sky-100 bg-sky-50 text-sky-800",
+      rose: "border-rose-100 bg-rose-50 text-rose-800",
+      cyan: "border-cyan-100 bg-cyan-50 text-cyan-800",
+      emerald: "border-emerald-100 bg-emerald-50 text-emerald-800",
+    };
+    return classes[tone] || "border-slate-100 bg-slate-50 text-slate-800";
+  };
+
+  const renderTrendPill = (trend) => (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${trend.className}`}
+    >
+      <span>{trend.icon}</span>
+      {trend.label}
+    </span>
+  );
+
+  const renderKeyChangesSection = (mode = "screen") => (
     <section
-      data-report-pdf-card={mode === "pdf" ? "full" : undefined}
+      data-report-pdf-card="full"
       className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(
         mode,
       )}`}
     >
-      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
-        Simple trends
-      </h3>
-      <div className={`mt-3 grid gap-3 ${mode === "pdf" ? "grid-cols-4" : "md:grid-cols-2 xl:grid-cols-4"}`}>
-        {reportChartData.map((item) => {
-          const width = Math.max(4, Math.min(100, (item.value / item.max) * 100));
-          return (
-            <div
-              key={item.label}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-                {item.label}
-              </p>
-              <p className="mt-1 text-lg font-black text-slate-900">
-                {item.value}
-              </p>
-              <p className="text-xs font-semibold text-slate-500">
-                {item.meta}
-              </p>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
-                <div
-                  className={`h-full rounded-full ${item.tone}`}
-                  style={{ width: `${width}%` }}
-                />
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">
+            Top changes
+          </p>
+          <h3 className="mt-1 text-lg font-black text-slate-950">
+            Key Changes
+          </h3>
+        </div>
+        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
+          {reportRangeLabel}
+        </span>
+      </div>
+      <div className={`mt-3 grid gap-2 ${mode === "pdf" ? "grid-cols-4" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
+        {reportTrendModel.keyChanges.map((item) => (
+          <div
+            key={`${item.title}-${item.text}`}
+            className={`rounded-xl border px-3 py-3 shadow-sm ${keyChangeToneClass(
+              item.type,
+            )}`}
+          >
+            <div className="flex items-start gap-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-base font-black shadow-sm">
+                {item.icon}
+              </span>
+              <div className="min-w-0">
+                <p className="text-sm font-black text-slate-950">
+                  {item.title}
+                </p>
+                <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                  {item.text}
+                </p>
               </div>
             </div>
-          );
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const renderReportSummaryStatsRow = (mode = "screen") => (
+    <section
+      data-report-pdf-card="full"
+      className={`rounded-2xl border border-sky-100 bg-sky-50/70 ${compactSectionPadding(
+        mode,
+      )}`}
+    >
+      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-sky-700">
+        Summary stats
+      </h3>
+      <div
+        className={`mt-3 flex gap-3 overflow-x-auto pb-1 ${
+          mode === "pdf" ? "grid grid-cols-5 overflow-visible" : ""
+        }`}
+      >
+        {reportTrendModel.summaryStats.map((stat) => (
+          <div
+            key={stat.key}
+            className={`min-w-[10rem] rounded-xl border px-3 py-3 shadow-sm ${statToneClass(
+              stat.tone,
+            )}`}
+          >
+            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+              {stat.label}
+            </p>
+            <p className="mt-1 text-xl font-black text-slate-950">{stat.value}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {renderTrendPill(stat.trend)}
+              <span className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-bold text-slate-600">
+                {stat.change}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+
+  const renderLineGraphCard = ({
+    title,
+    data,
+    suffix = "",
+    stroke = "#0ea5e9",
+    markerDrop = false,
+    emptyText = "Not enough data yet",
+  }) => {
+    const points = data.filter((item) => Number.isFinite(Number(item.value)));
+    const values = points.map((item) => Number(item.value));
+    const min = values.length ? Math.min(...values) : 0;
+    const max = values.length ? Math.max(...values) : 1;
+    const span = Math.max(1, max - min);
+    const chartPoints = points.map((item, index) => {
+      const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
+      const y = 92 - ((Number(item.value) - min) / span) * 74;
+      return { ...item, x, y };
+    });
+    const polyline = chartPoints.map((point) => `${point.x},${point.y}`).join(" ");
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              {title}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-600">
+              {points.length ? `${points.length} plotted point${points.length === 1 ? "" : "s"}` : emptyText}
+            </p>
+          </div>
+          {points.length ? (
+            <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+              {roundTo(values[values.length - 1])}
+              {suffix}
+            </span>
+          ) : null}
+        </div>
+        <div className="mt-4 h-36">
+          {points.length ? (
+            <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
+              <line x1="0" y1="92" x2="100" y2="92" stroke="#e2e8f0" strokeWidth="1" />
+              <polyline
+                points={polyline}
+                fill="none"
+                stroke={stroke}
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {chartPoints.map((point) => (
+                <circle
+                  key={`${title}-${point.label}-${point.value}`}
+                  cx={point.x}
+                  cy={point.y}
+                  r="3.2"
+                  fill={markerDrop && point.isDrop ? "#e11d48" : "#ffffff"}
+                  stroke={markerDrop && point.isDrop ? "#e11d48" : stroke}
+                  strokeWidth="2"
+                />
+              ))}
+            </svg>
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+              {emptyText}
+            </div>
+          )}
+        </div>
+        {points.length ? (
+          <div className="mt-2 flex justify-between text-[10px] font-bold text-slate-400">
+            <span>{points[0]?.label}</span>
+            <span>{points[points.length - 1]?.label}</span>
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
+  const renderFluidBarGraph = () => {
+    const data = reportTrendModel.graphs.fluid;
+    const target = 1000;
+    const max = Math.max(target, ...data.map((item) => item.value), 1);
+
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              Fluid intake
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-600">
+              Daily drink totals in ml
+            </p>
+          </div>
+          <span className="rounded-full bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">
+            target {target}ml
+          </span>
+        </div>
+        <div className="mt-4 flex h-40 items-end gap-2 border-b border-slate-200 pb-1">
+          {data.length ? (
+            data.map((item) => {
+              const height = Math.max(6, (item.value / max) * 100);
+              const low = item.value > 0 && item.value < target * 0.5;
+              return (
+                <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                  <div className="flex h-32 w-full items-end rounded-t-xl bg-slate-50 px-1">
+                    <div
+                      className={`w-full rounded-t-lg ${low ? "bg-amber-400" : "bg-sky-500"}`}
+                      style={{ height: `${height}%` }}
+                    />
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
+                </div>
+              );
+            })
+          ) : (
+            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+              No drink logs yet
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMedicationConsistencyCard = () => {
+    const graph = reportTrendModel.graphs.medication;
+    const width = Math.max(0, Math.min(100, graph.percent));
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+          Medication routine consistency
+        </p>
+        <div className="mt-4 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-3xl font-black text-slate-950">{width}%</p>
+            <p className="mt-1 text-sm font-semibold text-slate-600">
+              {graph.typical
+                ? `${graph.logged} logged from ${graph.typical} typical`
+                : `${graph.logged} medication log${graph.logged === 1 ? "" : "s"}`}
+            </p>
+          </div>
+          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+            not strict schedule
+          </span>
+        </div>
+        <div className="mt-5 h-4 overflow-hidden rounded-full bg-slate-100">
+          <div
+            className="h-full rounded-full bg-rose-500"
+            style={{ width: `${width}%` }}
+          />
+        </div>
+      </div>
+    );
+  };
+
+  const renderToiletingPatternCard = () => {
+    const data = reportTrendModel.graphs.toileting;
+    const max = Math.max(...data.map((item) => item.value), 1);
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+          Toileting pattern
+        </p>
+        <p className="mt-1 text-sm font-semibold text-slate-600">
+          Wet and soiled entries by day
+        </p>
+        <div className="mt-4 flex h-40 items-end gap-2 border-b border-slate-200 pb-1">
+          {data.length ? (
+            data.map((item) => (
+              <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                <div className="flex h-32 w-full items-end rounded-t-xl bg-slate-50 px-1">
+                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
+                    <div
+                      className="bg-cyan-500"
+                      style={{ height: `${Math.max(0, (item.wet / max) * 100)}%` }}
+                    />
+                    <div
+                      className="bg-amber-500"
+                      style={{ height: `${Math.max(0, (item.soiled / max) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
+              </div>
+            ))
+          ) : (
+            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+              No toileting logs yet
+            </div>
+          )}
+        </div>
+        <div className="mt-3 flex gap-2 text-xs font-bold text-slate-600">
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-cyan-500" /> Wet</span>
+          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Soiled</span>
+        </div>
+      </div>
+    );
+  };
+
+  const renderReportStreaks = () => (
+    <div className="flex flex-wrap gap-2">
+      {reportTrendModel.streaks.map((streak) => (
+        <span
+          key={streak.label}
+          className={`rounded-full px-3 py-1.5 text-xs font-bold ${streak.tone}`}
+        >
+          {streak.label}
+        </span>
+      ))}
+    </div>
+  );
+
+  const renderReportChartCards = (mode = "screen") => (
+    <section
+      data-report-pdf-card={mode === "pdf" ? "full" : undefined}
+      className={`rounded-2xl border border-slate-200 bg-slate-50 ${compactSectionPadding(
+        mode,
+      )}`}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">
+            Trends
+          </p>
+          <h3 className="mt-1 text-lg font-black text-slate-950">
+            Graphs and patterns
+          </h3>
+        </div>
+        {renderReportStreaks()}
+      </div>
+      <div className={`mt-4 grid gap-3 ${mode === "pdf" ? "grid-cols-2" : "lg:grid-cols-2"}`}>
+        {renderLineGraphCard({
+          title: "Weight progress",
+          data: reportTrendModel.graphs.weight,
+          suffix: "kg",
+          stroke: "#10b981",
+          markerDrop: true,
+          emptyText: "Add at least two weight measurements",
         })}
+        {renderFluidBarGraph()}
+        {renderLineGraphCard({
+          title: "Sleep trend",
+          data: reportTrendModel.graphs.sleep,
+          suffix: "h",
+          stroke: "#6366f1",
+          emptyText: "No sleep durations in this range",
+        })}
+        {renderMedicationConsistencyCard()}
+        {renderToiletingPatternCard()}
       </div>
     </section>
   );
@@ -6256,33 +7038,8 @@ export default function KaylenCareMonitorDashboard({
           ) : null}
         </section>
 
-        <section
-          data-report-pdf-card="full"
-          className={isPdf ? "rounded-2xl border border-slate-200 bg-slate-50 p-3" : ""}
-        >
-          <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
-            Quick summary
-          </h3>
-            <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-5" : "sm:grid-cols-2 lg:grid-cols-5"}`}>
-            {renderSummaryCard("Food logs", quickReportSummary.food, mode)}
-            {renderSummaryCard("Medication logs", quickReportSummary.medication, mode)}
-            {renderSummaryCard("Sleep logs", quickReportSummary.sleep, mode)}
-            {renderSummaryCard("Toileting logs", quickReportSummary.toileting, mode)}
-            {renderSummaryCard("Health logs", quickReportSummary.health, mode)}
-            {renderSummaryCard("Missed doses", quickReportSummary.missedMedication, mode)}
-            {renderSummaryCard("Late doses", quickReportSummary.lateMedication, mode)}
-            {renderSummaryCard("Food refusal", quickReportSummary.refusedFood, mode)}
-            {renderSummaryCard(
-              "Average sleep",
-              quickReportSummary.averageSleepMinutes
-                ? formatHoursMinutes(quickReportSummary.averageSleepMinutes)
-                : "Not available",
-              mode,
-            )}
-            {renderSummaryCard("Days with health notes", quickReportSummary.healthDays, mode)}
-            {renderSummaryCard("Total entries", recentEntries.length, mode)}
-          </div>
-        </section>
+        {renderKeyChangesSection(mode)}
+        {renderReportSummaryStatsRow(mode)}
 
         <section
           data-report-pdf-card="half"
@@ -6356,10 +7113,10 @@ export default function KaylenCareMonitorDashboard({
           className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
         >
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
-            Simple observations
+            Insights
           </h3>
           <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
-            {reportTrendObservations.map((observation) => (
+            {reportTrendModel.insights.map((observation) => (
               <li key={observation}>- {observation}</li>
             ))}
           </ul>
@@ -6456,7 +7213,7 @@ export default function KaylenCareMonitorDashboard({
                 No logs found for this date range.
               </div>
             ) : (
-              <div className="mt-2 space-y-3">
+              <div className="mt-2 grid gap-3 xl:grid-cols-2">
                 {dailyReportGroups.map((group) => (
                   <article
                     key={group.date}
