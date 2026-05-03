@@ -6129,19 +6129,58 @@ export default function KaylenCareMonitorDashboard({
     tone = "slate",
     limit = 5,
     mode = "screen",
-  ) => (
-    <section
-      data-snapshot-pdf-card="half"
-      className={`${
-        mode === "pdf" ? "pdf-avoid-break rounded-xl p-2" : "rounded-2xl p-3"
-      } border border-${tone}-200 bg-${tone}-50`}
-    >
-      <h4 className={`text-xs font-bold uppercase tracking-[0.14em] text-${tone}-700`}>
-        {title}
-      </h4>
-      {entries.length ? (
-        <div className="mt-2 space-y-2">
+  ) => {
+    if (mode === "pdf") {
+      return (
+        <>
+          <section
+            data-snapshot-pdf-card="half"
+            className={`pdf-avoid-break rounded-xl border border-${tone}-200 bg-${tone}-50 p-2`}
+          >
+            <h4 className={`text-xs font-bold uppercase tracking-[0.14em] text-${tone}-700`}>
+              {title}
+            </h4>
+            <p className="mt-1 text-xs font-semibold text-slate-600">
+              {entries.length
+                ? `${entries.length} entr${entries.length === 1 ? "y" : "ies"} in the last 72 hours`
+                : "Nothing logged in the last 72 hours."}
+            </p>
+          </section>
           {entries.map((entry) => (
+            <article
+              key={`${title}-${entry.id}`}
+              data-snapshot-pdf-card="half"
+              className={`pdf-avoid-break rounded-xl border border-${tone}-100 bg-${tone}-50 p-2`}
+            >
+              <p className={`text-[10px] font-black uppercase tracking-[0.12em] text-${tone}-700`}>
+                {title}
+              </p>
+              <p className="mt-1 text-xs font-bold text-slate-900">
+                {entry.date}
+                {entry.time ? ` ${entry.time}` : ""} - {entry.summary}
+              </p>
+              {entry.details?.slice(0, 2).map((detail, index) => (
+                <p key={index} className="mt-0.5 text-[11px] leading-snug text-slate-600">
+                  {detail}
+                </p>
+              ))}
+            </article>
+          ))}
+        </>
+      );
+    }
+
+    return (
+      <section
+        data-snapshot-pdf-card="half"
+        className={`rounded-2xl border border-${tone}-200 bg-${tone}-50 p-3`}
+      >
+        <h4 className={`text-xs font-bold uppercase tracking-[0.14em] text-${tone}-700`}>
+          {title}
+        </h4>
+        {entries.length ? (
+          <div className="mt-2 space-y-2">
+            {entries.map((entry) => (
             <div
               key={entry.id}
               className="pdf-avoid-break rounded-xl bg-white/85 px-3 py-2 text-sm"
@@ -6156,15 +6195,16 @@ export default function KaylenCareMonitorDashboard({
                 </p>
               ))}
             </div>
-          ))}
-        </div>
-      ) : (
-        <p className="mt-2 text-sm font-medium text-slate-500">
-          Nothing logged in the last 72 hours.
-        </p>
-      )}
-    </section>
-  );
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm font-medium text-slate-500">
+            Nothing logged in the last 72 hours.
+          </p>
+        )}
+      </section>
+    );
+  };
 
   const renderCareSnapshotDocument = ({ mode = "screen" } = {}) => {
     const isPdf = mode === "pdf";
