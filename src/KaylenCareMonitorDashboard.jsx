@@ -176,6 +176,36 @@ const formatDisplayDateFromIso = (value) => {
   return `${day}/${month}/${year}`;
 };
 
+const getCareSnapshotEntryDate = (entry) => {
+  const hasLoggedTime =
+    typeof entry?.time === "string" && entry.time.includes(":");
+  const createdAt = entry?.createdAt ? new Date(entry.createdAt) : null;
+  const validCreatedAt =
+    createdAt && !Number.isNaN(createdAt.getTime()) ? createdAt : null;
+
+  if (hasLoggedTime) {
+    return parseDisplayDateTime(entry.date, entry.time) || validCreatedAt;
+  }
+
+  const parsedDate = parseDisplayDate(entry?.date);
+  if (parsedDate && validCreatedAt) {
+    const createdDisplayDate = formatDisplayDateFromIso(
+      validCreatedAt.toISOString(),
+    );
+    if (createdDisplayDate === entry.date) {
+      return validCreatedAt;
+    }
+  }
+
+  if (parsedDate) {
+    const endOfLoggedDay = new Date(parsedDate);
+    endOfLoggedDay.setHours(23, 59, 59, 999);
+    return endOfLoggedDay;
+  }
+
+  return validCreatedAt;
+};
+
 const formatLongDateFromIso = (value) => {
   if (!value) return "";
   const parsed = new Date(`${value.slice(0, 10)}T00:00:00`);
@@ -2365,27 +2395,12 @@ export default function KaylenCareMonitorDashboard({
 
     return sharedLog
       .filter((entry) => {
-        const createdAtDate = entry.createdAt ? new Date(entry.createdAt) : null;
-        const parsed =
-          parseDisplayDateTime(entry.date, entry.time) ||
-          (createdAtDate && !Number.isNaN(createdAtDate.getTime())
-            ? createdAtDate
-            : null);
+        const parsed = getCareSnapshotEntryDate(entry);
         return parsed && parsed >= start && parsed <= end;
       })
       .sort((a, b) => {
-        const createdA = a.createdAt ? new Date(a.createdAt) : null;
-        const createdB = b.createdAt ? new Date(b.createdAt) : null;
-        const dateA =
-          parseDisplayDateTime(a.date, a.time)?.getTime() ||
-          (createdA && !Number.isNaN(createdA.getTime())
-            ? createdA.getTime()
-            : 0);
-        const dateB =
-          parseDisplayDateTime(b.date, b.time)?.getTime() ||
-          (createdB && !Number.isNaN(createdB.getTime())
-            ? createdB.getTime()
-            : 0);
+        const dateA = getCareSnapshotEntryDate(a)?.getTime() || 0;
+        const dateB = getCareSnapshotEntryDate(b)?.getTime() || 0;
         return dateB - dateA;
       });
   }, [sharedLog]);
