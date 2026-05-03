@@ -2890,7 +2890,7 @@ export default function KaylenCareMonitorDashboard({
       const isGood = positiveGood ? diff > 0 : diff < 0;
       return {
         label: isGood ? "Improving" : "Declining",
-        icon: diff > 0 ? "↑" : "↓",
+        icon: diff > 0 ? "+" : "-",
         className: isGood
           ? "bg-emerald-50 text-emerald-700"
           : "bg-rose-50 text-rose-700",
@@ -2984,7 +2984,7 @@ export default function KaylenCareMonitorDashboard({
     if (Math.abs(sleepDiff) >= 0.3) {
       keyChanges.push({
         type: sleepDiff > 0 ? "increase" : "decrease",
-        icon: sleepDiff > 0 ? "↑" : "↓",
+        icon: sleepDiff > 0 ? "+" : "-",
         title: sleepDiff > 0 ? "Sleep increased" : "Sleep decreased",
         text: `${formatSignedNumber(sleepDiff, "h")} vs previous period`,
       });
@@ -2993,7 +2993,7 @@ export default function KaylenCareMonitorDashboard({
     if (Math.abs(fluidDiff) >= 100) {
       keyChanges.push({
         type: fluidDiff > 0 ? "increase" : "decrease",
-        icon: fluidDiff > 0 ? "↑" : "↓",
+        icon: fluidDiff > 0 ? "+" : "-",
         title: fluidDiff > 0 ? "Fluids increased" : "Fluids decreased",
         text: `${formatSignedNumber(fluidDiff, "ml", 0)} average per day`,
       });
@@ -3002,7 +3002,7 @@ export default function KaylenCareMonitorDashboard({
     if (current.weights.length >= 2 && Math.abs(weightDiff) >= 0.2) {
       keyChanges.push({
         type: weightDiff >= 0 ? "increase" : "warning",
-        icon: weightDiff >= 0 ? "↑" : "!",
+        icon: weightDiff >= 0 ? "+" : "!",
         title: weightDiff >= 0 ? "Weight increased" : "Weight dropped",
         text: `${formatSignedNumber(weightDiff, "kg")} in this range`,
       });
@@ -6653,7 +6653,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderTrendPill = (trend) => (
     <span
-      className={`inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.08em] ${trend.className}`}
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.06em] ${trend.className}`}
     >
       <span>{trend.icon}</span>
       {trend.label}
@@ -6669,14 +6669,14 @@ export default function KaylenCareMonitorDashboard({
     >
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">
-            Top changes
-          </p>
-          <h3 className="mt-1 text-lg font-black text-slate-950">
+          <h3 className="text-base font-black text-slate-950">
             Key Changes
           </h3>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">
+            Main movements compared with the previous period
+          </p>
         </div>
-        <span className="rounded-full bg-sky-50 px-3 py-1 text-xs font-bold text-sky-700">
+        <span className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">
           {reportRangeLabel}
         </span>
       </div>
@@ -6689,14 +6689,14 @@ export default function KaylenCareMonitorDashboard({
             )}`}
           >
             <div className="flex items-start gap-2">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/80 text-base font-black shadow-sm">
+              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white/80 text-xs font-black shadow-sm">
                 {item.icon}
               </span>
               <div className="min-w-0">
-                <p className="text-sm font-black text-slate-950">
+                <p className="text-[13px] font-black text-slate-950">
                   {item.title}
                 </p>
-                <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                <p className="mt-0.5 text-xs font-semibold leading-5 text-slate-600">
                   {item.text}
                 </p>
               </div>
@@ -6714,28 +6714,28 @@ export default function KaylenCareMonitorDashboard({
         mode,
       )}`}
     >
-      <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-sky-700">
+      <h3 className="text-sm font-black text-slate-950">
         Summary stats
       </h3>
       <div
-        className={`mt-3 flex gap-3 overflow-x-auto pb-1 ${
-          mode === "pdf" ? "grid grid-cols-5 overflow-visible" : ""
+        className={`mt-3 grid gap-2 ${
+          mode === "pdf" ? "grid-cols-5" : "grid-cols-2 lg:grid-cols-5"
         }`}
       >
         {reportTrendModel.summaryStats.map((stat) => (
           <div
             key={stat.key}
-            className={`min-w-[10rem] rounded-xl border px-3 py-3 shadow-sm ${statToneClass(
+            className={`min-w-0 rounded-xl border px-3 py-2.5 shadow-sm ${statToneClass(
               stat.tone,
             )}`}
           >
-            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+            <p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
               {stat.label}
             </p>
-            <p className="mt-1 text-xl font-black text-slate-950">{stat.value}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <p className="mt-1 truncate text-lg font-black text-slate-950">{stat.value}</p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {renderTrendPill(stat.trend)}
-              <span className="rounded-full bg-white/70 px-2 py-1 text-[10px] font-bold text-slate-600">
+              <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold text-slate-600">
                 {stat.change}
               </span>
             </div>
@@ -6766,13 +6766,13 @@ export default function KaylenCareMonitorDashboard({
     const polyline = chartPoints.map((point) => `${point.x},${point.y}`).join(" ");
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               {title}
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-600">
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">
               {points.length ? `${points.length} plotted point${points.length === 1 ? "" : "s"}` : emptyText}
             </p>
           </div>
@@ -6783,7 +6783,7 @@ export default function KaylenCareMonitorDashboard({
             </span>
           ) : null}
         </div>
-        <div className="mt-4 h-36">
+        <div className="mt-3 h-28">
           {points.length ? (
             <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
               <line x1="0" y1="92" x2="100" y2="92" stroke="#e2e8f0" strokeWidth="1" />
@@ -6808,7 +6808,7 @@ export default function KaylenCareMonitorDashboard({
               ))}
             </svg>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
               {emptyText}
             </div>
           )}
@@ -6829,28 +6829,28 @@ export default function KaylenCareMonitorDashboard({
     const max = Math.max(target, ...data.map((item) => item.value), 1);
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex items-start justify-between gap-2">
           <div>
-            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+            <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
               Fluid intake
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-600">
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">
               Daily drink totals in ml
             </p>
           </div>
-          <span className="rounded-full bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">
+          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
             target {target}ml
           </span>
         </div>
-        <div className="mt-4 flex h-40 items-end gap-2 border-b border-slate-200 pb-1">
+        <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
           {data.length ? (
             data.map((item) => {
               const height = Math.max(6, (item.value / max) * 100);
               const low = item.value > 0 && item.value < target * 0.5;
               return (
                 <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                  <div className="flex h-32 w-full items-end rounded-t-xl bg-slate-50 px-1">
+                  <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
                     <div
                       className={`w-full rounded-t-lg ${low ? "bg-amber-400" : "bg-sky-500"}`}
                       style={{ height: `${height}%` }}
@@ -6861,7 +6861,7 @@ export default function KaylenCareMonitorDashboard({
               );
             })
           ) : (
-            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
               No drink logs yet
             </div>
           )}
@@ -6874,24 +6874,24 @@ export default function KaylenCareMonitorDashboard({
     const graph = reportTrendModel.graphs.medication;
     const width = Math.max(0, Math.min(100, graph.percent));
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
           Medication routine consistency
         </p>
-        <div className="mt-4 flex items-end justify-between gap-3">
+        <div className="mt-3 flex items-end justify-between gap-3">
           <div>
-            <p className="text-3xl font-black text-slate-950">{width}%</p>
-            <p className="mt-1 text-sm font-semibold text-slate-600">
+            <p className="text-2xl font-black text-slate-950">{width}%</p>
+            <p className="mt-0.5 text-xs font-semibold text-slate-500">
               {graph.typical
                 ? `${graph.logged} logged from ${graph.typical} typical`
                 : `${graph.logged} medication log${graph.logged === 1 ? "" : "s"}`}
             </p>
           </div>
-          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
             not strict schedule
           </span>
         </div>
-        <div className="mt-5 h-4 overflow-hidden rounded-full bg-slate-100">
+        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
           <div
             className="h-full rounded-full bg-rose-500"
             style={{ width: `${width}%` }}
@@ -6905,18 +6905,18 @@ export default function KaylenCareMonitorDashboard({
     const data = reportTrendModel.graphs.toileting;
     const max = Math.max(...data.map((item) => item.value), 1);
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
           Toileting pattern
         </p>
-        <p className="mt-1 text-sm font-semibold text-slate-600">
+        <p className="mt-0.5 text-xs font-semibold text-slate-500">
           Wet and soiled entries by day
         </p>
-        <div className="mt-4 flex h-40 items-end gap-2 border-b border-slate-200 pb-1">
+        <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
           {data.length ? (
             data.map((item) => (
               <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-32 w-full items-end rounded-t-xl bg-slate-50 px-1">
+                <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
                   <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
                     <div
                       className="bg-cyan-500"
@@ -6932,7 +6932,7 @@ export default function KaylenCareMonitorDashboard({
               </div>
             ))
           ) : (
-            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 text-sm font-semibold text-slate-500">
+            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
               No toileting logs yet
             </div>
           )}
@@ -6946,11 +6946,11 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const renderReportStreaks = () => (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {reportTrendModel.streaks.map((streak) => (
         <span
           key={streak.label}
-          className={`rounded-full px-3 py-1.5 text-xs font-bold ${streak.tone}`}
+          className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${streak.tone}`}
         >
           {streak.label}
         </span>
@@ -6961,22 +6961,22 @@ export default function KaylenCareMonitorDashboard({
   const renderReportChartCards = (mode = "screen") => (
     <section
       data-report-pdf-card={mode === "pdf" ? "full" : undefined}
-      className={`rounded-2xl border border-slate-200 bg-slate-50 ${compactSectionPadding(
+      className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(
         mode,
       )}`}
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">
-            Trends
-          </p>
-          <h3 className="mt-1 text-lg font-black text-slate-950">
+          <h3 className="text-base font-black text-slate-950">
             Graphs and patterns
           </h3>
+          <p className="mt-0.5 text-xs font-semibold text-slate-500">
+            Simple visual checks for this report range
+          </p>
         </div>
         {renderReportStreaks()}
       </div>
-      <div className={`mt-4 grid gap-3 ${mode === "pdf" ? "grid-cols-2" : "lg:grid-cols-2"}`}>
+      <div className={`mt-3 grid gap-3 ${mode === "pdf" ? "grid-cols-2" : "lg:grid-cols-2"}`}>
         {renderLineGraphCard({
           title: "Weight progress",
           data: reportTrendModel.graphs.weight,
@@ -7026,7 +7026,7 @@ export default function KaylenCareMonitorDashboard({
           <h2 className={`${isPdf ? "mt-0.5 text-xl" : "mt-1 text-2xl"} font-extrabold text-slate-950`}>
             {childName}
           </h2>
-          <div className={`${isPdf ? "mt-2" : "mt-3"} grid gap-2 text-sm font-semibold text-slate-700 sm:grid-cols-2`}>
+          <div className={`${isPdf ? "mt-2" : "mt-2"} grid gap-1.5 text-sm font-semibold text-slate-700 sm:grid-cols-2`}>
             <p>Date range: {rangeLabel}</p>
             <p>Generated: {generatedDate}</p>
           </div>
@@ -7045,7 +7045,7 @@ export default function KaylenCareMonitorDashboard({
           data-report-pdf-card="half"
           className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
         >
-          <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
+          <h3 className="text-base font-black text-slate-950">
             At a glance
           </h3>
           <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
@@ -7062,7 +7062,7 @@ export default function KaylenCareMonitorDashboard({
           data-report-pdf-card={isPdf ? "half" : undefined}
           className={`rounded-2xl border border-amber-200 bg-amber-50 ${compactSectionPadding(mode)}`}
         >
-          <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-amber-800">
+          <h3 className="text-base font-black text-amber-900">
             Child / Emergency Summary
           </h3>
           {profileItems.length ? (
@@ -7112,12 +7112,14 @@ export default function KaylenCareMonitorDashboard({
           data-report-pdf-card="half"
           className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
         >
-          <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
+          <h3 className="text-base font-black text-slate-950">
             Insights
           </h3>
-          <ul className="mt-2 space-y-1 text-sm leading-6 text-slate-700">
+          <ul className="mt-2 space-y-1.5 text-sm leading-6 text-slate-700">
             {reportTrendModel.insights.map((observation) => (
-              <li key={observation}>- {observation}</li>
+              <li key={observation} className="rounded-xl bg-slate-50 px-3 py-2">
+                {observation}
+              </li>
             ))}
           </ul>
         </section>
@@ -8908,3 +8910,5 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 }
+
+
