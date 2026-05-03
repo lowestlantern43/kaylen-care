@@ -2349,7 +2349,7 @@ export default function KaylenCareMonitorDashboard({
       .filter((entry) => {
       const entryDate =
         reportDays === "24h" || reportDays === "72h"
-          ? parseDisplayDateTime(entry.date, entry.time)
+          ? getCareSnapshotEntryDate(entry)
           : parseDisplayDate(entry.date);
       if (!entryDate || !reportRangeStart || !reportRangeEnd) return false;
       if (entryDate < reportRangeStart || entryDate > reportRangeEnd) return false;
@@ -2369,7 +2369,7 @@ export default function KaylenCareMonitorDashboard({
         if (dateA !== dateB) return dateB - dateA;
         return (a.time || "99:99").localeCompare(b.time || "99:99");
       });
-  }, [reportCategoryFilter, reportRangeEnd, reportRangeStart, sharedLog]);
+  }, [reportCategoryFilter, reportDays, reportRangeEnd, reportRangeStart, sharedLog]);
 
   const childDob = childDetails?.dateOfBirth || childDetails?.date_of_birth || "";
   const childAge = calculateAge(childDob);
@@ -3747,21 +3747,45 @@ export default function KaylenCareMonitorDashboard({
     const pdfWidth = 297;
     const pdfHeight = 210;
     const margin = 8;
+    const gap = 3;
     const usableWidth = pdfWidth - margin * 2;
     const usableHeight = pdfHeight - margin * 2;
+    const halfWidth = (usableWidth - gap) / 2;
     const pdf = new jsPDF("l", "mm", "a4");
     const reportContent = exportNode.firstElementChild || exportNode;
-    const blocks = Array.from(reportContent.children).filter(
-      (block) => block instanceof HTMLElement,
-    );
+    const reportCards = Array.from(
+      reportContent.querySelectorAll("[data-report-pdf-card]"),
+    ).filter((block) => block instanceof HTMLElement);
+    const blocks = reportCards.length
+      ? reportCards
+      : Array.from(reportContent.children).filter(
+          (block) => block instanceof HTMLElement,
+        );
 
     if (!blocks.length) {
       throw new Error("No report content found for PDF export");
     }
 
     let cursorY = margin;
+    let column = 0;
+    let rowHeight = 0;
+
+    const finishHalfRow = () => {
+      if (column === 1) {
+        cursorY += rowHeight + gap;
+        column = 0;
+        rowHeight = 0;
+      }
+    };
 
     for (const block of blocks) {
+      const cardWidth = block.dataset.reportPdfCard === "half"
+        ? halfWidth
+        : usableWidth;
+      const isFullWidth = cardWidth === usableWidth;
+
+      if (isFullWidth) finishHalfRow();
+
       const canvas = await html2canvas(block, {
         scale: 1.5,
         useCORS: true,
@@ -3776,7 +3800,7 @@ export default function KaylenCareMonitorDashboard({
       if (!canvas.width || !canvas.height) continue;
 
       const imgData = canvas.toDataURL("image/png");
-      let imgWidth = usableWidth;
+      let imgWidth = cardWidth;
       let imgHeight = (canvas.height * imgWidth) / canvas.width;
 
       if (imgHeight > usableHeight) {
@@ -3790,9 +3814,26 @@ export default function KaylenCareMonitorDashboard({
         cursorY = margin;
       }
 
-      pdf.addImage(imgData, "PNG", margin, cursorY, imgWidth, imgHeight);
-      cursorY += imgHeight + 4;
+      const x = isFullWidth
+        ? margin
+        : margin + column * (halfWidth + gap);
+
+      pdf.addImage(imgData, "PNG", x, cursorY, imgWidth, imgHeight);
+
+      if (isFullWidth) {
+        cursorY += imgHeight + gap;
+      } else if (column === 0) {
+        rowHeight = imgHeight;
+        column = 1;
+      } else {
+        rowHeight = Math.max(rowHeight, imgHeight);
+        cursorY += rowHeight + gap;
+        column = 0;
+        rowHeight = 0;
+      }
     }
+
+    finishHalfRow();
 
     return pdf;
   };
@@ -5865,6 +5906,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderReportChartCards = (mode = "screen") => (
     <section
+      data-report-pdf-card={mode === "pdf" ? "full" : undefined}
       className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(
         mode,
       )}`}
@@ -5919,7 +5961,10 @@ export default function KaylenCareMonitorDashboard({
             : "space-y-3 rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-3 shadow-sm"
         }
       >
-        <section className={`rounded-2xl border border-sky-100 bg-sky-50 ${compactSectionPadding(mode)}`}>
+        <section
+          data-report-pdf-card="full"
+          className={`rounded-2xl border border-sky-100 bg-sky-50 ${compactSectionPadding(mode)}`}
+        >
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-600">
             Shareable care report
           </p>
@@ -5938,7 +5983,10 @@ export default function KaylenCareMonitorDashboard({
           ) : null}
         </section>
 
-        <section>
+        <section
+          data-report-pdf-card="full"
+          className={isPdf ? "rounded-2xl border border-slate-200 bg-slate-50 p-3" : ""}
+        >
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
             Quick summary
           </h3>
@@ -5963,7 +6011,10 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}>
+        <section
+          data-report-pdf-card="half"
+          className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+        >
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
             At a glance
           </h3>
@@ -5977,7 +6028,10 @@ export default function KaylenCareMonitorDashboard({
 
         {showReportCharts ? renderReportChartCards(mode) : null}
 
-        <section className={`rounded-2xl border border-amber-200 bg-amber-50 ${compactSectionPadding(mode)}`}>
+        <section
+          data-report-pdf-card={isPdf ? "half" : undefined}
+          className={`rounded-2xl border border-amber-200 bg-amber-50 ${compactSectionPadding(mode)}`}
+        >
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-amber-800">
             Child / Emergency Summary
           </h3>
@@ -6000,7 +6054,10 @@ export default function KaylenCareMonitorDashboard({
         </section>
 
         {reportImportantEvents.length ? (
-          <section className={`rounded-2xl border border-rose-200 bg-rose-50 ${compactSectionPadding(mode)}`}>
+          <section
+            data-report-pdf-card="full"
+            className={`rounded-2xl border border-rose-200 bg-rose-50 ${compactSectionPadding(mode)}`}
+          >
             <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-rose-800">
               Important events
             </h3>
@@ -6021,7 +6078,10 @@ export default function KaylenCareMonitorDashboard({
           </section>
         ) : null}
 
-        <section className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}>
+        <section
+          data-report-pdf-card="half"
+          className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+        >
           <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
             Simple observations
           </h3>
@@ -6033,80 +6093,161 @@ export default function KaylenCareMonitorDashboard({
         </section>
 
         {reportType === "full" ? (
-        <section>
-          <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
-            Daily grouped timeline
-          </h3>
-
-          {!dailyReportGroups.length ? (
-            <div className="mt-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
-              No logs found for this date range.
-            </div>
-          ) : (
-            <div className="mt-2 space-y-3">
-              {dailyReportGroups.map((group) => (
-                <article
-                  key={group.date}
-                  className={`break-inside-avoid rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
-                >
-                  <h4 className="text-base font-extrabold text-slate-950">
-                    {group.label}
-                  </h4>
-                  <div className="mt-3 space-y-3">
-                    {reportImportantEvents.filter((event) => event.displayDate === group.date).length ? (
-                      <div className="break-inside-avoid">
-                        <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">
-                          Important events
-                        </p>
-                        <ul className="mt-1 space-y-1 text-sm leading-6 text-slate-700">
-                          {reportImportantEvents
-                            .filter((event) => event.displayDate === group.date)
-                            .map((event) => (
-                              <li key={event.id}>
-                                - {event.eventTime ? `${event.eventTime}: ` : ""}
-                                <span className="font-semibold text-slate-900">
-                                  {eventTypeLabel(event.eventType)}
-                                </span>
-                                {event.notes ? ` - ${professionalText(event.notes)}` : ""}
-                              </li>
-                            ))}
-                        </ul>
-                      </div>
+        isPdf ? (
+          <>
+            <section
+              data-report-pdf-card="full"
+              className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+            >
+              <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
+                Daily grouped timeline
+              </h3>
+              <p className="mt-1 text-xs font-semibold text-slate-600">
+                {dailyReportGroups.length
+                  ? `${recentEntries.length} entr${recentEntries.length === 1 ? "y" : "ies"} across ${dailyReportGroups.length} day${dailyReportGroups.length === 1 ? "" : "s"}`
+                  : "No logs found for this date range."}
+              </p>
+            </section>
+            {dailyReportGroups.flatMap((group) => {
+              const eventCards = reportImportantEvents
+                .filter((event) => event.displayDate === group.date)
+                .map((event) => (
+                  <article
+                    key={`event-${event.id}`}
+                    data-report-pdf-card="half"
+                    className="pdf-avoid-break rounded-xl border border-rose-100 bg-rose-50 p-2"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-rose-700">
+                      {group.label} - important event
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-900">
+                      {event.eventTime ? `${event.eventTime} - ` : ""}
+                      {eventTypeLabel(event.eventType)}
+                    </p>
+                    {event.notes ? (
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-600">
+                        {professionalText(event.notes)}
+                      </p>
                     ) : null}
-                    {reportCategoryOrder.map((section) => {
-                      const entries = group.categories[section] || [];
-                      if (!entries.length) return null;
+                    {event.actionTaken ? (
+                      <p className="mt-0.5 text-[11px] leading-snug text-slate-600">
+                        Action: {professionalText(event.actionTaken)}
+                      </p>
+                    ) : null}
+                  </article>
+                ));
 
-                      return (
-                        <div key={section} className="break-inside-avoid">
-                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                            {reportCategoryLabel(section)}
+              const entryCards = reportCategoryOrder.flatMap((section) =>
+                (group.categories[section] || []).map((entry) => {
+                  const theme = sectionTheme[entry.section] || {
+                    report: "border-slate-200 bg-slate-50",
+                  };
+
+                  return (
+                    <article
+                      key={`entry-${entry.id}`}
+                      data-report-pdf-card="half"
+                      className={`pdf-avoid-break rounded-xl border p-2 ${theme.report}`}
+                    >
+                      <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                        {group.label} - {reportCategoryLabel(section)}
+                      </p>
+                      <p className="mt-1 text-xs font-bold text-slate-900">
+                        {entry.time ? `${entry.time} - ` : ""}
+                        {professionalText(entry.summary)}
+                      </p>
+                      {entry.details?.slice(0, 3).map((detail, detailIndex) => (
+                        <p
+                          key={detailIndex}
+                          className="mt-0.5 text-[11px] leading-snug text-slate-600"
+                        >
+                          {professionalText(detail)}
+                        </p>
+                      ))}
+                    </article>
+                  );
+                }),
+              );
+
+              return [...eventCards, ...entryCards];
+            })}
+          </>
+        ) : (
+          <section>
+            <h3 className="text-sm font-bold uppercase tracking-[0.14em] text-slate-600">
+              Daily grouped timeline
+            </h3>
+
+            {!dailyReportGroups.length ? (
+              <div className="mt-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
+                No logs found for this date range.
+              </div>
+            ) : (
+              <div className="mt-2 space-y-3">
+                {dailyReportGroups.map((group) => (
+                  <article
+                    key={group.date}
+                    className={`break-inside-avoid rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+                  >
+                    <h4 className="text-base font-extrabold text-slate-950">
+                      {group.label}
+                    </h4>
+                    <div className="mt-3 space-y-3">
+                      {reportImportantEvents.filter((event) => event.displayDate === group.date).length ? (
+                        <div className="break-inside-avoid">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-rose-700">
+                            Important events
                           </p>
                           <ul className="mt-1 space-y-1 text-sm leading-6 text-slate-700">
-                            {entries.map((entry) => (
-                              <li key={entry.id}>
-                                - {entry.time ? `${entry.time}: ` : ""}
-                                <span className="font-semibold text-slate-900">
-                                  {professionalText(entry.summary)}
-                                </span>
-                                {entry.details?.length ? (
-                                  <span className="text-slate-600">
-                                    {" "}
-                                    ({entry.details.map(professionalText).join("; ")})
+                            {reportImportantEvents
+                              .filter((event) => event.displayDate === group.date)
+                              .map((event) => (
+                                <li key={event.id}>
+                                  - {event.eventTime ? `${event.eventTime}: ` : ""}
+                                  <span className="font-semibold text-slate-900">
+                                    {eventTypeLabel(event.eventType)}
                                   </span>
-                                ) : null}
-                              </li>
-                            ))}
+                                  {event.notes ? ` - ${professionalText(event.notes)}` : ""}
+                                </li>
+                              ))}
                           </ul>
                         </div>
-                      );
-                    })}
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+                      ) : null}
+                      {reportCategoryOrder.map((section) => {
+                        const entries = group.categories[section] || [];
+                        if (!entries.length) return null;
+
+                        return (
+                          <div key={section} className="break-inside-avoid">
+                            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                              {reportCategoryLabel(section)}
+                            </p>
+                            <ul className="mt-1 space-y-1 text-sm leading-6 text-slate-700">
+                              {entries.map((entry) => (
+                                <li key={entry.id}>
+                                  - {entry.time ? `${entry.time}: ` : ""}
+                                  <span className="font-semibold text-slate-900">
+                                    {professionalText(entry.summary)}
+                                  </span>
+                                  {entry.details?.length ? (
+                                    <span className="text-slate-600">
+                                      {" "}
+                                      ({entry.details.map(professionalText).join("; ")})
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+        )
         ) : null}
       </div>
     );
