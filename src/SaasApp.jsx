@@ -18,6 +18,16 @@ const screenshotAssets = {
   "/screenshots/sleep-log.png": sleepScreenshot,
 };
 
+function formatStripeDiscount(subscription = {}) {
+  const percentOff = Number(subscription.stripeDiscountPercentOff || 0);
+  const amountOff = Number(subscription.stripeDiscountAmountOff || 0);
+  const currency = String(subscription.stripeDiscountCurrency || "gbp").toUpperCase();
+
+  if (percentOff > 0) return `${percentOff}% off`;
+  if (amountOff > 0) return `${currency} ${(amountOff / 100).toFixed(2)} off`;
+  return "";
+}
+
 const publicPages = {
   "/": {
     title: "FamilyTrack - Simple Care Tracking for Families",
@@ -2082,6 +2092,7 @@ function WorkspaceGate({ session, onLogout }) {
   const [subscription, setSubscription] = useState(null);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isBillingPortalLoading, setIsBillingPortalLoading] = useState(false);
+  const [promotionCode, setPromotionCode] = useState("");
   const [childCareOptions, setChildCareOptions] = useState([]);
   const [childProfile, setChildProfile] = useState(emptyChildProfile);
   const [careMedicationRows, setCareMedicationRows] = useState([
@@ -3242,7 +3253,9 @@ function WorkspaceGate({ session, onLogout }) {
     setError("");
 
     try {
-      const checkout = await api.createCheckoutSession(selectedFamilyId);
+      const checkout = await api.createCheckoutSession(selectedFamilyId, {
+        promotionCode: promotionCode.trim(),
+      });
       window.location.assign(checkout.checkoutUrl);
     } catch (caughtError) {
       setError(caughtError.message);
@@ -4790,8 +4803,35 @@ function WorkspaceGate({ session, onLogout }) {
                         Renewal date: not set yet.
                       </p>
                     )}
+                    {subscription?.stripeCouponId ? (
+                      <p className="mt-1 text-sm text-slate-600">
+                        Coupon:{" "}
+                        <span className="font-bold text-slate-900">
+                          {subscription.stripePromotionCode ||
+                            subscription.stripeCouponName ||
+                            subscription.stripeCouponId}
+                        </span>
+                        {formatStripeDiscount(subscription)
+                          ? ` - ${formatStripeDiscount(subscription)}`
+                          : ""}
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="flex flex-col gap-2 sm:flex-row">
+                  <div className="flex flex-col gap-2 sm:min-w-72">
+                    <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      Stripe promotion code
+                      <input
+                        className={`${inputClass} mt-1 uppercase`}
+                        value={promotionCode}
+                        onChange={(event) => setPromotionCode(event.target.value)}
+                        placeholder="Optional code"
+                        autoCapitalize="characters"
+                      />
+                    </label>
+                    <p className="text-xs font-semibold text-slate-500">
+                      Leave blank to enter a promotion code on Stripe Checkout.
+                    </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
                     <button
                       type="button"
                       onClick={startCheckout}
@@ -4813,6 +4853,7 @@ function WorkspaceGate({ session, onLogout }) {
                         ? "Opening billing..."
                         : "Manage billing"}
                     </button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -7005,6 +7046,22 @@ function WorkspaceGate({ session, onLogout }) {
                                 ).toLocaleDateString()
                               : "Not set"}
                           </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Coupon
+                          </p>
+                          <p className="mt-1 break-all text-sm font-semibold text-slate-700">
+                            {selectedPlatformFamily.family.stripePromotionCode ||
+                              selectedPlatformFamily.family.stripeCouponName ||
+                              selectedPlatformFamily.family.stripeCouponId ||
+                              "None"}
+                          </p>
+                          {formatStripeDiscount(selectedPlatformFamily.family) ? (
+                            <p className="text-xs font-bold text-emerald-700">
+                              {formatStripeDiscount(selectedPlatformFamily.family)}
+                            </p>
+                          ) : null}
                         </div>
                       </div>
 

@@ -16,7 +16,11 @@ import {
   normalisePlan,
   normaliseStatus,
 } from "../services/planAccess.js";
-import { listStripeCustomerSubscriptions } from "../services/stripe.js";
+import {
+  extractStripeDiscountInfo,
+  listStripeCustomerSubscriptions,
+  normalisePromotionCode,
+} from "../services/stripe.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import { hashPassword } from "../utils/passwords.js";
@@ -127,6 +131,10 @@ async function syncFamilySubscriptionFromStripe(familyId) {
   const plan = ["active", "trialing", "past_due"].includes(subscription.status)
     ? "family"
     : subscription.metadata?.plan || "family";
+  const discount = extractStripeDiscountInfo(subscription);
+  const promotionCode =
+    discount.stripePromotionCode ||
+    normalisePromotionCode(subscription.metadata?.promotion_code || "");
 
   const updated = await query(
     `
@@ -137,7 +145,14 @@ async function syncFamilySubscriptionFromStripe(familyId) {
         status = $3,
         plan = $4,
         current_period_end = $5,
-        cancel_at_period_end = $6
+        cancel_at_period_end = $6,
+        stripe_promotion_code_id = $8,
+        stripe_promotion_code = NULLIF($9, ''),
+        stripe_coupon_id = $10,
+        stripe_coupon_name = $11,
+        stripe_discount_percent_off = $12,
+        stripe_discount_amount_off = $13,
+        stripe_discount_currency = $14
       WHERE family_id = $7
       RETURNING
         family_id AS "familyId",
@@ -146,7 +161,14 @@ async function syncFamilySubscriptionFromStripe(familyId) {
         status,
         plan,
         current_period_end AS "currentPeriodEnd",
-        cancel_at_period_end AS "cancelAtPeriodEnd"
+        cancel_at_period_end AS "cancelAtPeriodEnd",
+        stripe_promotion_code_id AS "stripePromotionCodeId",
+        stripe_promotion_code AS "stripePromotionCode",
+        stripe_coupon_id AS "stripeCouponId",
+        stripe_coupon_name AS "stripeCouponName",
+        stripe_discount_percent_off AS "stripeDiscountPercentOff",
+        stripe_discount_amount_off AS "stripeDiscountAmountOff",
+        stripe_discount_currency AS "stripeDiscountCurrency"
     `,
     [
       subscription.customer,
@@ -156,6 +178,13 @@ async function syncFamilySubscriptionFromStripe(familyId) {
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
       familyId,
+      discount.stripePromotionCodeId,
+      promotionCode,
+      discount.stripeCouponId,
+      discount.stripeCouponName,
+      discount.stripeDiscountPercentOff,
+      discount.stripeDiscountAmountOff,
+      discount.stripeDiscountCurrency,
     ],
   );
 
@@ -567,7 +596,13 @@ adminRouter.get(
           s.current_period_end AS "currentPeriodEnd",
           s.stripe_customer_id AS "stripeCustomerId",
           s.stripe_subscription_id AS "stripeSubscriptionId",
-          s.cancel_at_period_end AS "cancelAtPeriodEnd"
+          s.cancel_at_period_end AS "cancelAtPeriodEnd",
+          s.stripe_promotion_code AS "stripePromotionCode",
+          s.stripe_coupon_id AS "stripeCouponId",
+          s.stripe_coupon_name AS "stripeCouponName",
+          s.stripe_discount_percent_off AS "stripeDiscountPercentOff",
+          s.stripe_discount_amount_off AS "stripeDiscountAmountOff",
+          s.stripe_discount_currency AS "stripeDiscountCurrency"
         FROM families f
         LEFT JOIN users u ON u.id = f.created_by_user_id
         LEFT JOIN subscriptions s ON s.family_id = f.id

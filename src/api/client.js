@@ -246,9 +246,10 @@ export const api = {
     request("/feedback/issues/resolved-notifications/mark-seen", {
       method: "POST",
     }),
-  createCheckoutSession: (familyId) =>
+  createCheckoutSession: (familyId, payload = {}) =>
     request(`/families/${familyId}/subscription/checkout`, {
       method: "POST",
+      body: JSON.stringify(payload),
     }),
   createBillingPortalSession: (familyId) =>
     request(`/families/${familyId}/subscription/portal`, {

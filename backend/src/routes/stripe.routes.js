@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import {
+  extractStripeDiscountInfo,
+  normalisePromotionCode,
   retrieveStripeSubscription,
   verifyStripeWebhookSignature,
 } from "../services/stripe.js";
@@ -22,6 +24,10 @@ async function updateSubscriptionFromStripe(subscription) {
   const plan = ["active", "trialing", "past_due"].includes(status)
     ? "family"
     : subscription.metadata?.plan || "family";
+  const discount = extractStripeDiscountInfo(subscription);
+  const promotionCode =
+    discount.stripePromotionCode ||
+    normalisePromotionCode(subscription.metadata?.promotion_code || "");
 
   await query(
     `
@@ -32,9 +38,16 @@ async function updateSubscriptionFromStripe(subscription) {
         status,
         plan,
         current_period_end,
-        cancel_at_period_end
+        cancel_at_period_end,
+        stripe_promotion_code_id,
+        stripe_promotion_code,
+        stripe_coupon_id,
+        stripe_coupon_name,
+        stripe_discount_percent_off,
+        stripe_discount_amount_off,
+        stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10, $11, $12, $13, $14)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
@@ -43,6 +56,13 @@ async function updateSubscriptionFromStripe(subscription) {
         plan = EXCLUDED.plan,
         current_period_end = EXCLUDED.current_period_end,
         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
+        stripe_promotion_code_id = EXCLUDED.stripe_promotion_code_id,
+        stripe_promotion_code = EXCLUDED.stripe_promotion_code,
+        stripe_coupon_id = EXCLUDED.stripe_coupon_id,
+        stripe_coupon_name = EXCLUDED.stripe_coupon_name,
+        stripe_discount_percent_off = EXCLUDED.stripe_discount_percent_off,
+        stripe_discount_amount_off = EXCLUDED.stripe_discount_amount_off,
+        stripe_discount_currency = EXCLUDED.stripe_discount_currency,
         access_paused_at = CASE
           WHEN EXCLUDED.status IN ('active', 'trialing') THEN NULL
           ELSE subscriptions.access_paused_at
@@ -60,6 +80,13 @@ async function updateSubscriptionFromStripe(subscription) {
       plan,
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
+      discount.stripePromotionCodeId,
+      promotionCode,
+      discount.stripeCouponId,
+      discount.stripeCouponName,
+      discount.stripeDiscountPercentOff,
+      discount.stripeDiscountAmountOff,
+      discount.stripeDiscountCurrency,
     ],
   );
 }

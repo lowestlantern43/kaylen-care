@@ -6,7 +6,10 @@ import {
   createStripeBillingPortalSession,
   createStripeCheckoutSession,
   createStripeCustomer,
+  extractStripeDiscountInfo,
+  findActiveStripePromotionCode,
   listStripeCustomerSubscriptions,
+  normalisePromotionCode,
 } from "../services/stripe.js";
 import { ensurePlanAccessSchema } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -30,6 +33,11 @@ function getPlanName(subscription) {
 }
 
 async function syncSubscriptionRowFromStripe(subscription, familyId) {
+  const discount = extractStripeDiscountInfo(subscription);
+  const promotionCode =
+    discount.stripePromotionCode ||
+    normalisePromotionCode(subscription.metadata?.promotion_code || "");
+
   const { rows } = await query(
     `
       UPDATE subscriptions
@@ -39,7 +47,14 @@ async function syncSubscriptionRowFromStripe(subscription, familyId) {
         status = $3,
         plan = $4,
         current_period_end = $5,
-        cancel_at_period_end = $6
+        cancel_at_period_end = $6,
+        stripe_promotion_code_id = $8,
+        stripe_promotion_code = NULLIF($9, ''),
+        stripe_coupon_id = $10,
+        stripe_coupon_name = $11,
+        stripe_discount_percent_off = $12,
+        stripe_discount_amount_off = $13,
+        stripe_discount_currency = $14
       WHERE family_id = $7
       RETURNING
         family_id AS "familyId",
@@ -48,7 +63,14 @@ async function syncSubscriptionRowFromStripe(subscription, familyId) {
         status,
         plan,
         current_period_end AS "currentPeriodEnd",
-        cancel_at_period_end AS "cancelAtPeriodEnd"
+        cancel_at_period_end AS "cancelAtPeriodEnd",
+        stripe_promotion_code_id AS "stripePromotionCodeId",
+        stripe_promotion_code AS "stripePromotionCode",
+        stripe_coupon_id AS "stripeCouponId",
+        stripe_coupon_name AS "stripeCouponName",
+        stripe_discount_percent_off AS "stripeDiscountPercentOff",
+        stripe_discount_amount_off AS "stripeDiscountAmountOff",
+        stripe_discount_currency AS "stripeDiscountCurrency"
     `,
     [
       subscription.customer,
@@ -60,6 +82,13 @@ async function syncSubscriptionRowFromStripe(subscription, familyId) {
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
       familyId,
+      discount.stripePromotionCodeId,
+      promotionCode,
+      discount.stripeCouponId,
+      discount.stripeCouponName,
+      discount.stripeDiscountPercentOff,
+      discount.stripeDiscountAmountOff,
+      discount.stripeDiscountCurrency,
     ],
   );
 
@@ -103,7 +132,14 @@ subscriptionsRouter.get(
           trial_ends_at AS "trialEndsAt",
           access_paused_at AS "accessPausedAt",
           current_period_end AS "currentPeriodEnd",
-          cancel_at_period_end AS "cancelAtPeriodEnd"
+          cancel_at_period_end AS "cancelAtPeriodEnd",
+          stripe_promotion_code_id AS "stripePromotionCodeId",
+          stripe_promotion_code AS "stripePromotionCode",
+          stripe_coupon_id AS "stripeCouponId",
+          stripe_coupon_name AS "stripeCouponName",
+          stripe_discount_percent_off AS "stripeDiscountPercentOff",
+          stripe_discount_amount_off AS "stripeDiscountAmountOff",
+          stripe_discount_currency AS "stripeDiscountCurrency"
         FROM subscriptions
         WHERE family_id = $1
         LIMIT 1
@@ -130,6 +166,25 @@ subscriptionsRouter.post(
   "/checkout",
   requireRole("owner"),
   asyncHandler(async (req, res) => {
+    const requestedPromotionCode = normalisePromotionCode(
+      req.body?.promotionCode || "",
+    );
+    let promotionCode = null;
+
+    if (requestedPromotionCode) {
+      promotionCode = await findActiveStripePromotionCode(requestedPromotionCode);
+      if (!promotionCode) {
+        res.status(400).json({
+          data: null,
+          error: {
+            code: "invalid_promotion_code",
+            message: "That Stripe promotion code is not active or does not exist.",
+          },
+        });
+        return;
+      }
+    }
+
     const { rows } = await query(
       `
         SELECT
@@ -178,6 +233,8 @@ subscriptionsRouter.post(
       customerId: stripeCustomerId,
       familyId: family.familyId,
       familyName: family.familyName,
+      promotionCodeId: promotionCode?.id || "",
+      promotionCode: requestedPromotionCode,
     });
 
     res.json({
