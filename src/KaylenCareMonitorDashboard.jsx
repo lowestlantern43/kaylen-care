@@ -3736,154 +3736,223 @@ export default function KaylenCareMonitorDashboard({
       .toLowerCase()
       .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`;
 
-  const createReportPdf = async (elementId = "report-pdf-export") => {
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const exportNode = document.getElementById(elementId);
-    if (!exportNode) {
-      throw new Error("PDF export area not found");
-    }
-
+  const createReportPdf = async () => {
     const pdfWidth = 297;
     const pdfHeight = 210;
     const margin = 8;
     const gap = 3;
     const usableWidth = pdfWidth - margin * 2;
-    const usableHeight = pdfHeight - margin * 2;
-    const halfWidth = (usableWidth - gap) / 2;
     const pdf = new jsPDF("l", "mm", "a4");
-    const reportContent = exportNode.firstElementChild || exportNode;
-    const reportCards = Array.from(
-      reportContent.querySelectorAll("[data-report-pdf-card]"),
-    ).filter((block) => block instanceof HTMLElement);
-    const blocks = reportCards.length
-      ? reportCards
-      : Array.from(reportContent.children).filter(
-          (block) => block instanceof HTMLElement,
-        );
-
-    if (!blocks.length) {
-      throw new Error("No report content found for PDF export");
-    }
-
     let cursorY = margin;
-    let column = 0;
-    let rowHeight = 0;
 
-    const finishHalfRow = () => {
-      if (column === 1) {
-        cursorY += rowHeight + gap;
-        column = 0;
-        rowHeight = 0;
-      }
+    const setText = (size, color = [15, 23, 42], style = "normal") => {
+      pdf.setFont("helvetica", style);
+      pdf.setFontSize(size);
+      pdf.setTextColor(...color);
     };
 
-    const addPageForNextCard = () => {
-      pdf.addPage();
+    const addPage = () => {
+      pdf.addPage("a4", "l");
       cursorY = margin;
-      column = 0;
-      rowHeight = 0;
     };
 
-    const placeCard = ({ cardWidth, cardHeight, draw }) => {
-      const isFullWidth = cardWidth === usableWidth;
-
-      if (isFullWidth) finishHalfRow();
-
-      if (cursorY > margin && cursorY + cardHeight > pdfHeight - margin) {
-        addPageForNextCard();
-      }
-
-      const x = isFullWidth
-        ? margin
-        : margin + column * (halfWidth + gap);
-
-      draw(x, cursorY);
-
-      if (isFullWidth) {
-        cursorY += cardHeight + gap;
-      } else if (column === 0) {
-        rowHeight = cardHeight;
-        column = 1;
-      } else {
-        rowHeight = Math.max(rowHeight, cardHeight);
-        cursorY += rowHeight + gap;
-        column = 0;
-        rowHeight = 0;
+    const ensureSpace = (height) => {
+      if (cursorY > margin && cursorY + height > pdfHeight - margin) {
+        addPage();
       }
     };
 
-    const drawFallbackTextCard = (block, cardWidth) => {
-      const text = String(block.innerText || "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
-      if (!text) return;
+    const drawCard = ({
+      title,
+      lines = [],
+      x = margin,
+      width = usableWidth,
+      fill = [248, 250, 252],
+      stroke = [226, 232, 240],
+      titleColor = [71, 85, 105],
+    }) => {
+      const cleanLines = lines
+        .flatMap((line) =>
+          pdf.splitTextToSize(String(line || ""), width - 8),
+        )
+        .filter(Boolean);
+      const height = Math.max(16, 12 + cleanLines.length * 4.2);
+      ensureSpace(height);
 
-      const lines = pdf.splitTextToSize(text, cardWidth - 8);
-      const cardHeight = Math.min(
-        usableHeight,
-        Math.max(18, lines.length * 4.2 + 10),
-      );
+      pdf.setFillColor(...fill);
+      pdf.setDrawColor(...stroke);
+      pdf.roundedRect(x, cursorY, width, height, 3, 3, "FD");
+      setText(7, titleColor, "bold");
+      pdf.text(String(title || "").toUpperCase(), x + 4, cursorY + 5);
+      setText(8, [15, 23, 42], "normal");
+      pdf.text(cleanLines, x + 4, cursorY + 10);
+      cursorY += height + gap;
+    };
 
-      placeCard({
-        cardWidth,
-        cardHeight,
-        draw: (x, y) => {
-          pdf.setFillColor(248, 250, 252);
-          pdf.setDrawColor(226, 232, 240);
-          pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
-          pdf.setTextColor(15, 23, 42);
-          pdf.setFont("helvetica", "normal");
-          pdf.setFontSize(8);
-          pdf.text(lines.slice(0, Math.floor((cardHeight - 8) / 4.2)), x + 4, y + 6);
-        },
+    const drawMetricGrid = (items) => {
+      const columns = 4;
+      const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
+      const cardHeight = 18;
+      items.forEach((item, index) => {
+        const column = index % columns;
+        if (column === 0) ensureSpace(cardHeight);
+        const x = margin + column * (cardWidth + gap);
+        const y = cursorY;
+        pdf.setFillColor(255, 255, 255);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
+        setText(6.5, [100, 116, 139], "bold");
+        pdf.text(String(item.label || "").toUpperCase(), x + 3, y + 5);
+        setText(11, [15, 23, 42], "bold");
+        pdf.text(String(item.value ?? ""), x + 3, y + 12);
+        if (column === columns - 1 || index === items.length - 1) {
+          cursorY += cardHeight + gap;
+        }
       });
     };
 
-    for (const block of blocks) {
-      const cardWidth = block.dataset.reportPdfCard === "half"
-        ? halfWidth
-        : usableWidth;
-
-      try {
-        const canvas = await html2canvas(block, {
-          scale: 1.5,
-          useCORS: true,
-          allowTaint: false,
-          backgroundColor: "#ffffff",
-          logging: false,
-          windowWidth: 1120,
-          scrollX: 0,
-          scrollY: 0,
-        });
-
-        if (!canvas.width || !canvas.height) {
-          drawFallbackTextCard(block, cardWidth);
-          continue;
+    const drawTrendGrid = () => {
+      const columns = 4;
+      const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
+      const cardHeight = 25;
+      reportChartData.forEach((item, index) => {
+        const column = index % columns;
+        if (column === 0) ensureSpace(cardHeight);
+        const x = margin + column * (cardWidth + gap);
+        const y = cursorY;
+        const width = Math.max(4, Math.min(100, (item.value / item.max) * 100));
+        pdf.setFillColor(248, 250, 252);
+        pdf.setDrawColor(226, 232, 240);
+        pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
+        setText(6.5, [100, 116, 139], "bold");
+        pdf.text(String(item.label).toUpperCase(), x + 3, y + 5);
+        setText(12, [15, 23, 42], "bold");
+        pdf.text(String(item.value), x + 3, y + 13);
+        setText(7, [100, 116, 139], "normal");
+        pdf.text(String(item.meta), x + 16, y + 13);
+        pdf.setFillColor(226, 232, 240);
+        pdf.roundedRect(x + 3, y + 18, cardWidth - 6, 2.5, 1, 1, "F");
+        pdf.setFillColor(59, 130, 246);
+        pdf.roundedRect(x + 3, y + 18, ((cardWidth - 6) * width) / 100, 2.5, 1, 1, "F");
+        if (column === columns - 1 || index === reportChartData.length - 1) {
+          cursorY += cardHeight + gap;
         }
+      });
+    };
 
-        const imgData = canvas.toDataURL("image/png");
-        let imgWidth = cardWidth;
-        let imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const addSectionTitle = (title) => {
+      ensureSpace(10);
+      setText(9, [71, 85, 105], "bold");
+      pdf.text(String(title).toUpperCase(), margin, cursorY + 4);
+      cursorY += 8;
+    };
 
-        if (imgHeight > usableHeight) {
-          const scale = usableHeight / imgHeight;
-          imgHeight = usableHeight;
-          imgWidth *= scale;
-        }
+    const formatEntryLine = (entry) => {
+      const details = entry.details?.length
+        ? ` (${entry.details.map(professionalText).join("; ")})`
+        : "";
+      return `${entry.time ? `${entry.time} - ` : ""}${professionalText(
+        entry.summary,
+      )}${details}`;
+    };
 
-        placeCard({
-          cardWidth,
-          cardHeight: imgHeight,
-          draw: (x, y) => pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight),
-        });
-      } catch (error) {
-        console.warn("Report PDF card fallback used", error);
-        drawFallbackTextCard(block, cardWidth);
-      }
+    pdf.setFillColor(240, 249, 255);
+    pdf.setDrawColor(186, 230, 253);
+    pdf.roundedRect(margin, cursorY, usableWidth, 28, 4, 4, "FD");
+    setText(8, [2, 132, 199], "bold");
+    pdf.text("SHAREABLE CARE REPORT", margin + 5, cursorY + 7);
+    setText(18, [15, 23, 42], "bold");
+    pdf.text(childName || "Child", margin + 5, cursorY + 16);
+    setText(8, [51, 65, 85], "normal");
+    pdf.text(`Date range: ${reportRangeLabel}`, margin + 5, cursorY + 23);
+    pdf.text(
+      `Generated: ${new Date().toLocaleDateString("en-GB")}`,
+      margin + 120,
+      cursorY + 23,
+    );
+    cursorY += 32;
+
+    if (reportNotes.trim()) {
+      drawCard({
+        title: "Parent/carer notes",
+        lines: [reportNotes.trim()],
+        fill: [240, 249, 255],
+        stroke: [186, 230, 253],
+        titleColor: [2, 132, 199],
+      });
     }
 
-    finishHalfRow();
+    addSectionTitle("Quick summary");
+    drawMetricGrid([
+      { label: "Food logs", value: quickReportSummary.food },
+      { label: "Medication", value: quickReportSummary.medication },
+      { label: "Sleep logs", value: quickReportSummary.sleep },
+      { label: "Toileting", value: quickReportSummary.toileting },
+      { label: "Health", value: quickReportSummary.health },
+      { label: "Missed doses", value: quickReportSummary.missedMedication },
+      { label: "Late doses", value: quickReportSummary.lateMedication },
+      { label: "Total entries", value: recentEntries.length },
+    ]);
+
+    addSectionTitle("At a glance");
+    drawMetricGrid([
+      { label: "Sleep", value: atAGlance.sleep },
+      { label: "Medication", value: atAGlance.medication },
+      { label: "Appetite", value: atAGlance.appetite },
+      { label: "Health", value: atAGlance.health },
+    ]);
+
+    if (showReportCharts) {
+      addSectionTitle("Simple trends");
+      drawTrendGrid();
+    }
+
+    addSectionTitle("Simple observations");
+    drawCard({
+      title: "Observations",
+      lines: reportTrendObservations.map((item) => `- ${item}`),
+    });
+
+    if (reportImportantEvents.length) {
+      addSectionTitle("Important events");
+      reportImportantEvents.forEach((event) => {
+        drawCard({
+          title: `${event.displayDate}${event.eventTime ? ` ${event.eventTime}` : ""} - ${eventTypeLabel(event.eventType)}`,
+          lines: [
+            event.notes ? professionalText(event.notes) : "",
+            event.actionTaken ? `Action: ${professionalText(event.actionTaken)}` : "",
+            event.outcome ? `Outcome: ${professionalText(event.outcome)}` : "",
+          ].filter(Boolean),
+          fill: [255, 241, 242],
+          stroke: [254, 205, 211],
+          titleColor: [190, 18, 60],
+        });
+      });
+    }
+
+    if (reportType === "full") {
+      addSectionTitle("Daily grouped timeline");
+      if (!dailyReportGroups.length) {
+        drawCard({
+          title: "No logs found",
+          lines: ["No logs were found for this date range."],
+        });
+      } else {
+        dailyReportGroups.forEach((group) => {
+          drawCard({
+            title: group.label,
+            lines: reportCategoryOrder.flatMap((section) => {
+              const entries = group.categories[section] || [];
+              if (!entries.length) return [];
+              return [
+                reportCategoryLabel(section),
+                ...entries.map((entry) => `- ${formatEntryLine(entry)}`),
+              ];
+            }),
+          });
+        });
+      }
+    }
 
     return pdf;
   };
@@ -3906,7 +3975,11 @@ export default function KaylenCareMonitorDashboard({
       pdf.save(filename);
     } catch (error) {
       console.error("PDF export failed", error);
-      alert("PDF export failed - check console");
+      alert(
+        `PDF export failed: ${
+          error?.message || "Please try again or reduce the report date range."
+        }`,
+      );
     } finally {
       setIsExportingPdf(false);
     }
