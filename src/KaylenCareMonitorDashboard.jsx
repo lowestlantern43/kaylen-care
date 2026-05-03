@@ -3778,58 +3778,108 @@ export default function KaylenCareMonitorDashboard({
       }
     };
 
-    for (const block of blocks) {
-      const cardWidth = block.dataset.reportPdfCard === "half"
-        ? halfWidth
-        : usableWidth;
+    const addPageForNextCard = () => {
+      pdf.addPage();
+      cursorY = margin;
+      column = 0;
+      rowHeight = 0;
+    };
+
+    const placeCard = ({ cardWidth, cardHeight, draw }) => {
       const isFullWidth = cardWidth === usableWidth;
 
       if (isFullWidth) finishHalfRow();
 
-      const canvas = await html2canvas(block, {
-        scale: 1.5,
-        useCORS: true,
-        allowTaint: false,
-        backgroundColor: "#ffffff",
-        logging: false,
-        windowWidth: 1120,
-        scrollX: 0,
-        scrollY: 0,
-      });
-
-      if (!canvas.width || !canvas.height) continue;
-
-      const imgData = canvas.toDataURL("image/png");
-      let imgWidth = cardWidth;
-      let imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-      if (imgHeight > usableHeight) {
-        const scale = usableHeight / imgHeight;
-        imgHeight = usableHeight;
-        imgWidth *= scale;
-      }
-
-      if (cursorY > margin && cursorY + imgHeight > pdfHeight - margin) {
-        pdf.addPage();
-        cursorY = margin;
+      if (cursorY > margin && cursorY + cardHeight > pdfHeight - margin) {
+        addPageForNextCard();
       }
 
       const x = isFullWidth
         ? margin
         : margin + column * (halfWidth + gap);
 
-      pdf.addImage(imgData, "PNG", x, cursorY, imgWidth, imgHeight);
+      draw(x, cursorY);
 
       if (isFullWidth) {
-        cursorY += imgHeight + gap;
+        cursorY += cardHeight + gap;
       } else if (column === 0) {
-        rowHeight = imgHeight;
+        rowHeight = cardHeight;
         column = 1;
       } else {
-        rowHeight = Math.max(rowHeight, imgHeight);
+        rowHeight = Math.max(rowHeight, cardHeight);
         cursorY += rowHeight + gap;
         column = 0;
         rowHeight = 0;
+      }
+    };
+
+    const drawFallbackTextCard = (block, cardWidth) => {
+      const text = String(block.innerText || "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      if (!text) return;
+
+      const lines = pdf.splitTextToSize(text, cardWidth - 8);
+      const cardHeight = Math.min(
+        usableHeight,
+        Math.max(18, lines.length * 4.2 + 10),
+      );
+
+      placeCard({
+        cardWidth,
+        cardHeight,
+        draw: (x, y) => {
+          pdf.setFillColor(248, 250, 252);
+          pdf.setDrawColor(226, 232, 240);
+          pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
+          pdf.setTextColor(15, 23, 42);
+          pdf.setFont("helvetica", "normal");
+          pdf.setFontSize(8);
+          pdf.text(lines.slice(0, Math.floor((cardHeight - 8) / 4.2)), x + 4, y + 6);
+        },
+      });
+    };
+
+    for (const block of blocks) {
+      const cardWidth = block.dataset.reportPdfCard === "half"
+        ? halfWidth
+        : usableWidth;
+
+      try {
+        const canvas = await html2canvas(block, {
+          scale: 1.5,
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: "#ffffff",
+          logging: false,
+          windowWidth: 1120,
+          scrollX: 0,
+          scrollY: 0,
+        });
+
+        if (!canvas.width || !canvas.height) {
+          drawFallbackTextCard(block, cardWidth);
+          continue;
+        }
+
+        const imgData = canvas.toDataURL("image/png");
+        let imgWidth = cardWidth;
+        let imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+        if (imgHeight > usableHeight) {
+          const scale = usableHeight / imgHeight;
+          imgHeight = usableHeight;
+          imgWidth *= scale;
+        }
+
+        placeCard({
+          cardWidth,
+          cardHeight: imgHeight,
+          draw: (x, y) => pdf.addImage(imgData, "PNG", x, y, imgWidth, imgHeight),
+        });
+      } catch (error) {
+        console.warn("Report PDF card fallback used", error);
+        drawFallbackTextCard(block, cardWidth);
       }
     }
 
