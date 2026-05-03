@@ -3900,6 +3900,8 @@ export default function KaylenCareMonitorDashboard({
     const drawDailyActivityChart = () => {
       const groups = [...dailyReportGroups].reverse().slice(-12);
       if (!groups.length) return;
+      const entriesForGroup = (group) =>
+        Object.values(group.categories || {}).flat();
 
       const chartHeight = 44;
       ensureSpace(chartHeight);
@@ -3913,7 +3915,7 @@ export default function KaylenCareMonitorDashboard({
       const plotHeight = 22;
       const maxTotal = Math.max(
         1,
-        ...groups.map((group) => group.entries.length),
+        ...groups.map((group) => entriesForGroup(group).length),
       );
       const barGap = 3;
       const barWidth = Math.max(
@@ -3942,9 +3944,10 @@ export default function KaylenCareMonitorDashboard({
       groups.forEach((group, index) => {
         const barX = plotX + index * (barWidth + barGap);
         let barBottom = plotY + plotHeight;
+        const groupEntries = entriesForGroup(group);
 
         categories.forEach(([section, color]) => {
-          const count = group.entries.filter((entry) => entry.section === section).length;
+          const count = groupEntries.filter((entry) => entry.section === section).length;
           if (!count) return;
           const segmentHeight = Math.max(1.2, (count / maxTotal) * plotHeight);
           barBottom -= segmentHeight;
