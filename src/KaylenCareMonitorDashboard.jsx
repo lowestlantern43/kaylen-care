@@ -493,6 +493,7 @@ export default function KaylenCareMonitorDashboard({
   const [reportEmailForm, setReportEmailForm] = useState({
     recipientEmail: "",
     message: "",
+    attachmentType: "trends",
     confirmed: false,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -4166,12 +4167,13 @@ export default function KaylenCareMonitorDashboard({
     });
   };
 
-  const defaultReportPdfFilename = () =>
-    `familytrack-care-report-${childName
+  const defaultReportPdfFilename = (variant = "full") =>
+    `familytrack-${variant === "trends" ? "trends-summary" : "full-care-report"}-${childName
       .toLowerCase()
       .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`;
 
-  const createReportPdf = async () => {
+  const createReportPdf = async ({ variant = "full" } = {}) => {
+    const isTrendsPdf = variant === "trends";
     const pdfWidth = 297;
     const pdfHeight = 210;
     const margin = 8;
@@ -4331,6 +4333,124 @@ export default function KaylenCareMonitorDashboard({
       });
     };
 
+    const drawSimpleBarChart = ({
+      title,
+      data,
+      valueKey = "value",
+      suffix = "",
+      tone = tones.sky,
+      note = "",
+    }) => {
+      const cleanData = data.filter((item) =>
+        Number.isFinite(Number(item[valueKey] || 0)),
+      );
+      const chartHeight = 38;
+      ensureSpace(chartHeight);
+      const x = margin;
+      const y = cursorY;
+      const width = usableWidth;
+      const plotX = x + 8;
+      const plotY = y + 13;
+      const plotWidth = width - 16;
+      const plotHeight = 17;
+      const maxValue = Math.max(1, ...cleanData.map((item) => Number(item[valueKey] || 0)));
+      const barGap = 3;
+      const barWidth = cleanData.length
+        ? Math.max(4, (plotWidth - barGap * (cleanData.length - 1)) / cleanData.length)
+        : plotWidth;
+
+      pdf.setFillColor(...tone.fill);
+      pdf.setDrawColor(...tone.stroke);
+      pdf.roundedRect(x, y, width, chartHeight, 3, 3, "FD");
+      setText(7, tone.accent, "bold");
+      pdf.text(String(title).toUpperCase(), x + 4, y + 6);
+      setText(6.5, [100, 116, 139], "normal");
+      pdf.text(note, x + 4, y + 10);
+      pdf.setDrawColor(203, 213, 225);
+      pdf.line(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight);
+
+      if (cleanData.length) {
+        cleanData.slice(-14).forEach((item, index) => {
+          const value = Number(item[valueKey] || 0);
+          const barX = plotX + index * (barWidth + barGap);
+          const barHeight = Math.max(value ? 1.2 : 0.4, (value / maxValue) * plotHeight);
+          pdf.setFillColor(...tone.accent);
+          pdf.roundedRect(barX, plotY + plotHeight - barHeight, barWidth, barHeight, 1, 1, "F");
+          setText(5.2, [100, 116, 139], "normal");
+          pdf.text(String(item.label || "").slice(0, 5), barX, y + chartHeight - 3);
+        });
+        const latest = cleanData[cleanData.length - 1];
+        setText(7, [15, 23, 42], "bold");
+        pdf.text(`Latest: ${roundTo(latest[valueKey], suffix === "ml" ? 0 : 1)}${suffix}`, x + width - 38, y + 6);
+      } else {
+        setText(7, [100, 116, 139], "normal");
+        pdf.text("No data logged in this range.", plotX, plotY + 8);
+      }
+      cursorY += chartHeight + gap;
+    };
+
+    const drawMedicationConsistencyPdf = () => {
+      const graph = reportTrendModel.graphs.medication;
+      const chartHeight = 28;
+      ensureSpace(chartHeight);
+      const x = margin;
+      const y = cursorY;
+      const width = usableWidth;
+      const percent = Math.max(0, Math.min(100, graph.percent));
+      pdf.setFillColor(...tones.rose.fill);
+      pdf.setDrawColor(...tones.rose.stroke);
+      pdf.roundedRect(x, y, width, chartHeight, 3, 3, "FD");
+      setText(7, tones.rose.accent, "bold");
+      pdf.text("MEDICATION ROUTINE CONSISTENCY", x + 4, y + 6);
+      setText(13, [15, 23, 42], "bold");
+      pdf.text(`${percent}%`, x + 4, y + 16);
+      setText(7, [100, 116, 139], "normal");
+      pdf.text(
+        graph.typical
+          ? `${graph.logged} logged from ${graph.typical} typical doses`
+          : `${graph.logged} medication logs`,
+        x + 22,
+        y + 16,
+      );
+      pdf.setFillColor(255, 255, 255);
+      pdf.roundedRect(x + 4, y + 21, width - 8, 3, 1.5, 1.5, "F");
+      pdf.setFillColor(...tones.rose.accent);
+      pdf.roundedRect(x + 4, y + 21, ((width - 8) * percent) / 100, 3, 1.5, 1.5, "F");
+      cursorY += chartHeight + gap;
+    };
+
+    const drawTrendVisuals = () => {
+      drawSimpleBarChart({
+        title: "Weight progress",
+        data: reportTrendModel.graphs.weight,
+        suffix: "kg",
+        tone: tones.emerald,
+        note: "Measurements plotted across this range.",
+      });
+      drawSimpleBarChart({
+        title: "Fluid intake",
+        data: reportTrendModel.graphs.fluid,
+        suffix: "ml",
+        tone: tones.sky,
+        note: "Daily drink totals.",
+      });
+      drawSimpleBarChart({
+        title: "Sleep trend",
+        data: reportTrendModel.graphs.sleep,
+        suffix: "h",
+        tone: tones.indigo,
+        note: "Sleep duration by logged day.",
+      });
+      drawMedicationConsistencyPdf();
+      drawSimpleBarChart({
+        title: "Toileting pattern",
+        data: reportTrendModel.graphs.toileting,
+        suffix: "",
+        tone: tones.amber,
+        note: "Daily toileting entry frequency.",
+      });
+    };
+
     const drawDailyActivityChart = () => {
       const groups = [...dailyReportGroups].reverse().slice(-12);
       if (!groups.length) return;
@@ -4427,7 +4547,7 @@ export default function KaylenCareMonitorDashboard({
     pdf.setFillColor(...tones.sky.accent);
     pdf.roundedRect(margin, cursorY, 3, 28, 1.5, 1.5, "F");
     setText(8, tones.sky.accent, "bold");
-    pdf.text("SHAREABLE CARE REPORT", margin + 5, cursorY + 7);
+    pdf.text(isTrendsPdf ? "TRENDS SUMMARY" : "FULL DETAILED REPORT", margin + 5, cursorY + 7);
     setText(18, [15, 23, 42], "bold");
     pdf.text(childName || "Child", margin + 5, cursorY + 16);
     setText(8, [51, 65, 85], "normal");
@@ -4439,7 +4559,7 @@ export default function KaylenCareMonitorDashboard({
     );
     cursorY += 32;
 
-    if (reportNotes.trim()) {
+    if (!isTrendsPdf && reportNotes.trim()) {
       drawCard({
         title: "Parent/carer notes",
         lines: [reportNotes.trim()],
@@ -4495,7 +4615,10 @@ export default function KaylenCareMonitorDashboard({
     if (showReportCharts) {
       addSectionTitle("Trends and patterns");
       drawTrendGrid();
-      drawDailyActivityChart();
+      drawTrendVisuals();
+      if (!isTrendsPdf) {
+        drawDailyActivityChart();
+      }
     }
 
     addSectionTitle("Insights");
@@ -4504,7 +4627,7 @@ export default function KaylenCareMonitorDashboard({
       lines: reportTrendModel.insights.map((item) => `- ${item}`),
     });
 
-    if (reportImportantEvents.length) {
+    if (!isTrendsPdf && reportImportantEvents.length) {
       addSectionTitle("Important events");
       reportImportantEvents.forEach((event) => {
         drawCard({
@@ -4521,7 +4644,16 @@ export default function KaylenCareMonitorDashboard({
       });
     }
 
-    if (reportType === "full") {
+    if (!isTrendsPdf) {
+      addSectionTitle("Category breakdown");
+      drawMetricGrid([
+        { label: "Food", value: quickReportSummary.food, tone: tones.amber },
+        { label: "Medication", value: quickReportSummary.medication, tone: tones.rose },
+        { label: "Sleep", value: quickReportSummary.sleep, tone: tones.indigo },
+        { label: "Toileting", value: quickReportSummary.toileting, tone: tones.sky },
+        { label: "Health", value: quickReportSummary.health, tone: tones.emerald },
+      ]);
+
       addSectionTitle("Daily grouped timeline");
       if (!dailyReportGroups.length) {
         drawCard({
@@ -4573,13 +4705,17 @@ export default function KaylenCareMonitorDashboard({
     });
 
   const handleExportPdf = async (
-    elementId = "report-pdf-export",
-    filename = defaultReportPdfFilename(),
+    variantOrEvent = "full",
+    filename,
   ) => {
+    const variant =
+      typeof variantOrEvent === "string" && ["trends", "full"].includes(variantOrEvent)
+        ? variantOrEvent
+        : "full";
     try {
       setIsExportingPdf(true);
-      const pdf = await createReportPdf(elementId);
-      pdf.save(filename);
+      const pdf = await createReportPdf({ variant });
+      pdf.save(filename || defaultReportPdfFilename(variant));
     } catch (error) {
       console.error("PDF export failed", error);
       alert(
@@ -4615,8 +4751,9 @@ export default function KaylenCareMonitorDashboard({
 
     try {
       setIsSendingReportEmail(true);
-      const filename = defaultReportPdfFilename();
-      const pdf = await createReportPdf();
+      const attachmentType = reportEmailForm.attachmentType || "trends";
+      const filename = defaultReportPdfFilename(attachmentType);
+      const pdf = await createReportPdf({ variant: attachmentType });
       const pdfBase64 = await blobToBase64(pdf.output("blob"));
 
       await api.sendReportEmail(familyId, {
@@ -4625,12 +4762,21 @@ export default function KaylenCareMonitorDashboard({
         childId,
         childName,
         dateRange: reportRangeLabel,
+        reportType:
+          attachmentType === "trends"
+            ? "Trends Summary PDF"
+            : "Full Detailed Report PDF",
         filename,
         pdfBase64,
       });
 
       setIsReportEmailOpen(false);
-      setReportEmailForm({ recipientEmail: "", message: "", confirmed: false });
+      setReportEmailForm({
+        recipientEmail: "",
+        message: "",
+        attachmentType,
+        confirmed: false,
+      });
       showToast?.({ message: "📧 Report sent", type: "success" });
     } catch (error) {
       console.error("Report email failed", error);
@@ -7431,6 +7577,38 @@ export default function KaylenCareMonitorDashboard({
           </button>
         </div>
 
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:max-w-xl lg:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => handleExportPdf("trends")}
+            disabled={isExportingPdf || invalidCustomRange}
+            className="rounded-2xl border border-sky-200 bg-white px-4 py-3 text-sm font-black text-sky-700 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isExportingPdf ? "Exporting..." : "Export Trends PDF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!useSaasApi) {
+                showToast?.({
+                  message: "Email sending is not set up yet. You can still download the PDF.",
+                  type: "info",
+                });
+                return;
+              }
+              setReportEmailForm((current) => ({
+                ...current,
+                attachmentType: "trends",
+              }));
+              setIsReportEmailOpen(true);
+            }}
+            disabled={invalidCustomRange}
+            className="rounded-2xl bg-sky-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Email Trends
+          </button>
+        </div>
+
         <div className="mt-4">
           {renderReportFilterControls({ reportInputClassName })}
         </div>
@@ -7496,6 +7674,120 @@ export default function KaylenCareMonitorDashboard({
       </section>
     </div>
   );
+
+  const renderReportEmailModal = (reportInputClassName) =>
+    isReportEmailOpen ? (
+      <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+        <form
+          className="w-full rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-2xl sm:max-w-md"
+          onSubmit={sendReportByEmail}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-black text-slate-950">
+                Email report
+              </h3>
+              <p className="mt-1 text-sm font-medium text-slate-600">
+                Choose which PDF to attach before sending.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsReportEmailOpen(false)}
+              className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-700"
+            >
+              Close
+            </button>
+          </div>
+
+          <label className="mt-4 block text-sm font-bold text-slate-700">
+            Recipient email
+            <input
+              className={reportInputClassName}
+              type="email"
+              value={reportEmailForm.recipientEmail}
+              onChange={(event) =>
+                setReportEmailForm((current) => ({
+                  ...current,
+                  recipientEmail: event.target.value,
+                }))
+              }
+              placeholder="professional@example.com"
+              required
+            />
+          </label>
+
+          <label className="mt-3 block text-sm font-bold text-slate-700">
+            Attachment type
+            <select
+              className={reportInputClassName}
+              value={reportEmailForm.attachmentType}
+              onChange={(event) =>
+                setReportEmailForm((current) => ({
+                  ...current,
+                  attachmentType: event.target.value,
+                }))
+              }
+            >
+              <option value="trends">Trends Summary PDF</option>
+              <option value="full">Full Detailed Report PDF</option>
+            </select>
+          </label>
+
+          <label className="mt-3 block text-sm font-bold text-slate-700">
+            Optional message
+            <textarea
+              className={reportInputClassName}
+              rows={3}
+              value={reportEmailForm.message}
+              onChange={(event) =>
+                setReportEmailForm((current) => ({
+                  ...current,
+                  message: event.target.value,
+                }))
+              }
+              placeholder="Short note to include in the email"
+            />
+          </label>
+
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+            Child: {childName}. Range: {reportRangeLabel}. Filter:{" "}
+            {reportCategoryFilter}.
+          </div>
+
+          <label className="mt-3 flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+            <input
+              type="checkbox"
+              checked={reportEmailForm.confirmed}
+              onChange={(event) =>
+                setReportEmailForm((current) => ({
+                  ...current,
+                  confirmed: event.target.checked,
+                }))
+              }
+              className="mt-1 h-4 w-4"
+            />
+            I understand this report will be emailed externally.
+          </label>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={() => setIsReportEmailOpen(false)}
+              className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+            >
+              Cancel
+            </button>
+            <button
+              className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+              disabled={isSendingReportEmail}
+            >
+              {isSendingReportEmail ? "Sending..." : "Send email"}
+            </button>
+          </div>
+        </form>
+      </div>
+    ) : null;
 
   const renderSnapshotList = (
     title,
@@ -8394,6 +8686,7 @@ export default function KaylenCareMonitorDashboard({
         <>
           {renderPdfExportArea()}
           {renderTrendsDashboard({ reportInputClassName, invalidCustomRange })}
+          {renderReportEmailModal(reportInputClassName)}
         </>
       );
     }
@@ -8489,16 +8782,38 @@ export default function KaylenCareMonitorDashboard({
                 </button>
                 <button
                   type="button"
-                  onClick={handleExportPdf}
+                  onClick={() => handleExportPdf("full")}
                   disabled={isExportingPdf || invalidCustomRange}
                   className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isExportingPdf ? "Exporting..." : "Export PDF"}
+                  {isExportingPdf ? "Exporting..." : "Export Full Report PDF"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!useSaasApi) {
+                      showToast?.({
+                        message: "Email sending is not set up yet. You can still download the PDF.",
+                        type: "info",
+                      });
+                      return;
+                    }
+                    setReportEmailForm((current) => ({
+                      ...current,
+                      attachmentType: "full",
+                    }));
+                    setIsReportEmailOpen(true);
+                  }}
+                  disabled={invalidCustomRange}
+                  className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Email Full Report
                 </button>
               </div>
             </div>
           </section>
         </div>
+        {renderReportEmailModal(reportInputClassName)}
 
       </>
     );
