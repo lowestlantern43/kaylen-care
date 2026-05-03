@@ -456,6 +456,7 @@ export default function KaylenCareMonitorDashboard({
   const [customReportDays, setCustomReportDays] = useState("7");
   const [reportTab, setReportTab] = useState("recent");
   const [reportLayout, setReportLayout] = useState("daily");
+  const [reportView, setReportView] = useState("trends");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [reportNotes, setReportNotes] = useState("");
@@ -6999,8 +7000,9 @@ export default function KaylenCareMonitorDashboard({
     </section>
   );
 
-  const renderShareableCareReport = ({ mode = "screen" } = {}) => {
+  const renderShareableCareReport = ({ mode = "screen", forceFull = false } = {}) => {
     const isPdf = mode === "pdf";
+    const includeFullTimeline = forceFull || reportType === "full";
     const rangeLabel = reportRangeLabel;
     const generatedDate = new Date().toLocaleDateString("en-GB", {
       day: "numeric",
@@ -7124,7 +7126,7 @@ export default function KaylenCareMonitorDashboard({
           </ul>
         </section>
 
-        {reportType === "full" ? (
+        {includeFullTimeline ? (
         isPdf ? (
           <>
             <section
@@ -7291,8 +7293,207 @@ export default function KaylenCareMonitorDashboard({
         id="report-pdf-export"
         className="pdf-export-document w-[1120px] bg-white p-4 text-slate-900"
       >
-        {renderShareableCareReport({ mode: "pdf" })}
+        {renderShareableCareReport({ mode: "pdf", forceFull: true })}
       </div>
+    </div>
+  );
+
+  const renderReportFilterControls = ({
+    reportInputClassName,
+    showDetailedOptions = false,
+  }) => (
+    <>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">Child</label>
+          <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-900">
+            {childName}
+          </div>
+        </div>
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Date range
+          </label>
+          <select
+            className={reportInputClassName}
+            value={reportDays}
+            onChange={(event) => setReportDays(event.target.value)}
+          >
+            <option value="24h">Last 24 hours</option>
+            <option value="72h">Last 72 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="14">Last 14 days</option>
+            <option value="30">Last 30 days</option>
+            <option value="60">Last 60 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </div>
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Category
+          </label>
+          <select
+            className={reportInputClassName}
+            value={reportCategoryFilter}
+            onChange={(event) => setReportCategoryFilter(event.target.value)}
+          >
+            <option value="All">All categories</option>
+            <option value="Food Diary">Food</option>
+            <option value="Medication">Medication</option>
+            <option value="Sleep">Sleep</option>
+            <option value="Toileting">Toileting</option>
+            <option value="Health">Health</option>
+          </select>
+        </div>
+        {showDetailedOptions ? (
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Wording
+            </label>
+            <select
+              className={reportInputClassName}
+              value={professionalLanguage ? "professional" : "parent"}
+              onChange={(event) =>
+                setProfessionalLanguage(event.target.value === "professional")
+              }
+            >
+              <option value="parent">Parent-friendly</option>
+              <option value="professional">Professional</option>
+            </select>
+          </div>
+        ) : (
+          <label className={`${cardClassName} flex items-center gap-3 text-sm font-bold text-slate-700`}>
+            <input
+              type="checkbox"
+              checked={showReportCharts}
+              onChange={(event) => setShowReportCharts(event.target.checked)}
+              className="h-4 w-4"
+            />
+            Show graphs
+          </label>
+        )}
+      </div>
+
+      {reportDays === "custom" ? (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Start date
+            </label>
+            <input
+              type="date"
+              className={reportInputClassName}
+              value={reportStartDate}
+              onChange={(event) => setReportStartDate(event.target.value)}
+            />
+          </div>
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              End date
+            </label>
+            <input
+              type="date"
+              className={reportInputClassName}
+              value={reportEndDate}
+              onChange={(event) => setReportEndDate(event.target.value)}
+            />
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+
+  const renderTrendsDashboard = ({ reportInputClassName, invalidCustomRange }) => (
+    <div className="mt-6 space-y-4">
+      <section className="rounded-[1.75rem] border border-sky-100 bg-sky-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700">
+              Reports
+            </p>
+            <h3 className="mt-1 text-xl font-black text-slate-950">
+              Trends Dashboard
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              A quick answer to what is changing for {childName}.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setReportView("detailed");
+              setReportType("full");
+            }}
+            className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800"
+          >
+            View Full Detailed Report
+          </button>
+        </div>
+
+        <div className="mt-4">
+          {renderReportFilterControls({ reportInputClassName })}
+        </div>
+
+        {invalidCustomRange ? (
+          <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+            End date must be on or after the start date.
+          </div>
+        ) : null}
+      </section>
+
+      {renderKeyChangesSection()}
+      {renderReportSummaryStatsRow()}
+      {showReportCharts ? renderReportChartCards() : null}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-black text-slate-950">
+              Smart insights
+            </h3>
+            <p className="mt-1 text-sm font-semibold text-slate-500">
+              Short observations from this range.
+            </p>
+          </div>
+          {renderReportStreaks()}
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {reportTrendModel.insights.map((observation) => (
+            <div
+              key={observation}
+              className="rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 text-sm font-semibold leading-6 text-slate-700"
+            >
+              {observation}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h3 className="text-base font-black text-slate-950">
+          Weekly comparison
+        </h3>
+        <p className="mt-1 text-sm font-semibold text-slate-500">
+          Current range compared with the previous matching range.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          {reportTrendModel.summaryStats.map((stat) => (
+            <div
+              key={`comparison-${stat.key}`}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
+            >
+              <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                {stat.label}
+              </p>
+              <p className="mt-1 text-sm font-black text-slate-900">
+                {stat.change}
+              </p>
+              <div className="mt-1">{renderTrendPill(stat.trend)}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 
@@ -8188,144 +8389,49 @@ export default function KaylenCareMonitorDashboard({
       reportRangeEnd &&
       reportRangeStart > reportRangeEnd;
 
+    if (reportView === "trends") {
+      return (
+        <>
+          {renderPdfExportArea()}
+          {renderTrendsDashboard({ reportInputClassName, invalidCustomRange })}
+        </>
+      );
+    }
+
     return (
       <>
         {renderPdfExportArea()}
 
         <div className="mt-6 space-y-4">
           <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              Report settings
-            </p>
-            <h3 className="mt-1 text-lg font-extrabold text-slate-950">
-              Shareable Care Report
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-slate-600">
-              A simple parent/carer summary for school, hospital appointments,
-              EHCP reviews and care handovers.
-            </p>
-
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <div className={cardClassName}>
-                <label className="text-sm font-semibold text-slate-700">
-                  Child
-                </label>
-                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-900">
-                  {childName}
-                </div>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                  Full Detailed Report
+                </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">
+                  What exactly happened?
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Full timeline, category breakdown, notes and all logged data
+                  for the selected date range.
+                </p>
               </div>
-              <div className={cardClassName}>
-                <label className="text-sm font-semibold text-slate-700">
-                  Date range
-                </label>
-                <select
-                  className={reportInputClassName}
-                  value={reportDays}
-                  onChange={(event) => setReportDays(event.target.value)}
-                >
-                  <option value="24h">Last 24 hours</option>
-                  <option value="72h">Last 72 hours</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="14">Last 14 days</option>
-                  <option value="30">Last 30 days</option>
-                  <option value="60">Last 60 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="custom">Custom range</option>
-                </select>
-              </div>
-              <div className={cardClassName}>
-                <label className="text-sm font-semibold text-slate-700">
-                  Report type
-                </label>
-                <select
-                  className={reportInputClassName}
-                  value={reportType}
-                  onChange={(event) => setReportType(event.target.value)}
-                >
-                  <option value="full">Full Care Report</option>
-                  <option value="appointment">Appointment Report</option>
-                </select>
-              </div>
-              <div className={cardClassName}>
-                <label className="text-sm font-semibold text-slate-700">
-                  Template
-                </label>
-                <select
-                  className={reportInputClassName}
-                  value={reportTemplate}
-                  onChange={(event) => {
-                    const template = event.target.value;
-                    setReportTemplate(template);
-                    if (template === "medication") {
-                      setReportCategoryFilter("Medication");
-                      setReportType("appointment");
-                    } else if (template === "school") {
-                      setReportType("appointment");
-                      setReportCategoryFilter("All");
-                    } else {
-                      setReportType("full");
-                      setReportCategoryFilter("All");
-                    }
-                  }}
-                >
-                  <option value="hospital">Hospital report</option>
-                  <option value="ehcp">EHCP review report</option>
-                  <option value="school">School handover</option>
-                  <option value="medication">Medication summary</option>
-                </select>
-              </div>
-              <div className={cardClassName}>
-                <label className="text-sm font-semibold text-slate-700">
-                  Wording
-                </label>
-                <select
-                  className={reportInputClassName}
-                  value={professionalLanguage ? "professional" : "parent"}
-                  onChange={(event) =>
-                    setProfessionalLanguage(event.target.value === "professional")
-                  }
-                >
-                  <option value="parent">Parent-friendly</option>
-                  <option value="professional">Professional</option>
-                </select>
-              </div>
-              <label className={`${cardClassName} flex items-center gap-3 text-sm font-bold text-slate-700`}>
-                <input
-                  type="checkbox"
-                  checked={showReportCharts}
-                  onChange={(event) => setShowReportCharts(event.target.checked)}
-                  className="h-4 w-4"
-                />
-                Include simple charts
-              </label>
+              <button
+                type="button"
+                onClick={() => setReportView("trends")}
+                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                Back to Trends Dashboard
+              </button>
             </div>
 
-            {reportDays === "custom" ? (
-              <div className="mt-3 grid gap-3 md:grid-cols-2">
-                <div className={cardClassName}>
-                  <label className="text-sm font-semibold text-slate-700">
-                    Start date
-                  </label>
-                  <input
-                    type="date"
-                    className={reportInputClassName}
-                    value={reportStartDate}
-                    onChange={(event) => setReportStartDate(event.target.value)}
-                  />
-                </div>
-                <div className={cardClassName}>
-                  <label className="text-sm font-semibold text-slate-700">
-                    End date
-                  </label>
-                  <input
-                    type="date"
-                    className={reportInputClassName}
-                    value={reportEndDate}
-                    onChange={(event) => setReportEndDate(event.target.value)}
-                  />
-                </div>
-              </div>
-            ) : null}
+            <div className="mt-4">
+              {renderReportFilterControls({
+                reportInputClassName,
+                showDetailedOptions: true,
+              })}
+            </div>
 
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <label className="text-sm font-semibold text-slate-700">
@@ -8347,7 +8453,7 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </section>
 
-          {renderShareableCareReport()}
+          {renderShareableCareReport({ forceFull: true })}
 
           <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
