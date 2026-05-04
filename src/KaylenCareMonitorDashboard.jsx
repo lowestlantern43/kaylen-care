@@ -4569,63 +4569,62 @@ export default function KaylenCareMonitorDashboard({
       });
     }
 
-    addSectionTitle("Key changes");
-    reportTrendModel.keyChanges.forEach((item) => {
-      const tone =
-        item.type === "increase"
-          ? tones.emerald
-          : item.type === "decrease"
-            ? tones.rose
-            : item.type === "warning"
-              ? tones.amber
-              : tones.slate;
-      drawCard({
-        title: item.title,
-        lines: [item.text],
-        fill: tone.fill,
-        stroke: tone.stroke,
-        titleColor: tone.accent,
-      });
-    });
-
-    addSectionTitle("Summary stats");
-    drawMetricGrid(
-      reportTrendModel.summaryStats.map((item) => ({
-        label: item.label,
-        value: item.value,
-        tone:
-          item.tone === "indigo"
-            ? tones.indigo
-            : item.tone === "rose"
+    if (isTrendsPdf) {
+      addSectionTitle("Key changes");
+      reportTrendModel.keyChanges.forEach((item) => {
+        const tone =
+          item.type === "increase"
+            ? tones.emerald
+            : item.type === "decrease"
               ? tones.rose
-              : item.tone === "emerald"
-                ? tones.emerald
-                : tones.sky,
-      })),
-    );
+              : item.type === "warning"
+                ? tones.amber
+                : tones.slate;
+        drawCard({
+          title: item.title,
+          lines: [item.text],
+          fill: tone.fill,
+          stroke: tone.stroke,
+          titleColor: tone.accent,
+        });
+      });
 
-    addSectionTitle("At a glance");
-    drawMetricGrid([
-      { label: "Sleep", value: atAGlance.sleep, tone: tones.indigo },
-      { label: "Medication", value: atAGlance.medication, tone: tones.rose },
-      { label: "Appetite", value: atAGlance.appetite, tone: tones.amber },
-      { label: "Health", value: atAGlance.health, tone: tones.emerald },
-    ]);
+      addSectionTitle("Summary stats");
+      drawMetricGrid(
+        reportTrendModel.summaryStats.map((item) => ({
+          label: item.label,
+          value: item.value,
+          tone:
+            item.tone === "indigo"
+              ? tones.indigo
+              : item.tone === "rose"
+                ? tones.rose
+                : item.tone === "emerald"
+                  ? tones.emerald
+                  : tones.sky,
+        })),
+      );
 
-    if (showReportCharts) {
-      addSectionTitle("Trends and patterns");
-      drawTrendGrid();
-      drawTrendVisuals();
-      if (!isTrendsPdf) {
-        drawDailyActivityChart();
+      addSectionTitle("At a glance");
+      drawMetricGrid([
+        { label: "Sleep", value: atAGlance.sleep, tone: tones.indigo },
+        { label: "Medication", value: atAGlance.medication, tone: tones.rose },
+        { label: "Appetite", value: atAGlance.appetite, tone: tones.amber },
+        { label: "Health", value: atAGlance.health, tone: tones.emerald },
+      ]);
+
+      if (showReportCharts) {
+        addSectionTitle("Trends and patterns");
+        drawTrendGrid();
+        drawTrendVisuals();
       }
-    }
 
-    addSectionTitle("Insights");
-    drawCard({
-      title: "Insights",
-      lines: reportTrendModel.insights.map((item) => `- ${item}`),
-    });
+      addSectionTitle("Insights");
+      drawCard({
+        title: "Insights",
+        lines: reportTrendModel.insights.map((item) => `- ${item}`),
+      });
+    }
 
     if (!isTrendsPdf && reportImportantEvents.length) {
       addSectionTitle("Important events");
@@ -4764,8 +4763,8 @@ export default function KaylenCareMonitorDashboard({
         dateRange: reportRangeLabel,
         reportType:
           attachmentType === "trends"
-            ? "Trends Summary PDF"
-            : "Full Detailed Report PDF",
+            ? "Report Trends PDF"
+            : "Reports PDF",
         filename,
         pdfBase64,
       });
@@ -7146,7 +7145,11 @@ export default function KaylenCareMonitorDashboard({
     </section>
   );
 
-  const renderShareableCareReport = ({ mode = "screen", forceFull = false } = {}) => {
+  const renderShareableCareReport = ({
+    mode = "screen",
+    forceFull = false,
+    detailedOnly = false,
+  } = {}) => {
     const isPdf = mode === "pdf";
     const includeFullTimeline = forceFull || reportType === "full";
     const rangeLabel = reportRangeLabel;
@@ -7186,52 +7189,47 @@ export default function KaylenCareMonitorDashboard({
           ) : null}
         </section>
 
-        {renderKeyChangesSection(mode)}
-        {renderReportSummaryStatsRow(mode)}
+        {!detailedOnly ? (
+          <>
+            {renderKeyChangesSection(mode)}
+            {renderReportSummaryStatsRow(mode)}
 
-        <section
-          data-report-pdf-card="half"
-          className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
-        >
-          <h3 className="text-base font-black text-slate-950">
-            At a glance
-          </h3>
-          <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
-            {renderSummaryCard("Sleep", atAGlance.sleep, mode)}
-            {renderSummaryCard("Medication", atAGlance.medication, mode)}
-            {renderSummaryCard("Appetite", atAGlance.appetite, mode)}
-            {renderSummaryCard("Health", atAGlance.health, mode)}
-          </div>
-        </section>
+            <section
+              data-report-pdf-card="half"
+              className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+            >
+              <h3 className="text-base font-black text-slate-950">
+                At a glance
+              </h3>
+              <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
+                {renderSummaryCard("Sleep", atAGlance.sleep, mode)}
+                {renderSummaryCard("Medication", atAGlance.medication, mode)}
+                {renderSummaryCard("Appetite", atAGlance.appetite, mode)}
+                {renderSummaryCard("Health", atAGlance.health, mode)}
+              </div>
+            </section>
 
-        {showReportCharts ? renderReportChartCards(mode) : null}
+            {showReportCharts ? renderReportChartCards(mode) : null}
 
-        <section
-          data-report-pdf-card={isPdf ? "half" : undefined}
-          className={`rounded-2xl border border-amber-200 bg-amber-50 ${compactSectionPadding(mode)}`}
-        >
-          <h3 className="text-base font-black text-amber-900">
-            Child / Emergency Summary
-          </h3>
-          {profileItems.length ? (
-            <div className={`mt-3 grid gap-2 ${isPdf ? "grid-cols-2" : "md:grid-cols-2"}`}>
-              {profileItems.slice(0, reportType === "appointment" ? 8 : profileItems.length).map(([label, value]) => (
-                <div key={label} className="rounded-xl border border-amber-100 bg-white/80 px-2.5 py-2 text-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
-                    {label}
-                  </p>
-                  <p className="mt-1 text-slate-800">{professionalText(value)}</p>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-2 text-sm text-amber-800">
-              No care profile details have been added yet.
-            </p>
-          )}
-        </section>
+            <section
+              data-report-pdf-card="half"
+              className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+            >
+              <h3 className="text-base font-black text-slate-950">
+                Insights
+              </h3>
+              <ul className="mt-2 space-y-1.5 text-sm leading-6 text-slate-700">
+                {reportTrendModel.insights.map((observation) => (
+                  <li key={observation} className="rounded-xl bg-slate-50 px-3 py-2">
+                    {observation}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          </>
+        ) : null}
 
-        {reportImportantEvents.length ? (
+        {includeFullTimeline && reportImportantEvents.length ? (
           <section
             data-report-pdf-card="full"
             className={`rounded-2xl border border-rose-200 bg-rose-50 ${compactSectionPadding(mode)}`}
@@ -7256,21 +7254,23 @@ export default function KaylenCareMonitorDashboard({
           </section>
         ) : null}
 
-        <section
-          data-report-pdf-card="half"
-          className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
-        >
-          <h3 className="text-base font-black text-slate-950">
-            Insights
-          </h3>
-          <ul className="mt-2 space-y-1.5 text-sm leading-6 text-slate-700">
-            {reportTrendModel.insights.map((observation) => (
-              <li key={observation} className="rounded-xl bg-slate-50 px-3 py-2">
-                {observation}
-              </li>
-            ))}
-          </ul>
-        </section>
+        {detailedOnly ? (
+          <section
+            data-report-pdf-card="half"
+            className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
+          >
+            <h3 className="text-base font-black text-slate-950">
+              Category breakdown
+            </h3>
+            <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-5" : "grid-cols-2 lg:grid-cols-5"}`}>
+              {renderSummaryCard("Food", quickReportSummary.food, mode)}
+              {renderSummaryCard("Medication", quickReportSummary.medication, mode)}
+              {renderSummaryCard("Sleep", quickReportSummary.sleep, mode)}
+              {renderSummaryCard("Toileting", quickReportSummary.toileting, mode)}
+              {renderSummaryCard("Health", quickReportSummary.health, mode)}
+            </div>
+          </section>
+        ) : null}
 
         {includeFullTimeline ? (
         isPdf ? (
@@ -7559,7 +7559,7 @@ export default function KaylenCareMonitorDashboard({
               Reports
             </p>
             <h3 className="mt-1 text-xl font-black text-slate-950">
-              Trends Dashboard
+              Report Trends
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">
               A quick answer to what is changing for {childName}.
@@ -7573,7 +7573,7 @@ export default function KaylenCareMonitorDashboard({
             }}
             className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800"
           >
-            View Full Detailed Report
+            View Reports
           </button>
         </div>
 
@@ -7627,14 +7627,13 @@ export default function KaylenCareMonitorDashboard({
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h3 className="text-base font-black text-slate-950">
-              Smart insights
-            </h3>
+          <h3 className="text-base font-black text-slate-950">
+            Smart insights
+          </h3>
             <p className="mt-1 text-sm font-semibold text-slate-500">
               Short observations from this range.
             </p>
           </div>
-          {renderReportStreaks()}
         </div>
         <div className="mt-3 grid gap-2 md:grid-cols-2">
           {reportTrendModel.insights.map((observation) => (
@@ -7729,8 +7728,8 @@ export default function KaylenCareMonitorDashboard({
                 }))
               }
             >
-              <option value="trends">Trends Summary PDF</option>
-              <option value="full">Full Detailed Report PDF</option>
+          <option value="trends">Report Trends PDF</option>
+          <option value="full">Reports PDF</option>
             </select>
           </label>
 
@@ -8700,10 +8699,10 @@ export default function KaylenCareMonitorDashboard({
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                  Full Detailed Report
+                  Reports
                 </p>
                 <h3 className="mt-1 text-xl font-black text-slate-950">
-                  What exactly happened?
+                  Full detailed report
                 </h3>
                 <p className="mt-1 text-sm leading-6 text-slate-600">
                   Full timeline, category breakdown, notes and all logged data
@@ -8715,7 +8714,7 @@ export default function KaylenCareMonitorDashboard({
                 onClick={() => setReportView("trends")}
                 className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
               >
-                Back to Trends Dashboard
+                Back to Report Trends
               </button>
             </div>
 
@@ -8746,7 +8745,7 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </section>
 
-          {renderShareableCareReport({ forceFull: true })}
+          {renderShareableCareReport({ forceFull: true, detailedOnly: true })}
 
           <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -8786,7 +8785,7 @@ export default function KaylenCareMonitorDashboard({
                   disabled={isExportingPdf || invalidCustomRange}
                   className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {isExportingPdf ? "Exporting..." : "Export Full Report PDF"}
+                  {isExportingPdf ? "Exporting..." : "Export Report PDF"}
                 </button>
                 <button
                   type="button"
@@ -8807,7 +8806,7 @@ export default function KaylenCareMonitorDashboard({
                   disabled={invalidCustomRange}
                   className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Email Full Report
+                  Email Report
                 </button>
               </div>
             </div>
