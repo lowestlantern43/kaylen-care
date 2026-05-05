@@ -7509,25 +7509,36 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
-    const renderFluidBarGraph = () => {
+  const renderFluidBarGraph = () => {
     const data = reportTrendModel.graphs.fluid;
     const target = reportTrendModel.fluidTargetMl || 0;
     const values = data
       .filter((item) => item.hasData && item.value !== null)
       .map((item) => Number(item.value || 0));
+    const foodEntriesForRange = recentEntries.filter(
+      (entry) => entry.section === "Food Diary",
+    );
+    const fluidEntriesForRange = foodEntriesForRange.filter(
+      (entry) => getFluidMlFromEntry(entry) > 0,
+    );
+    const totalFluidMl = values.reduce((sum, value) => sum + value, 0);
+    const missingFluidAmounts =
+      foodEntriesForRange.length > 0 && fluidEntriesForRange.length === 0;
     const max = Math.max(target, ...values, 1);
     const scaleTop = Math.ceil(max / 100) * 100 || 100;
     const scaleMid = Math.round(scaleTop / 2);
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="rounded-[1.35rem] border border-sky-100 bg-white/90 p-3 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
-              Fluid intake
+              Food and fluid trend
             </p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
-              Daily fluid intake across the selected period.
+              {foodEntriesForRange.length
+                ? `${foodEntriesForRange.length} food/drink entr${foodEntriesForRange.length === 1 ? "y" : "ies"} logged.`
+                : "No food or drink entries found for this period."}
             </p>
           </div>
           {target ? (
@@ -7536,93 +7547,156 @@ export default function KaylenCareMonitorDashboard({
             </span>
           ) : null}
         </div>
-        <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
-          <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
-            <span>{scaleTop}ml</span>
-            <span>{scaleMid}ml</span>
-            <span>0ml</span>
-          </div>
-          <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
-            <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
-            {target ? (
-              <div
-                className="pointer-events-none absolute inset-x-0 border-t border-sky-300"
-                style={{
-                  bottom: `${20 + Math.min(100, (target / scaleTop) * 100) * 0.72}%`,
-                }}
-              />
-            ) : null}
-          {values.length ? (
-            data.map((item) => {
-              const hasData = item.hasData && item.value !== null;
-              const height = hasData ? Math.max(6, (item.value / scaleTop) * 100) : 0;
-              const low = target ? hasData && item.value < target : false;
-              return (
-                <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                  <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
-                    {hasData ? (
-                      <div
-                        className={`w-full rounded-t-lg ${low ? "bg-amber-400" : "bg-sky-500"}`}
-                        style={{ height: `${height}%` }}
-                      />
-                    ) : null}
-                  </div>
-                  <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
-                </div>
-              );
-            })
-          ) : (
-            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
-              No drink logs yet
+        {values.length ? (
+          <>
+            <div className="mt-3 grid h-36 grid-cols-[38px_minmax(0,1fr)] gap-2">
+              <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
+                <span>{scaleTop}ml</span>
+                <span>{scaleMid}ml</span>
+                <span>0ml</span>
+              </div>
+              <div className="relative flex min-w-0 items-end gap-1.5 overflow-hidden border-b border-slate-200 pb-5">
+                <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200/80" />
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200/80" />
+                {target ? (
+                  <div
+                    className="pointer-events-none absolute inset-x-0 border-t border-sky-300"
+                    style={{
+                      bottom: `${20 + Math.min(100, (target / scaleTop) * 100) * 0.72}%`,
+                    }}
+                  />
+                ) : null}
+                {data.map((item) => {
+                  const hasData = item.hasData && item.value !== null;
+                  const height = hasData ? Math.max(8, (item.value / scaleTop) * 100) : 0;
+                  const low = target ? hasData && item.value < target : false;
+                  return (
+                    <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                      <div className="flex h-24 w-full items-end rounded-t-xl bg-sky-50 px-1 shadow-inner ring-1 ring-sky-100">
+                        {hasData ? (
+                          <div
+                            className={`w-full max-w-8 rounded-t-lg shadow-sm ${low ? "bg-amber-500" : "bg-sky-500"}`}
+                            style={{ height: `${height}%` }}
+                          />
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          )}
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              Scale: ml per day
+            </p>
+            <p className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs font-semibold leading-5 text-sky-900">
+              {Math.round(totalFluidMl)}ml fluid logged across {fluidEntriesForRange.length} drink entr{fluidEntriesForRange.length === 1 ? "y" : "ies"}.
+            </p>
+          </>
+        ) : (
+          <div className="mt-3 rounded-xl border border-dashed border-sky-200 bg-sky-50/70 px-3 py-5 text-center text-xs font-semibold leading-5 text-slate-600">
+            {missingFluidAmounts
+              ? "Food or drink entries were logged, but fluid amounts have not been recorded yet."
+              : "No food or drink records found for this period."}
           </div>
-        </div>
-        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-          Scale: ml per day
-        </p>
+        )}
       </div>
     );
   };
 
   const renderMedicationConsistencyCard = () => {
     const graph = reportTrendModel.graphs.medication;
-    const width = Math.max(0, Math.min(100, graph.percent));
+    const medicationEntriesForRange = recentEntries.filter(
+      (entry) => entry.section === "Medication",
+    );
+    const statusCounts = medicationEntriesForRange.reduce(
+      (counts, entry) => {
+        const statusText = [
+          entry.medicationStatus,
+          entry.status,
+          entry.summary,
+          ...(entry.details || []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (statusText.includes("missed")) counts.missed += 1;
+        else if (statusText.includes("skipped") || statusText.includes("refused")) counts.skipped += 1;
+        else if (statusText.includes("rescue") || statusText.includes("prn")) counts.prn += 1;
+        else counts.given += 1;
+        return counts;
+      },
+      { given: 0, missed: 0, skipped: 0, prn: 0 },
+    );
+    const width = graph.typical
+      ? Math.max(0, Math.min(100, graph.percent))
+      : medicationEntriesForRange.length
+        ? 100
+        : 0;
+    const insight = medicationEntriesForRange.length
+      ? graph.typical
+        ? `${graph.logged} of ${graph.typical} expected doses logged.`
+        : "Medication records are shown, but no required daily schedule is set for comparison."
+      : "No medication records found for this period.";
+
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="rounded-[1.35rem] border border-rose-100 bg-white/90 p-3 shadow-sm">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
-          Medication adherence
+          Medication pattern
         </p>
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
-          Medication doses logged compared to expected schedule.
+          Medication entries over the selected period.
         </p>
-        <div className="mt-3 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-2xl font-black text-slate-950">{width}%</p>
-            <p className="mt-0.5 text-xs font-semibold text-slate-500">
-              {graph.typical
-                ? `${graph.logged} logged from ${graph.typical} typical`
-                : `${graph.logged} medication log${graph.logged === 1 ? "" : "s"}`}
+        {medicationEntriesForRange.length ? (
+          <>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-2xl font-black text-slate-950">
+                  {medicationEntriesForRange.length}
+                </p>
+                <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                  medication record{medicationEntriesForRange.length === 1 ? "" : "s"}
+                </p>
+              </div>
+              {graph.typical ? (
+                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+                  {width}% logged
+                </span>
+              ) : (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-600">
+                  schedule not set
+                </span>
+              )}
+            </div>
+            <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-rose-500"
+                style={{ width: `${width}%` }}
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] font-bold text-slate-600">
+              {[
+                ["Given", statusCounts.given, "bg-emerald-50 text-emerald-700"],
+                ["Missed", statusCounts.missed, "bg-rose-50 text-rose-700"],
+                ["Skipped", statusCounts.skipped, "bg-amber-50 text-amber-700"],
+                ["PRN/rescue", statusCounts.prn, "bg-violet-50 text-violet-700"],
+              ]
+                .filter(([, value]) => value > 0)
+                .map(([label, value, className]) => (
+                  <span key={label} className={`rounded-full px-2 py-1 ${className}`}>
+                    {label}: {value}
+                  </span>
+                ))}
+            </div>
+            <p className="mt-3 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-900">
+              {insight}
             </p>
+          </>
+        ) : (
+          <div className="mt-3 rounded-xl border border-dashed border-rose-200 bg-rose-50/70 px-3 py-5 text-center text-xs font-semibold text-slate-600">
+            No medication records found for this period.
           </div>
-          {graph.typical ? null : (
-            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
-              schedule not set
-            </span>
-          )}
-        </div>
-        <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
-          <div
-            className="h-full rounded-full bg-rose-500"
-            style={{ width: `${width}%` }}
-          />
-        </div>
-        <div className="mt-1 flex justify-between text-[10px] font-bold text-slate-400">
-          <span>0%</span>
-          <span>50%</span>
-          <span>100%</span>
-        </div>
+        )}
       </div>
     );
   };
@@ -9500,6 +9574,12 @@ export default function KaylenCareMonitorDashboard({
       { length: Math.floor(sleepAxisMax / 2) + 1 },
       (_, index) => index * 2,
     );
+    const sleepInsight =
+      completedSleepValues.length >= 2
+        ? `Completed sleep entries range from ${roundTo(Math.min(...completedSleepValues))}h to ${roundTo(Math.max(...completedSleepValues))}h.`
+        : completedSleepValues.length === 1
+          ? "One completed sleep entry is available for this period."
+          : "Not enough completed sleep entries to show a trend.";
 
     const summaryCards = [
       {
@@ -9838,11 +9918,16 @@ export default function KaylenCareMonitorDashboard({
                     yAxisLabels: sleepAxisLabels,
                     yMin: 0,
                     yMax: sleepAxisMax,
-                    note: incompleteSleepEntries.length
-                      ? `${incompleteSleepEntries.length} incomplete sleep entr${
-                          incompleteSleepEntries.length === 1 ? "y was" : "ies were"
-                        } not included in the graph.`
-                      : "",
+                    note: [
+                      sleepInsight,
+                      incompleteSleepEntries.length
+                        ? `${incompleteSleepEntries.length} incomplete sleep entr${
+                            incompleteSleepEntries.length === 1 ? "y was" : "ies were"
+                          } not included in the graph.`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" "),
                   })}
                   {renderFluidBarGraph()}
                   {renderMedicationConsistencyCard()}
