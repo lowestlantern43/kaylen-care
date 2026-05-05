@@ -7630,9 +7630,25 @@ export default function KaylenCareMonitorDashboard({
   const renderToiletingPatternCard = () => {
     const data = reportTrendModel.graphs.toileting;
     const daysWithData = data.filter((item) => item.hasData && item.value !== null);
-    const values = daysWithData
-      .filter((item) => item.hasData && item.value !== null)
-      .map((item) => Number(item.value || 0));
+    const dailyChartData = data.map((item) => {
+      const wetCount = Number(item.wet || 0);
+      const bowelCount = Number(item.soiled || 0);
+      const totalCount = item.hasData ? Number(item.value || 0) : 0;
+      const otherCount = Math.max(0, totalCount - wetCount - bowelCount);
+      const stackCount = Math.max(1, wetCount + bowelCount + otherCount);
+      return {
+        dateLabel: item.label,
+        wetCount,
+        bowelCount,
+        otherCount,
+        stackCount,
+        totalCount,
+        hasData: Boolean(item.hasData),
+      };
+    });
+    const values = dailyChartData
+      .filter((item) => item.hasData)
+      .map((item) => item.totalCount);
     const typeTotals = daysWithData.reduce(
       (totals, item) => ({
         wet: totals.wet + Number(item.wet || 0),
@@ -7643,15 +7659,10 @@ export default function KaylenCareMonitorDashboard({
       }),
       { wet: 0, bowel: 0, accident: 0, dry: 0, other: 0 },
     );
-    const stackedMax = daysWithData.reduce((maxValue, item) => {
-      const stackedTotal =
-        Number(item.wet || 0) +
-        Number(item.soiled || 0) +
-        Number(item.accident || 0) +
-        Number(item.dry || 0) +
-        Number(item.other || 0);
-      return Math.max(maxValue, stackedTotal, Number(item.value || 0));
-    }, 1);
+    const stackedMax = dailyChartData.reduce(
+      (maxValue, item) => Math.max(maxValue, item.totalCount),
+      1,
+    );
     const totalEvents = values.reduce((sum, value) => sum + value, 0);
     const max = Math.max(stackedMax, 1);
     const scaleTop = Math.max(1, Math.ceil(max));
@@ -7665,9 +7676,7 @@ export default function KaylenCareMonitorDashboard({
     const typeBadges = [
       ["Wet", typeTotals.wet, "bg-cyan-500"],
       ["Bowel", typeTotals.bowel, "bg-amber-500"],
-      ["Accident", typeTotals.accident, "bg-rose-500"],
-      ["Dry", typeTotals.dry, "bg-emerald-500"],
-      ["Other", typeTotals.other, "bg-slate-400"],
+      ["Other", typeTotals.accident + typeTotals.dry + typeTotals.other, "bg-violet-400"],
     ].filter(([, value]) => value > 0);
 
     return (
@@ -7682,41 +7691,57 @@ export default function KaylenCareMonitorDashboard({
         </p>
         {daysWithData.length ? (
           <>
-            <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
+            <div className="mt-3 grid h-40 grid-cols-[34px_minmax(0,1fr)] gap-2">
               <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
                 <span>{scaleTop}</span>
                 <span>{scaleMid}</span>
                 <span>0</span>
               </div>
-              <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
+              <div className="relative flex min-w-0 items-end gap-1.5 overflow-hidden border-b border-slate-200 pb-5">
                 <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
                 <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
-                {data.map((item) => (
-                  <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                    <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
-                      {item.hasData ? (
-                        <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
-                          {[
-                            ["bg-cyan-500", item.wet],
-                            ["bg-amber-500", item.soiled],
-                            ["bg-rose-500", item.accident],
-                            ["bg-emerald-500", item.dry],
-                            ["bg-slate-400", item.other],
-                          ].map(([className, value], index) =>
-                            Number(value || 0) > 0 ? (
+                {dailyChartData.map((item) => {
+                  const totalHeight = item.totalCount
+                    ? Math.max(8, (item.totalCount / scaleTop) * 96)
+                    : 0;
+                  const segmentHeight = (count) =>
+                    item.totalCount
+                      ? Math.max(6, (Number(count || 0) / item.stackCount) * totalHeight)
+                      : 0;
+
+                  return (
+                    <div key={`toileting-${item.dateLabel}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                      <div className="flex h-28 w-full items-end justify-center rounded-t-xl bg-slate-100/80 px-1">
+                        {item.totalCount > 0 ? (
+                          <div
+                            className="flex w-full max-w-8 flex-col-reverse overflow-hidden rounded-t-lg shadow-sm"
+                            style={{ height: `${totalHeight}px` }}
+                          >
+                            {item.wetCount > 0 ? (
                               <div
-                                key={`${item.label}-${className}-${index}`}
-                                className={className}
-                                style={{ height: `${Math.max(8, (Number(value || 0) / scaleTop) * 100)}%` }}
+                                className="bg-cyan-500"
+                                style={{ height: `${segmentHeight(item.wetCount)}px` }}
                               />
-                            ) : null,
-                          )}
-                        </div>
-                      ) : null}
+                            ) : null}
+                            {item.bowelCount > 0 ? (
+                              <div
+                                className="bg-amber-500"
+                                style={{ height: `${segmentHeight(item.bowelCount)}px` }}
+                              />
+                            ) : null}
+                            {item.otherCount > 0 ? (
+                              <div
+                                className="bg-violet-400"
+                                style={{ height: `${segmentHeight(item.otherCount)}px` }}
+                              />
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400">{item.dateLabel}</span>
                     </div>
-                    <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
