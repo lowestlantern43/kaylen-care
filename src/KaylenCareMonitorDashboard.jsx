@@ -4355,12 +4355,13 @@ export default function KaylenCareMonitorDashboard({
 
   const createReportPdf = async ({ variant = "full" } = {}) => {
     const isTrendsPdf = variant === "trends";
-    const pdfWidth = 297;
-    const pdfHeight = 210;
+    const pdfOrientation = isTrendsPdf ? "p" : "l";
+    const pdfWidth = isTrendsPdf ? 210 : 297;
+    const pdfHeight = isTrendsPdf ? 297 : 210;
     const margin = 8;
     const gap = 3;
     const usableWidth = pdfWidth - margin * 2;
-    const pdf = new jsPDF("l", "mm", "a4");
+    const pdf = new jsPDF(pdfOrientation, "mm", "a4");
     let cursorY = margin;
     const pdfGeneratedDate = new Date().toLocaleDateString("en-GB");
     const tones = {
@@ -4408,7 +4409,7 @@ export default function KaylenCareMonitorDashboard({
     };
 
     const addPage = () => {
-      pdf.addPage("a4", "l");
+      pdf.addPage("a4", pdfOrientation);
       cursorY = margin;
     };
 
@@ -7340,13 +7341,15 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
-  const renderFluidBarGraph = () => {
+    const renderFluidBarGraph = () => {
     const data = reportTrendModel.graphs.fluid;
     const target = reportTrendModel.fluidTargetMl || 0;
     const values = data
       .filter((item) => item.hasData && item.value !== null)
       .map((item) => Number(item.value || 0));
     const max = Math.max(target, ...values, 1);
+    const scaleTop = Math.ceil(max / 100) * 100 || 100;
+    const scaleMid = Math.round(scaleTop / 2);
 
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -7365,11 +7368,27 @@ export default function KaylenCareMonitorDashboard({
             </span>
           ) : null}
         </div>
-        <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
+        <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
+          <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
+            <span>{scaleTop}ml</span>
+            <span>{scaleMid}ml</span>
+            <span>0ml</span>
+          </div>
+          <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
+            <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
+            {target ? (
+              <div
+                className="pointer-events-none absolute inset-x-0 border-t border-sky-300"
+                style={{
+                  bottom: `${20 + Math.min(100, (target / scaleTop) * 100) * 0.72}%`,
+                }}
+              />
+            ) : null}
           {values.length ? (
             data.map((item) => {
               const hasData = item.hasData && item.value !== null;
-              const height = hasData ? Math.max(6, (item.value / max) * 100) : 0;
+              const height = hasData ? Math.max(6, (item.value / scaleTop) * 100) : 0;
               const low = target ? hasData && item.value < target : false;
               return (
                 <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -7390,7 +7409,11 @@ export default function KaylenCareMonitorDashboard({
               No drink logs yet
             </div>
           )}
+          </div>
         </div>
+        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          Scale: ml per day
+        </p>
       </div>
     );
   };
@@ -7427,13 +7450,23 @@ export default function KaylenCareMonitorDashboard({
             style={{ width: `${width}%` }}
           />
         </div>
+        <div className="mt-1 flex justify-between text-[10px] font-bold text-slate-400">
+          <span>0%</span>
+          <span>50%</span>
+          <span>100%</span>
+        </div>
       </div>
     );
   };
 
   const renderToiletingPatternCard = () => {
     const data = reportTrendModel.graphs.toileting;
-    const max = Math.max(...data.map((item) => item.value), 1);
+    const values = data
+      .filter((item) => item.hasData && item.value !== null)
+      .map((item) => Number(item.value || 0));
+    const max = Math.max(...values, 1);
+    const scaleTop = Math.max(1, Math.ceil(max));
+    const scaleMid = Math.round(scaleTop / 2);
     const timeBuckets = [
       ["Morning", data.reduce((sum, item) => sum + Number(item.morning || 0), 0)],
       ["Afternoon", data.reduce((sum, item) => sum + Number(item.afternoon || 0), 0)],
@@ -7448,7 +7481,15 @@ export default function KaylenCareMonitorDashboard({
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
           Number of toileting entries recorded per day.
         </p>
-        <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
+        <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
+          <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
+            <span>{scaleTop}</span>
+            <span>{scaleMid}</span>
+            <span>0</span>
+          </div>
+          <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
+            <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
+            <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
           {data.some((item) => item.hasData) ? (
             data.map((item) => (
               <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
@@ -7457,11 +7498,11 @@ export default function KaylenCareMonitorDashboard({
                     <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
                       <div
                         className="bg-cyan-500"
-                        style={{ height: `${Math.max(0, (item.wet / max) * 100)}%` }}
+                        style={{ height: `${Math.max(0, (item.wet / scaleTop) * 100)}%` }}
                       />
                       <div
                         className="bg-amber-500"
-                        style={{ height: `${Math.max(0, (item.soiled / max) * 100)}%` }}
+                        style={{ height: `${Math.max(0, (item.soiled / scaleTop) * 100)}%` }}
                       />
                     </div>
                   ) : null}
@@ -7474,7 +7515,11 @@ export default function KaylenCareMonitorDashboard({
               No data available for this period
             </div>
           )}
+          </div>
         </div>
+        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+          Scale: entries per day
+        </p>
         <div className="mt-3 flex gap-2 text-xs font-bold text-slate-600">
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-cyan-500" /> Wet</span>
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Soiled</span>
