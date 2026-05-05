@@ -548,6 +548,8 @@ export default function KaylenCareMonitorDashboard({
     confirmed: false,
   });
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshStatus, setRefreshStatus] = useState("idle");
   const [syncState, setSyncState] = useState("Synced");
 
   const [savedFoodOptions, setSavedFoodOptions] = useState([]);
@@ -573,8 +575,12 @@ export default function KaylenCareMonitorDashboard({
   const offlineQueueKey = `familytrack:offline-log-queue:${familyId || "legacy"}`;
   const careSnapshotPromptKey = `familytrack:care-snapshot-prompt-dismissed:${familyId || "legacy"}:${childId || "legacy"}`;
   const careSnapshotViewedKey = `familytrack:care-snapshot-viewed:${familyId || "legacy"}:${childId || "legacy"}`;
+  const gettingStartedDismissedKey = `familytrack:getting-started-dismissed:${familyId || "legacy"}:${childId || "legacy"}`;
   const [isCareSnapshotPromptDismissed, setIsCareSnapshotPromptDismissed] =
     useState(() => safeLocalStorageGet(careSnapshotPromptKey) === "true");
+  const [isGettingStartedDismissed, setIsGettingStartedDismissed] = useState(
+    () => safeLocalStorageGet(gettingStartedDismissedKey) === "true",
+  );
   const [hasViewedCareSnapshot, setHasViewedCareSnapshot] = useState(
     () => safeLocalStorageGet(careSnapshotViewedKey) === "true",
   );
@@ -982,6 +988,11 @@ export default function KaylenCareMonitorDashboard({
     setIsCareSnapshotPromptDismissed(true);
   };
 
+  const dismissGettingStarted = () => {
+    safeLocalStorageSet(gettingStartedDismissedKey, "true");
+    setIsGettingStartedDismissed(true);
+  };
+
   const openCareSnapshot = () => {
     const snapshotSection = sections.find(
       (section) => section.title === "Care Snapshot",
@@ -997,6 +1008,12 @@ export default function KaylenCareMonitorDashboard({
     }
     openSection(snapshotSection);
   };
+
+  useEffect(() => {
+    setIsGettingStartedDismissed(
+      safeLocalStorageGet(gettingStartedDismissedKey) === "true",
+    );
+  }, [gettingStartedDismissedKey]);
 
   const openOnboardingItem = (action) => {
     switch (action) {
@@ -1014,6 +1031,9 @@ export default function KaylenCareMonitorDashboard({
         return;
       case "snapshot":
         openCareSnapshot();
+        return;
+      case "reports":
+        openSection(sections.find((section) => section.title === "Reports"));
         return;
       default:
         return;
@@ -2286,12 +2306,18 @@ export default function KaylenCareMonitorDashboard({
     if (!isUnlocked || isRefreshing) return;
     try {
       setIsRefreshing(true);
+      setRefreshStatus("refreshing");
       await loadEntriesFromSupabase();
       if (activeSection?.title === "Sleep") {
         await loadLatestIncompleteSleepEntry();
       }
+      setRefreshStatus("done");
     } finally {
-      setTimeout(() => setIsRefreshing(false), 400);
+      setPullDistance(0);
+      setTimeout(() => {
+        setIsRefreshing(false);
+        setRefreshStatus("idle");
+      }, 700);
     }
   };
 
@@ -2393,7 +2419,13 @@ export default function KaylenCareMonitorDashboard({
     const handleTouchMove = (e) => {
       if (!window.matchMedia("(max-width: 767px)").matches) return;
       if (!isPullingRef.current) return;
-      touchCurrentY.current = e.touches[0].clientY;
+      const nextY = e.touches[0].clientY;
+      touchCurrentY.current = nextY;
+      const distance = Math.max(0, Math.min(130, nextY - touchStartY.current));
+      setPullDistance(distance);
+      if (distance > 24 && !isRefreshing) {
+        setRefreshStatus(distance > 100 ? "ready" : "pulling");
+      }
     };
 
     const handleTouchEnd = async () => {
@@ -2403,6 +2435,9 @@ export default function KaylenCareMonitorDashboard({
 
       if (pullDistance > 110) {
         await refreshAllData();
+      } else {
+        setPullDistance(0);
+        setRefreshStatus("idle");
       }
     };
 
@@ -3758,14 +3793,20 @@ export default function KaylenCareMonitorDashboard({
         completed: hasViewedCareSnapshot,
         action: "snapshot",
       },
+      {
+        label: "Generate a report",
+        completed: sharedLog.length >= 3,
+        action: "reports",
+      },
     ];
 
     return items;
   }, [childId, hasViewedCareSnapshot, profileMedicationOptions.length, sharedLog]);
 
-  const showOnboardingChecklist = onboardingChecklistItems.some(
-    (item) => !item.completed,
-  );
+  const showOnboardingChecklist =
+    !isGettingStartedDismissed &&
+    (sharedLog.length < 6 ||
+      onboardingChecklistItems.some((item) => !item.completed));
 
   const measurementEntries = useMemo(
     () =>
@@ -3806,9 +3847,18 @@ export default function KaylenCareMonitorDashboard({
   }, [measurementEntries]);
 
   const tileStatusText = (sectionTitle) => {
+    const emptyTileText = {
+      "Food Diary": "No food entries yet - start logging meals to build a daily picture",
+      Medication: "No medication records yet - add medication to track consistency",
+      Toileting: "No toileting data yet - logging this helps identify patterns",
+      Health: "No health notes yet - record concerns, illness or changes here",
+      Sleep: "No sleep recorded yet - log your first night to start tracking patterns",
+      Reports: "Not enough data yet - log a few days to generate a full report",
+      "Growth / Measurements": "No measurements yet - add height or weight when useful",
+    };
     if (sectionTitle === "Growth / Measurements") {
       const latest = latestTwoBySection.measurements[0];
-      if (!latest) return ["No entries today"];
+      if (!latest) return [emptyTileText[sectionTitle]];
       const parsedDate = parseDisplayDate(latest.date);
       const dateLabel = parsedDate
         ? parsedDate.toLocaleDateString("en-GB", {
@@ -3823,7 +3873,7 @@ export default function KaylenCareMonitorDashboard({
     }
 
     const formatList = (entries) => {
-      if (!entries.length) return ["No entries today"];
+      if (!entries.length) return [emptyTileText[sectionTitle] || "No entries yet"];
       return entries.map(
         (entry) => `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
       );
@@ -5198,7 +5248,7 @@ export default function KaylenCareMonitorDashboard({
         title: "Key Insights",
         lines: reportTrendModel.insights.length
           ? reportTrendModel.insights.map((item) => `- ${item}`)
-          : ["Not enough data yet to identify reliable trends."],
+          : ["Not enough data yet - log a few days to generate a full report."],
         fill: tones.sky.fill,
         stroke: tones.sky.stroke,
         titleColor: tones.sky.accent,
@@ -5213,7 +5263,7 @@ export default function KaylenCareMonitorDashboard({
       drawDetailedPdfSection({
         title: "Sleep",
         entries: pdfSleepEntries,
-        emptyText: "No sleep entries found for this period.",
+        emptyText: "No sleep recorded yet - log your first night to start tracking patterns.",
         fill: tones.indigo.fill,
         stroke: tones.indigo.stroke,
         titleColor: tones.indigo.accent,
@@ -5221,7 +5271,7 @@ export default function KaylenCareMonitorDashboard({
       drawDetailedPdfSection({
         title: "Food & Drink",
         entries: pdfFoodEntries,
-        emptyText: "No food or drink entries found for this period.",
+        emptyText: "No food entries yet - start logging meals to build a daily picture.",
         fill: tones.emerald.fill,
         stroke: tones.emerald.stroke,
         titleColor: tones.emerald.accent,
@@ -5229,7 +5279,7 @@ export default function KaylenCareMonitorDashboard({
       drawDetailedPdfSection({
         title: "Medication",
         entries: pdfMedicationEntries,
-        emptyText: "No medication entries found for this period.",
+        emptyText: "No medication records yet - add medication to track consistency.",
         fill: tones.rose.fill,
         stroke: tones.rose.stroke,
         titleColor: tones.rose.accent,
@@ -5237,7 +5287,7 @@ export default function KaylenCareMonitorDashboard({
       drawDetailedPdfSection({
         title: "Toileting",
         entries: pdfToiletingEntries,
-        emptyText: "No toileting entries found for this period.",
+        emptyText: "No toileting data yet - logging this helps identify patterns.",
         fill: tones.sky.fill,
         stroke: tones.sky.stroke,
         titleColor: tones.sky.accent,
@@ -5314,6 +5364,13 @@ export default function KaylenCareMonitorDashboard({
       await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant });
       pdf.save(filename || defaultReportPdfFilename(variant));
+      showToast?.({
+        message:
+          variant === "trends"
+            ? "Report trends PDF generated"
+            : "Report PDF generated",
+        type: "success",
+      });
     } catch (error) {
       console.error("PDF export failed", error);
       alert(
@@ -5484,6 +5541,7 @@ export default function KaylenCareMonitorDashboard({
           .toLowerCase()
           .replace(/\s+/g, "-")}.pdf`,
       );
+      showToast?.({ message: "Care Snapshot PDF generated", type: "success" });
     } catch (error) {
       console.error("Care Snapshot PDF export failed", error);
       alert("Care Snapshot PDF export failed - check console");
@@ -7197,7 +7255,7 @@ export default function KaylenCareMonitorDashboard({
     if (!recentEntries.length) {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-white px-4 py-6 text-center text-sm font-medium text-slate-500">
-          No entries for these filters.
+          No entries match these filters yet. Try a wider date range or log the first entry.
         </div>
       );
     }
@@ -7679,7 +7737,7 @@ export default function KaylenCareMonitorDashboard({
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
               {foodEntriesForRange.length
                 ? `${foodEntriesForRange.length} food/drink entr${foodEntriesForRange.length === 1 ? "y" : "ies"} logged.`
-                : "No food or drink entries found for this period."}
+                : "No food entries yet - start logging meals to build a daily picture."}
             </p>
           </div>
           {target ? (
@@ -7778,7 +7836,7 @@ export default function KaylenCareMonitorDashboard({
       ? graph.typical
         ? `${graph.logged} of ${graph.typical} expected doses logged.`
         : "Medication records are shown, but no required daily schedule is set for comparison."
-      : "No medication records found for this period.";
+      : "No medication records yet - add medication to track consistency.";
 
     return (
       <div className="rounded-[1.35rem] border border-rose-100 bg-white/90 p-3 shadow-sm">
@@ -7835,7 +7893,7 @@ export default function KaylenCareMonitorDashboard({
           </>
         ) : (
           <div className="mt-3 rounded-xl border border-dashed border-rose-200 bg-rose-50/70 px-3 py-5 text-center text-xs font-semibold text-slate-600">
-            No medication records found for this period.
+            No medication records yet - add medication to track consistency.
           </div>
         )}
       </div>
@@ -7922,7 +7980,7 @@ export default function KaylenCareMonitorDashboard({
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
           {daysWithData.length
             ? `${totalEvents} toileting event${totalEvents === 1 ? "" : "s"} logged over ${daysWithData.length} day${daysWithData.length === 1 ? "" : "s"}.`
-            : "No toileting data recorded for this period"}
+            : "No toileting data yet - logging this helps identify patterns"}
         </p>
         {daysWithData.length ? (
           <>
@@ -8009,7 +8067,7 @@ export default function KaylenCareMonitorDashboard({
           </>
         ) : (
           <div className="mt-3 flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 px-3 text-center text-xs font-semibold text-slate-500">
-            No toileting data recorded for this period
+            No toileting data yet - logging this helps identify patterns
           </div>
         )}
         {timeBuckets.length ? (
@@ -9693,7 +9751,7 @@ export default function KaylenCareMonitorDashboard({
     const notesEntries = sortEntriesByDate(groupedReportEntries["General Notes"] || []);
     const dataCompleteness = dailyReportGroups.length
       ? `${dailyReportGroups.length} day${dailyReportGroups.length === 1 ? "" : "s"} with entries`
-      : "No entries in this period";
+      : "Not enough data yet - log a few days to generate a full report";
     const sleepStat = reportTrendModel.summaryStats.find((item) => item.key === "sleep");
     const medicationStat = reportTrendModel.summaryStats.find((item) => item.key === "medication");
     const incompleteSleepEntries = sleepEntries.filter(
@@ -9799,7 +9857,7 @@ export default function KaylenCareMonitorDashboard({
 
     const displayInsights = insightLines.length
       ? insightLines
-      : ["Not enough data yet to identify reliable trends."];
+      : ["Not enough data yet - log a few days to generate a full report."];
 
     const renderTrendInfoCard = ({
       title,
@@ -10053,28 +10111,28 @@ export default function KaylenCareMonitorDashboard({
         title: "Sleep",
         entries: sleepEntries,
         summary: sleepStat?.value || "No average yet",
-        emptyText: "No sleep entries found for this period.",
+        emptyText: "No sleep recorded yet - log your first night to start tracking patterns.",
         tone: "border-indigo-100 bg-indigo-50/70",
       },
       {
         title: "Food & Drink",
         entries: foodEntries,
         summary: `${foodEntries.length} logged`,
-        emptyText: "No food or drink entries found for this period.",
+        emptyText: "No food entries yet - start logging meals to build a daily picture.",
         tone: "border-emerald-100 bg-emerald-50/70",
       },
       {
         title: "Medication",
         entries: medicationEntries,
         summary: medicationStat?.value || "No medication data",
-        emptyText: "No medication entries found for this period.",
+        emptyText: "No medication records yet - add medication to track consistency.",
         tone: "border-rose-100 bg-rose-50/70",
       },
       {
         title: "Toileting",
         entries: toiletingEntries,
         summary: `${toiletingEntries.length} logged`,
-        emptyText: "No toileting entries found for this period.",
+        emptyText: "No toileting data yet - logging this helps identify patterns.",
         tone: "border-cyan-100 bg-cyan-50/70",
       },
       {
@@ -10536,33 +10594,67 @@ export default function KaylenCareMonitorDashboard({
             Care Snapshot are still available, but adding or editing logs is disabled.
           </div>
         ) : null}
-        {isRefreshing ? (
-          <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 md:hidden">
-            Refreshing diary...
+        <div
+          className={`mb-3 overflow-hidden rounded-2xl border px-4 text-sm font-semibold transition-all duration-200 md:hidden ${
+            refreshStatus === "idle"
+              ? "max-h-0 border-transparent py-0 opacity-0"
+              : "max-h-20 border-sky-200 bg-gradient-to-r from-sky-50 to-indigo-50 py-2.5 opacity-100 shadow-sm"
+          }`}
+          style={{
+            transform:
+              refreshStatus === "pulling" || refreshStatus === "ready"
+                ? `translateY(${Math.min(14, Math.round(pullDistance / 10))}px)`
+                : "translateY(0)",
+          }}
+        >
+          <div className="flex items-center justify-center gap-2 text-sky-800">
+            <span
+              className={`flex h-6 w-6 items-center justify-center rounded-full border border-sky-200 bg-white text-xs shadow-sm ${
+                refreshStatus === "refreshing" ? "animate-spin" : ""
+              }`}
+            >
+              {refreshStatus === "done" ? "✓" : "↻"}
+            </span>
+            <span>
+              {refreshStatus === "ready"
+                ? "Release to refresh"
+                : refreshStatus === "refreshing"
+                  ? "Refreshing..."
+                  : refreshStatus === "done"
+                    ? "Diary updated"
+                    : "Pull to refresh"}
+            </span>
           </div>
-        ) : (
-          <div className="mb-3 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 md:hidden">
-            Pull down from the top to refresh. Sync: {syncState}
-          </div>
-        )}
+        </div>
 
         {showOnboardingChecklist ? (
-          <section className="mb-4 rounded-[1.5rem] border border-indigo-100 bg-indigo-50/80 p-4 shadow-sm">
+          <section className="relative mb-4 rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4 pr-12 shadow-sm">
+            <button
+              type="button"
+              onClick={dismissGettingStarted}
+              className="absolute right-3 top-3 rounded-full border border-indigo-100 bg-white/90 px-2 py-1 text-xs font-black text-indigo-700 shadow-sm"
+              aria-label="Hide getting started checklist"
+            >
+              ×
+            </button>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
                   Getting started
                 </p>
                 <h2 className="mt-1 text-base font-black text-slate-950">
-                  Finish setting up your diary
+                  Build your first useful care record
                 </h2>
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  A few quick steps make Snapshot and Reports much more useful.
+                </p>
               </div>
               <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-bold text-indigo-700 shadow-sm">
                 {onboardingChecklistItems.filter((item) => item.completed).length}/
                 {onboardingChecklistItems.length} done
               </span>
             </div>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {onboardingChecklistItems.map((item) => (
                 <button
                   type="button"
@@ -10571,7 +10663,7 @@ export default function KaylenCareMonitorDashboard({
                   className={`flex w-full items-center gap-2 rounded-xl border px-3 py-2 text-left text-sm font-bold transition ${
                     item.completed
                       ? "border-emerald-100 bg-emerald-50 text-emerald-800"
-                      : "border-indigo-100 bg-white/90 text-slate-700 hover:border-indigo-200 hover:bg-white"
+                      : "border-indigo-100 bg-white/90 text-slate-700 shadow-sm hover:border-indigo-200 hover:bg-white"
                   }`}
                 >
                   <span
@@ -10621,6 +10713,27 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
         ) : null}
+
+        <section className="mb-5 grid grid-cols-3 gap-2 rounded-[1.5rem] border border-slate-200 bg-white/90 p-2 shadow-sm">
+          {[
+            ["Log data", "Food Diary"],
+            ["Snapshot", "Care Snapshot"],
+            ["Reports", "Reports"],
+          ].map(([label, title]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() =>
+                title === "Care Snapshot"
+                  ? openCareSnapshot()
+                  : openSection(sections.find((section) => section.title === title))
+              }
+              className="rounded-2xl border border-slate-100 bg-slate-50 px-2 py-3 text-xs font-black text-slate-800 shadow-sm transition hover:bg-sky-50 sm:text-sm"
+            >
+              {label}
+            </button>
+          ))}
+        </section>
 
         <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
@@ -10803,7 +10916,7 @@ export default function KaylenCareMonitorDashboard({
                         (entry) =>
                           `${entry.summary}${entry.time ? ` · ${entry.time}` : ""}`,
                       )
-                  : ["No entries today"];
+                  : ["Not enough data yet - log a few days to generate a full report"];
 
             return (
               <div
@@ -10936,13 +11049,15 @@ export default function KaylenCareMonitorDashboard({
 
       <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:hidden">
         {quickAddOpen ? (
-          <div className="w-64 rounded-2xl border border-slate-200 bg-white p-3 shadow-xl">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-              Adding for
-            </p>
-            <p className="mt-1 truncate text-sm font-black text-slate-900">
-              {childName}
-            </p>
+          <div className="w-[min(18rem,calc(100vw-2rem))] rounded-[1.5rem] border border-sky-100 bg-white p-3 shadow-2xl">
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">
+                Adding for
+              </p>
+              <p className="mt-0.5 truncate text-sm font-black text-slate-900">
+                {childName}
+              </p>
+            </div>
             {children.length > 1 && onSelectChild ? (
               <select
                 className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"
@@ -10983,10 +11098,11 @@ export default function KaylenCareMonitorDashboard({
         <button
           type="button"
           onClick={() => setQuickAddOpen((current) => !current)}
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-slate-950 text-3xl font-light leading-none text-white shadow-xl"
+          className="flex min-h-14 items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-black leading-none text-white shadow-xl"
           aria-label="Quick add"
         >
-          {quickAddOpen ? "×" : "+"}
+          <span className="text-2xl font-light">{quickAddOpen ? "×" : "+"}</span>
+          <span>{quickAddOpen ? "Close" : "Add"}</span>
         </button>
       </div>
 
@@ -11030,5 +11146,6 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 }
+
 
 
