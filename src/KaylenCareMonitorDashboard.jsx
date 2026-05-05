@@ -4521,6 +4521,7 @@ export default function KaylenCareMonitorDashboard({
       suffix = "",
       tone = tones.sky,
       note = "",
+      emptyText = "No data available for this period.",
     }) => {
       const cleanData = data.filter((item) =>
         item?.hasData !== false &&
@@ -4570,8 +4571,126 @@ export default function KaylenCareMonitorDashboard({
         pdf.text(`Latest: ${roundTo(latest[valueKey], suffix === "ml" ? 0 : 1)}${suffix}`, x + width - 38, y + 6);
       } else {
         setText(7, [100, 116, 139], "normal");
-        pdf.text("No data logged in this range.", plotX, plotY + 8);
+        pdf.text(emptyText, plotX, plotY + 8);
       }
+      cursorY += chartHeight + gap;
+    };
+
+    const drawPdfLineChart = ({
+      title,
+      data,
+      valueKey = "value",
+      suffix = "",
+      tone = tones.indigo,
+      note = "",
+      axisTitle = "",
+      yAxisLabels = [],
+      minPoints = 1,
+      emptyText = "No data available for this period.",
+      yMin = 0,
+      yMax,
+    }) => {
+      const cleanData = data.filter(
+        (item) =>
+          item?.hasData !== false &&
+          item?.[valueKey] !== null &&
+          Number.isFinite(Number(item[valueKey])),
+      );
+      const chartHeight = 46;
+      ensureSpace(chartHeight);
+      const x = margin;
+      const y = cursorY;
+      const width = usableWidth;
+      const plotX = x + 22;
+      const plotY = y + 14;
+      const plotWidth = width - 32;
+      const plotHeight = 22;
+
+      pdf.setFillColor(...tone.fill);
+      pdf.setDrawColor(...tone.stroke);
+      pdf.roundedRect(x, y, width, chartHeight, 3, 3, "FD");
+      setText(7, tone.accent, "bold");
+      pdf.text(String(title).toUpperCase(), x + 4, y + 6);
+      setText(6.5, [100, 116, 139], "normal");
+      pdf.text(note, x + 4, y + 10);
+
+      if (cleanData.length < minPoints) {
+        setText(7, [100, 116, 139], "normal");
+        pdf.text(emptyText, plotX, plotY + 10);
+        cursorY += chartHeight + gap;
+        return;
+      }
+
+      const values = cleanData.map((item) => Number(item[valueKey]));
+      const maxFromData = Math.max(...values);
+      const minFromData = Math.min(...values);
+      const maxValue = Number.isFinite(yMax)
+        ? Math.max(yMax, maxFromData)
+        : Math.max(1, Math.ceil(maxFromData));
+      const minValue = Number.isFinite(yMin)
+        ? Math.min(yMin, minFromData)
+        : Math.floor(minFromData);
+      const span = Math.max(1, maxValue - minValue);
+
+      pdf.setDrawColor(203, 213, 225);
+      pdf.line(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight);
+      pdf.line(plotX, plotY, plotX, plotY + plotHeight);
+
+      const labelsToDraw = yAxisLabels.length
+        ? yAxisLabels
+        : [minValue, Math.round((minValue + maxValue) / 2), maxValue];
+      labelsToDraw.forEach((labelValue) => {
+        const yPos = plotY + plotHeight - ((labelValue - minValue) / span) * plotHeight;
+        if (yPos < plotY - 1 || yPos > plotY + plotHeight + 1) return;
+        pdf.setDrawColor(226, 232, 240);
+        pdf.line(plotX, yPos, plotX + plotWidth, yPos);
+        setText(5.5, [100, 116, 139], "normal");
+        pdf.text(`${labelValue}${suffix}`, x + 4, yPos + 1.5);
+      });
+
+      if (axisTitle) {
+        setText(5.8, [71, 85, 105], "bold");
+        pdf.text(axisTitle, x + 4, y + chartHeight - 4);
+      }
+
+      const points = cleanData.map((item, index) => {
+        const pointX =
+          cleanData.length === 1
+            ? plotX + plotWidth / 2
+            : plotX + (index / (cleanData.length - 1)) * plotWidth;
+        const pointY =
+          plotY + plotHeight - ((Number(item[valueKey]) - minValue) / span) * plotHeight;
+        return { ...item, pointX, pointY };
+      });
+
+      pdf.setDrawColor(...tone.accent);
+      pdf.setLineWidth(0.8);
+      points.forEach((point, index) => {
+        if (index === 0) return;
+        const previous = points[index - 1];
+        pdf.line(previous.pointX, previous.pointY, point.pointX, point.pointY);
+      });
+      points.forEach((point) => {
+        pdf.setFillColor(255, 255, 255);
+        pdf.setDrawColor(...tone.accent);
+        pdf.circle(point.pointX, point.pointY, 1.4, "FD");
+      });
+
+      setText(5.5, [100, 116, 139], "normal");
+      const labelStep = Math.max(1, Math.ceil(points.length / 8));
+      points.forEach((point, index) => {
+        if (index % labelStep === 0 || index === points.length - 1) {
+          pdf.text(String(point.label || "").slice(0, 5), point.pointX - 2, y + chartHeight - 3);
+        }
+      });
+
+      const latest = points[points.length - 1];
+      setText(7, [15, 23, 42], "bold");
+      pdf.text(
+        `Latest: ${roundTo(latest[valueKey], suffix === "ml" ? 0 : 1)}${suffix}`,
+        x + width - 38,
+        y + 6,
+      );
       cursorY += chartHeight + gap;
     };
 
@@ -4614,12 +4733,18 @@ export default function KaylenCareMonitorDashboard({
         note: "Daily fluid intake across the selected period.",
       });
       drawMedicationConsistencyPdf();
-      drawSimpleBarChart({
+      drawPdfLineChart({
         title: "Sleep",
         data: reportTrendModel.graphs.sleep,
         suffix: "h",
         tone: tones.indigo,
         note: "Sleep duration per night based on logged entries.",
+        axisTitle: "Hours slept",
+        yAxisLabels: [0, 2, 4, 6, 8],
+        yMin: 0,
+        yMax: 8,
+        minPoints: 1,
+        emptyText: "No completed sleep logs available for this period.",
       });
       drawSimpleBarChart({
         title: "Toileting",
@@ -4627,6 +4752,7 @@ export default function KaylenCareMonitorDashboard({
         suffix: "",
         tone: tones.amber,
         note: "Number of toileting entries recorded per day.",
+        emptyText: "No data available for this period.",
       });
     };
 
@@ -4865,6 +4991,14 @@ export default function KaylenCareMonitorDashboard({
       reader.readAsDataURL(blob);
     });
 
+  const waitForReportPdfReady = async () => {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    if (typeof window !== "undefined" && window.requestAnimationFrame) {
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    }
+  };
+
   const handleExportPdf = async (
     variantOrEvent = "full",
     filename,
@@ -4875,6 +5009,7 @@ export default function KaylenCareMonitorDashboard({
         : "full";
     try {
       setIsExportingPdf(true);
+      await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant });
       pdf.save(filename || defaultReportPdfFilename(variant));
     } catch (error) {
@@ -4914,6 +5049,7 @@ export default function KaylenCareMonitorDashboard({
       setIsSendingReportEmail(true);
       const attachmentType = reportEmailForm.attachmentType || "trends";
       const filename = defaultReportPdfFilename(attachmentType);
+      await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant: attachmentType });
       const pdfBase64 = await blobToBase64(pdf.output("blob"));
 
@@ -7104,6 +7240,10 @@ export default function KaylenCareMonitorDashboard({
     markerDrop = false,
     emptyText = "Not enough data yet",
     minPoints = 1,
+    axisTitle = "",
+    yAxisLabels = [],
+    yMin,
+    yMax,
   }) => {
     const points = data.filter(
       (item) =>
@@ -7113,8 +7253,8 @@ export default function KaylenCareMonitorDashboard({
     );
     const hasEnoughPoints = points.length >= minPoints;
     const values = points.map((item) => Number(item.value));
-    const min = values.length ? Math.min(...values) : 0;
-    const max = values.length ? Math.max(...values) : 1;
+    const min = Number.isFinite(yMin) ? Math.min(yMin, ...values) : values.length ? Math.min(...values) : 0;
+    const max = Number.isFinite(yMax) ? Math.max(yMax, ...values) : values.length ? Math.max(...values) : 1;
     const span = Math.max(1, max - min);
     const chartPoints = points.map((item, index) => {
       const x = points.length === 1 ? 50 : (index / (points.length - 1)) * 100;
@@ -7141,12 +7281,26 @@ export default function KaylenCareMonitorDashboard({
             </span>
           ) : null}
         </div>
-        <div className="mt-3 h-28">
+        <div className="mt-3 h-32">
           {hasEnoughPoints ? (
-            <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
-              <line x1="0" y1="92" x2="100" y2="92" stroke="#e2e8f0" strokeWidth="1" />
+            <svg viewBox="0 0 120 100" className="h-full w-full overflow-visible">
+              <line x1="16" y1="92" x2="118" y2="92" stroke="#e2e8f0" strokeWidth="1" />
+              <line x1="16" y1="18" x2="16" y2="92" stroke="#e2e8f0" strokeWidth="1" />
+              {yAxisLabels.map((labelValue) => {
+                const yPos = 92 - ((Number(labelValue) - min) / span) * 74;
+                if (yPos < 16 || yPos > 94) return null;
+                return (
+                  <g key={`${title}-axis-${labelValue}`}>
+                    <line x1="16" y1={yPos} x2="118" y2={yPos} stroke="#e2e8f0" strokeWidth="0.7" />
+                    <text x="0" y={yPos + 2.5} className="fill-slate-400 text-[7px] font-bold">
+                      {labelValue}
+                      {suffix}
+                    </text>
+                  </g>
+                );
+              })}
               <polyline
-                points={polyline}
+                points={chartPoints.map((point) => `${16 + point.x * 1.02},${point.y}`).join(" ")}
                 fill="none"
                 stroke={stroke}
                 strokeWidth="3"
@@ -7156,7 +7310,7 @@ export default function KaylenCareMonitorDashboard({
               {chartPoints.map((point) => (
                 <circle
                   key={`${title}-${point.label}-${point.value}`}
-                  cx={point.x}
+                  cx={16 + point.x * 1.02}
                   cy={point.y}
                   r="3.2"
                   fill={markerDrop && point.isDrop ? "#e11d48" : "#ffffff"}
@@ -7164,6 +7318,11 @@ export default function KaylenCareMonitorDashboard({
                   strokeWidth="2"
                 />
               ))}
+              {axisTitle ? (
+                <text x="16" y="10" className="fill-slate-500 text-[7px] font-black uppercase tracking-wide">
+                  {axisTitle}
+                </text>
+              ) : null}
             </svg>
           ) : (
             <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
@@ -7312,7 +7471,7 @@ export default function KaylenCareMonitorDashboard({
             ))
           ) : (
             <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
-              No toileting logs yet
+              No data available for this period
             </div>
           )}
         </div>
@@ -7376,6 +7535,10 @@ export default function KaylenCareMonitorDashboard({
           stroke: "#6366f1",
           minPoints: 1,
           emptyText: "No completed sleep logs available",
+          axisTitle: "Hours slept",
+          yAxisLabels: [0, 2, 4, 6, 8],
+          yMin: 0,
+          yMax: 8,
         })}
         {renderToiletingPatternCard()}
       </div>
