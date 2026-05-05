@@ -503,7 +503,7 @@ export default function KaylenCareMonitorDashboard({
   const [activeSection, setActiveSection] = useState(null);
   const [medicationValue, setMedicationValue] = useState("");
   const [foodValue, setFoodValue] = useState("");
-  const [reportDays, setReportDays] = useState("7");
+  const [reportDays, setReportDays] = useState("30");
   const [customReportDays, setCustomReportDays] = useState("7");
   const [reportTab, setReportTab] = useState("recent");
   const [reportLayout, setReportLayout] = useState("daily");
@@ -2987,24 +2987,49 @@ export default function KaylenCareMonitorDashboard({
   }, [recentEntries]);
 
   const reportTrendModel = useMemo(() => {
+    const start = reportRangeStart ? new Date(reportRangeStart) : new Date();
+    const end = reportRangeEnd ? new Date(reportRangeEnd) : new Date();
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
     const rangeDays = Math.max(
       1,
-      Math.ceil(
-        ((reportRangeEnd?.getTime?.() || Date.now()) -
-          (reportRangeStart?.getTime?.() || Date.now()) +
-          1) /
-          (24 * 60 * 60 * 1000),
-      ),
+      Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1,
     );
-    const typicalMedicationPerDay = profileMedicationOptions.reduce(
-      (sum, medicine) => sum + Math.max(1, medicine.times?.length || 0),
-      0,
-    );
+    const dailyMedicationRequired = profileMedicationOptions
+      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
+      .reduce((sum, medicine) => {
+        const windows = normaliseMedicationTimeWindows(
+          medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+        );
+        return sum + Math.max(1, windows.length || medicine.times?.length || 0);
+      }, 0);
+    const expectedMedicationDoses = dailyMedicationRequired * rangeDays;
+
+    const makeDayKey = (date) =>
+      `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
+    const dayMap = new Map();
+    for (let day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
+      const key = makeDayKey(day);
+      dayMap.set(key, {
+        date: key,
+        label: key.slice(0, 5),
+        fluidMl: null,
+        sleepHours: null,
+        medicationLogged: 0,
+        toiletingCount: null,
+        wet: 0,
+        soiled: 0,
+        hasFluid: false,
+        hasSleep: false,
+        hasToileting: false,
+      });
+    }
 
     const getDayKey = (entry) => {
       if (entry.date) return entry.date;
       const parsed = getEntryDateTime(entry);
-      return parsed ? formatDisplayDateFromIso(parsed.toISOString()) : "Unknown";
+      return parsed ? makeDayKey(parsed) : "";
     };
 
     const classifyToileting = (entry) => {
@@ -3019,345 +3044,235 @@ export default function KaylenCareMonitorDashboard({
       };
     };
 
-    const summariseEntries = (entries) => {
-      const sorted = [...entries].sort((a, b) => {
-        const dateA = getEntryDateTime(a)?.getTime() || 0;
-        const dateB = getEntryDateTime(b)?.getTime() || 0;
-        return dateA - dateB;
-      });
-      const dayMap = new Map();
-      const weights = [];
-      let sleepMinutes = 0;
-      let sleepLogsWithDuration = 0;
-      let fluidMl = 0;
-      let medicationCount = 0;
-      let medicationConcernCount = 0;
-      let toiletingCount = 0;
-      let soiledCount = 0;
+    let totalFluidMl = 0;
+    let fluidDays = 0;
+    let totalSleepHours = 0;
+    let sleepDays = 0;
+    let medicationLogged = 0;
+    let medicationConcerns = 0;
+    let totalToileting = 0;
+    let toiletingDays = 0;
 
-      sorted.forEach((entry) => {
-        const key = getDayKey(entry);
-        if (!dayMap.has(key)) {
-          dayMap.set(key, {
-            date: key,
-            label: formatReportDateLabel(key) || key,
-            fluidMl: 0,
-            sleepMinutes: 0,
-            medication: 0,
-            toileting: 0,
-            wet: 0,
-            soiled: 0,
-            morning: 0,
-            afternoon: 0,
-            evening: 0,
-            night: 0,
-          });
+    recentEntries.forEach((entry) => {
+      const key = getDayKey(entry);
+      const day = dayMap.get(key);
+      if (!day) return;
+
+      if (entry.section === "Food Diary") {
+        const drinkMl = getFluidMlFromEntry(entry);
+        if (drinkMl > 0) {
+          day.fluidMl = (day.fluidMl || 0) + drinkMl;
+          if (!day.hasFluid) fluidDays += 1;
+          day.hasFluid = true;
+          totalFluidMl += drinkMl;
         }
-        const day = dayMap.get(key);
-
-        if (entry.section === "Food Diary") {
-          const drinkMl = getFluidMlFromEntry(entry);
-          fluidMl += drinkMl;
-          day.fluidMl += drinkMl;
-        }
-
-        if (entry.section === "Sleep") {
-          const minutes = toFiniteNumber(entry.durationMinutes);
-          if (minutes > 0) {
-            sleepMinutes += minutes;
-            sleepLogsWithDuration += 1;
-            day.sleepMinutes += minutes;
-          }
-        }
-
-        if (entry.section === "Medication") {
-          medicationCount += 1;
-          day.medication += 1;
-          if (
-            ["missed", "late", "refused"].includes(
-              String(entry.medicationStatus || "").toLowerCase(),
-            )
-          ) {
-            medicationConcernCount += 1;
-          }
-        }
-
-        if (entry.section === "Toileting") {
-          const toileting = classifyToileting(entry);
-          const hour = Number(String(entry.time || "00:00").slice(0, 2));
-          const bucket =
-            hour < 6 ? "night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
-          toiletingCount += 1;
-          soiledCount += toileting.soiled;
-          day.toileting += 1;
-          day.wet += toileting.wet;
-          day.soiled += toileting.soiled;
-          day[bucket] += 1;
-        }
-
-        if (entry.section === "Health" && entry.weightKg) {
-          const weight = toFiniteNumber(entry.weightKg);
-          if (weight > 0) {
-            weights.push({
-              date: key,
-              label: key.slice(0, 5),
-              value: weight,
-            });
-          }
-        }
-      });
-
-      const daily = Array.from(dayMap.values()).sort((a, b) => {
-        const dateA = parseDisplayDate(a.date)?.getTime() || 0;
-        const dateB = parseDisplayDate(b.date)?.getTime() || 0;
-        return dateA - dateB;
-      });
-      const latestWeight = weights[weights.length - 1]?.value || 0;
-      const firstWeight = weights[0]?.value || 0;
-
-      return {
-        entries: sorted,
-        daily,
-        days: Math.max(rangeDays, daily.length || 1),
-        sleepMinutes,
-        avgSleepHours: sleepLogsWithDuration
-          ? sleepMinutes / sleepLogsWithDuration / 60
-          : 0,
-        fluidMl,
-        avgFluidMl: fluidMl / Math.max(rangeDays, 1),
-        medicationCount,
-        typicalMedicationCount: typicalMedicationPerDay
-          ? typicalMedicationPerDay * Math.max(rangeDays, 1)
-          : 0,
-        medicationConcernCount,
-        toiletingCount,
-        toiletingAvg: toiletingCount / Math.max(rangeDays, 1),
-        soiledCount,
-        weights,
-        weightChange:
-          weights.length >= 2 ? latestWeight - firstWeight : 0,
-      };
-    };
-
-    const current = summariseEntries(recentEntries);
-    const previous = summariseEntries(previousReportEntries);
-
-    const trendBadge = (diff, positiveGood = true) => {
-      const threshold = Math.abs(diff) < 0.05;
-      if (threshold) {
-        return {
-          label: "Stable",
-          icon: "->",
-          className: "bg-slate-100 text-slate-600",
-        };
       }
-      const isGood = positiveGood ? diff > 0 : diff < 0;
-      return {
-        label: isGood ? "Improving" : "Declining",
-        icon: diff > 0 ? "+" : "-",
-        className: isGood
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-rose-50 text-rose-700",
-      };
-    };
 
-    const medicationPercent = current.typicalMedicationCount
-      ? Math.min(100, Math.round((current.medicationCount / current.typicalMedicationCount) * 100))
-      : current.medicationCount
-        ? 100
-        : 0;
-    const previousMedicationPercent = previous.typicalMedicationCount
-      ? Math.min(100, Math.round((previous.medicationCount / previous.typicalMedicationCount) * 100))
-      : previous.medicationCount
-        ? 100
-        : 0;
+      if (entry.section === "Sleep") {
+        const minutes = toFiniteNumber(entry.durationMinutes);
+        if (minutes > 0) {
+          day.sleepHours = (day.sleepHours || 0) + minutes / 60;
+          if (!day.hasSleep) sleepDays += 1;
+          day.hasSleep = true;
+          totalSleepHours += minutes / 60;
+        }
+      }
 
-    const summaryStats = [
+      if (entry.section === "Medication") {
+        medicationLogged += 1;
+        day.medicationLogged += 1;
+        if (
+          ["missed", "late", "refused"].includes(
+            String(entry.medicationStatus || "").toLowerCase(),
+          )
+        ) {
+          medicationConcerns += 1;
+        }
+      }
+
+      if (entry.section === "Toileting") {
+        const toileting = classifyToileting(entry);
+        day.toiletingCount = (day.toiletingCount || 0) + 1;
+        if (!day.hasToileting) toiletingDays += 1;
+        day.hasToileting = true;
+        day.wet += toileting.wet;
+        day.soiled += toileting.soiled;
+        totalToileting += 1;
+      }
+    });
+
+    const daily = Array.from(dayMap.values());
+    const fluidData = daily.filter((day) => day.hasFluid);
+    const sleepData = daily.filter((day) => day.hasSleep);
+    const toiletingData = daily.filter((day) => day.hasToileting);
+    const avgSleepHours = sleepDays ? totalSleepHours / sleepDays : 0;
+    const avgFluidMl = fluidDays ? totalFluidMl / fluidDays : 0;
+    const toiletingAvg = toiletingDays ? totalToileting / toiletingDays : 0;
+    const medicationPercent = expectedMedicationDoses
+      ? Math.min(100, Math.round((medicationLogged / expectedMedicationDoses) * 100))
+      : 0;
+    const fluidTargetMl = Math.max(
+      0,
+      Number.parseInt(childProfile.dailyFluidTargetMl || 0, 10) || 0,
+    );
+
+    const metricCards = [
       {
         key: "sleep",
-        label: "Avg Sleep",
-        value: current.avgSleepHours ? `${roundTo(current.avgSleepHours)}h` : "No data",
-        change: formatSignedNumber(current.avgSleepHours - previous.avgSleepHours, "h"),
-        trend: trendBadge(current.avgSleepHours - previous.avgSleepHours, true),
+        label: "Average sleep",
+        value: sleepDays ? `${roundTo(avgSleepHours)}h` : "Not enough data",
+        meta: sleepDays ? `${sleepDays} night${sleepDays === 1 ? "" : "s"} logged` : "No completed sleep entries",
         tone: "indigo",
       },
       {
         key: "fluids",
-        label: "Avg Fluid Intake",
-        value: `${Math.round(current.avgFluidMl)}ml`,
-        change: formatSignedNumber(current.avgFluidMl - previous.avgFluidMl, "ml", 0),
-        trend: trendBadge(current.avgFluidMl - previous.avgFluidMl, true),
+        label: "Average fluid intake",
+        value: fluidDays ? `${Math.round(avgFluidMl)}ml` : "Not enough data",
+        meta: fluidDays ? `${fluidDays} day${fluidDays === 1 ? "" : "s"} with fluids` : "No drink entries",
         tone: "sky",
       },
       {
         key: "medication",
-        label: "Medication Routine",
-        value: current.typicalMedicationCount
-          ? `${current.medicationCount} of ${current.typicalMedicationCount}`
-          : `${current.medicationCount} logged`,
-        change: formatSignedNumber(medicationPercent - previousMedicationPercent, "%", 0),
-        trend: trendBadge(medicationPercent - previousMedicationPercent, true),
+        label: "Medication adherence",
+        value: expectedMedicationDoses
+          ? `${medicationLogged} of ${expectedMedicationDoses}`
+          : `${medicationLogged} logged`,
+        meta: expectedMedicationDoses ? `${medicationPercent}% of expected doses` : "No required schedule set",
         tone: "rose",
       },
       {
         key: "toileting",
-        label: "Toileting Avg",
-        value: `${roundTo(current.toiletingAvg)} / day`,
-        change: formatSignedNumber(current.toiletingAvg - previous.toiletingAvg, "", 1),
-        trend: trendBadge(current.toiletingAvg - previous.toiletingAvg, true),
+        label: "Toileting average",
+        value: toiletingDays ? `${roundTo(toiletingAvg)} / day` : "Not enough data",
+        meta: toiletingDays ? `${toiletingDays} day${toiletingDays === 1 ? "" : "s"} logged` : "No toileting entries",
         tone: "cyan",
-      },
-      {
-        key: "weight",
-        label: "Weight Change",
-        value: current.weights.length >= 2 ? `${formatSignedNumber(current.weightChange, "kg")}` : "No trend",
-        change: previous.weights.length >= 2
-          ? `${formatSignedNumber(current.weightChange - previous.weightChange, "kg")}`
-          : "No previous",
-        trend: trendBadge(current.weightChange - previous.weightChange, true),
-        tone: "emerald",
       },
     ];
 
-    const currentDailyDesc = [...current.daily].reverse();
-    const countStreak = (predicate) => {
-      let streak = 0;
-      for (const day of currentDailyDesc) {
-        if (!predicate(day)) break;
-        streak += 1;
+    const insights = [];
+    if (fluidTargetMl && fluidDays >= 3) {
+      const belowTargetDays = fluidData.filter((day) => Number(day.fluidMl || 0) < fluidTargetMl).length;
+      if (belowTargetDays >= Math.ceil(fluidDays * 0.6)) {
+        insights.push("Fluid intake is consistently below the daily target on logged days.");
+      } else if (belowTargetDays > 0) {
+        insights.push("Some logged fluid days fall below the daily target.");
       }
-      return streak;
-    };
-
-    const hydrationStreak = countStreak((day) => day.fluidMl > 0);
-    const medicationStreak = countStreak((day) => day.medication > 0);
-    const sleepStreak = countStreak((day) => day.sleepMinutes >= 8 * 60);
-
-    const lowFluidDays = current.daily.filter(
-      (day) => day.fluidMl > 0 && day.fluidMl < Math.max(250, previous.avgFluidMl * 0.75),
-    ).length;
-    const recentThree = currentDailyDesc.slice(0, 3);
-    const noBowelThreeDays =
-      recentThree.length >= 3 && recentThree.every((day) => day.soiled === 0);
-
-    const keyChanges = [];
-    const sleepDiff = current.avgSleepHours - previous.avgSleepHours;
-    const fluidDiff = current.avgFluidMl - previous.avgFluidMl;
-    const weightDiff = current.weightChange;
-
-    if (Math.abs(sleepDiff) >= 0.3) {
-      keyChanges.push({
-        type: sleepDiff > 0 ? "increase" : "decrease",
-        icon: sleepDiff > 0 ? "+" : "-",
-        title: sleepDiff > 0 ? "Sleep increased" : "Sleep decreased",
-        text: `${formatSignedNumber(sleepDiff, "h")} vs previous period`,
-      });
+    } else if (fluidDays < 3) {
+      insights.push("Not enough fluid data to confirm a clear pattern.");
     }
 
-    if (Math.abs(fluidDiff) >= 100) {
-      keyChanges.push({
-        type: fluidDiff > 0 ? "increase" : "decrease",
-        icon: fluidDiff > 0 ? "+" : "-",
-        title: fluidDiff > 0 ? "Fluids increased" : "Fluids decreased",
-        text: `${formatSignedNumber(fluidDiff, "ml", 0)} average per day`,
-      });
+    if (expectedMedicationDoses) {
+      if (medicationLogged < expectedMedicationDoses) {
+        insights.push("Medication logging is incomplete across the selected period.");
+      } else if (medicationConcerns) {
+        insights.push("Medication was logged, with missed, late or refused entries recorded.");
+      } else {
+        insights.push("Medication logging matches the expected schedule for this period.");
+      }
+    } else if (medicationLogged) {
+      insights.push("Medication entries were logged, but no required daily schedule is set for comparison.");
     }
 
-    if (current.weights.length >= 2 && Math.abs(weightDiff) >= 0.2) {
-      keyChanges.push({
-        type: weightDiff >= 0 ? "increase" : "warning",
-        icon: weightDiff >= 0 ? "+" : "!",
-        title: weightDiff >= 0 ? "Weight increased" : "Weight dropped",
-        text: `${formatSignedNumber(weightDiff, "kg")} in this range`,
-      });
+    if (sleepDays >= 5) {
+      const sleepValues = sleepData.map((day) => Number(day.sleepHours || 0));
+      const sleepMin = Math.min(...sleepValues);
+      const sleepMax = Math.max(...sleepValues);
+      if (sleepMax - sleepMin >= 2) {
+        insights.push("Sleep data shows inconsistency across the selected period.");
+      } else {
+        insights.push("Sleep duration appears broadly steady on logged nights.");
+      }
+    } else {
+      insights.push("Not enough completed sleep entries to confirm a clear sleep pattern.");
     }
 
-    if (noBowelThreeDays) {
-      keyChanges.push({
-        type: "warning",
-        icon: "!",
-        title: "No bowel movement logged",
-        text: "No soiled/bowel entry in the latest 3 logged days",
-      });
+    if (toiletingDays >= 5) {
+      const toiletingValues = toiletingData.map((day) => Number(day.toiletingCount || 0));
+      const toiletingMin = Math.min(...toiletingValues);
+      const toiletingMax = Math.max(...toiletingValues);
+      if (toiletingMax - toiletingMin >= 3) {
+        insights.push("Toileting frequency varies significantly day-to-day.");
+      } else {
+        insights.push("Toileting frequency appears broadly steady on logged days.");
+      }
+    } else {
+      insights.push("Not enough toileting data to confirm a clear pattern.");
     }
 
-    if (current.typicalMedicationCount && medicationPercent < 80) {
-      keyChanges.push({
-        type: "warning",
-        icon: "!",
-        title: "Medication routine changed",
-        text: `${medicationPercent}% of typical doses logged`,
-      });
-    }
-
-    if (!keyChanges.length) {
-      keyChanges.push({
-        type: "stable",
-        icon: "->",
-        title: "No major changes found",
-        text: "Recent logs look broadly stable for this range",
-      });
-    }
-
-    const insights = [
-      lowFluidDays
-        ? `Fluid intake below typical levels on ${lowFluidDays} day${lowFluidDays === 1 ? "" : "s"}.`
-        : "",
-      Math.abs(sleepDiff) >= 0.3
-        ? `Sleep has ${sleepDiff > 0 ? "increased" : "decreased"} by ${Math.abs(roundTo(sleepDiff))} hours on average.`
-        : "",
-      current.toiletingAvg + 0.2 < previous.toiletingAvg
-        ? "Toileting frequency is lower than the previous period."
-        : "",
-      current.typicalMedicationCount && medicationPercent < 90
-        ? "Medication routine is slightly inconsistent."
-        : "",
-      noBowelThreeDays ? "No bowel movement has been logged in the latest 3 logged days." : "",
-    ].filter(Boolean);
+    const dataCompleteness = [
+      {
+        label: "Sleep logged",
+        value: `${sleepDays} of ${rangeDays} days`,
+        tone: "indigo",
+      },
+      {
+        label: "Fluids logged",
+        value: `${fluidDays} of ${rangeDays} days`,
+        tone: "sky",
+      },
+      {
+        label: "Medication doses",
+        value: expectedMedicationDoses
+          ? `${medicationLogged} of ${expectedMedicationDoses}`
+          : `${medicationLogged} logged`,
+        tone: "rose",
+      },
+      {
+        label: "Toileting logged",
+        value: `${toiletingDays} of ${rangeDays} days`,
+        tone: "cyan",
+      },
+    ];
 
     return {
-      current,
-      previous,
-      summaryStats,
-      keyChanges: keyChanges.slice(0, 4),
-      insights: insights.length ? insights.slice(0, 5) : ["No major trends found."],
-      streaks: [
-        { label: `Hydration streak: ${hydrationStreak} day${hydrationStreak === 1 ? "" : "s"}`, tone: "bg-sky-50 text-sky-700" },
-        { label: `Medication: ${medicationStreak} day${medicationStreak === 1 ? "" : "s"}`, tone: "bg-rose-50 text-rose-700" },
-        { label: `Sleep goal met: ${sleepStreak} day${sleepStreak === 1 ? "" : "s"}`, tone: "bg-indigo-50 text-indigo-700" },
-      ],
+      rangeDays,
+      current: {
+        daily,
+        avgSleepHours,
+        avgFluidMl,
+        medicationCount: medicationLogged,
+        typicalMedicationCount: expectedMedicationDoses,
+        toiletingAvg,
+      },
+      summaryStats: metricCards,
+      insights: uniqueList(insights).slice(0, 5),
+      dataCompleteness,
+      fluidTargetMl,
       graphs: {
-        weight: current.weights.map((point, index, array) => ({
-          ...point,
-          isDrop: index > 0 && point.value < array[index - 1].value,
-        })),
-        fluid: current.daily.map((day) => ({
-          label: day.date.slice(0, 5),
-          value: Math.round(day.fluidMl),
-        })),
-        sleep: current.daily.map((day) => ({
-          label: day.date.slice(0, 5),
-          value: roundTo(day.sleepMinutes / 60),
-        })).filter((day) => day.value > 0),
-        toileting: current.daily.map((day) => ({
-          label: day.date.slice(0, 5),
-          wet: day.wet,
-          soiled: day.soiled,
-          value: day.toileting,
-          morning: day.morning,
-          afternoon: day.afternoon,
-          evening: day.evening,
-          night: day.night,
+        fluid: daily.map((day) => ({
+          label: day.label,
+          value: day.hasFluid ? Math.round(day.fluidMl || 0) : null,
+          hasData: day.hasFluid,
+          target: fluidTargetMl,
         })),
         medication: {
           percent: medicationPercent,
-          logged: current.medicationCount,
-          typical: current.typicalMedicationCount,
+          logged: medicationLogged,
+          typical: expectedMedicationDoses,
+          daily: daily.map((day) => ({
+            label: day.label,
+            value: expectedMedicationDoses ? day.medicationLogged : null,
+            hasData: day.medicationLogged > 0,
+          })),
         },
+        sleep: daily
+          .map((day) => ({
+            label: day.label,
+            value: day.hasSleep ? roundTo(day.sleepHours || 0) : null,
+            hasData: day.hasSleep,
+          }))
+          .filter((day) => day.hasData),
+        toileting: daily.map((day) => ({
+          label: day.label,
+          wet: day.wet,
+          soiled: day.soiled,
+          value: day.hasToileting ? day.toiletingCount || 0 : null,
+          hasData: day.hasToileting,
+        })),
       },
     };
   }, [
-    previousReportEntries,
+    childProfile.dailyFluidTargetMl,
     profileMedicationOptions,
     recentEntries,
     reportRangeEnd,
@@ -4608,6 +4523,8 @@ export default function KaylenCareMonitorDashboard({
       note = "",
     }) => {
       const cleanData = data.filter((item) =>
+        item?.hasData !== false &&
+        item?.[valueKey] !== null &&
         Number.isFinite(Number(item[valueKey] || 0)),
       );
       const chartHeight = 38;
@@ -4619,10 +4536,11 @@ export default function KaylenCareMonitorDashboard({
       const plotY = y + 13;
       const plotWidth = width - 16;
       const plotHeight = 17;
-      const maxValue = Math.max(1, ...cleanData.map((item) => Number(item[valueKey] || 0)));
+      const chartData = cleanData;
+      const maxValue = Math.max(1, ...chartData.map((item) => Number(item[valueKey] || 0)));
       const barGap = 3;
-      const barWidth = cleanData.length
-        ? Math.max(4, (plotWidth - barGap * (cleanData.length - 1)) / cleanData.length)
+      const barWidth = chartData.length
+        ? Math.max(2.5, (plotWidth - barGap * (chartData.length - 1)) / chartData.length)
         : plotWidth;
 
       pdf.setFillColor(...tone.fill);
@@ -4635,17 +4553,19 @@ export default function KaylenCareMonitorDashboard({
       pdf.setDrawColor(203, 213, 225);
       pdf.line(plotX, plotY + plotHeight, plotX + plotWidth, plotY + plotHeight);
 
-      if (cleanData.length) {
-        cleanData.slice(-14).forEach((item, index) => {
+      if (chartData.length) {
+        chartData.forEach((item, index) => {
           const value = Number(item[valueKey] || 0);
           const barX = plotX + index * (barWidth + barGap);
           const barHeight = Math.max(value ? 1.2 : 0.4, (value / maxValue) * plotHeight);
           pdf.setFillColor(...tone.accent);
           pdf.roundedRect(barX, plotY + plotHeight - barHeight, barWidth, barHeight, 1, 1, "F");
           setText(5.2, [100, 116, 139], "normal");
-          pdf.text(String(item.label || "").slice(0, 5), barX, y + chartHeight - 3);
+          if (index % Math.ceil(chartData.length / 10) === 0 || index === chartData.length - 1) {
+            pdf.text(String(item.label || "").slice(0, 5), barX, y + chartHeight - 3);
+          }
         });
-        const latest = cleanData[cleanData.length - 1];
+        const latest = chartData[chartData.length - 1];
         setText(7, [15, 23, 42], "bold");
         pdf.text(`Latest: ${roundTo(latest[valueKey], suffix === "ml" ? 0 : 1)}${suffix}`, x + width - 38, y + 6);
       } else {
@@ -4687,33 +4607,26 @@ export default function KaylenCareMonitorDashboard({
 
     const drawTrendVisuals = () => {
       drawSimpleBarChart({
-        title: "Weight progress",
-        data: reportTrendModel.graphs.weight,
-        suffix: "kg",
-        tone: tones.emerald,
-        note: "Measurements plotted across this range.",
-      });
-      drawSimpleBarChart({
         title: "Fluid intake",
         data: reportTrendModel.graphs.fluid,
         suffix: "ml",
         tone: tones.sky,
-        note: "Daily drink totals.",
-      });
-      drawSimpleBarChart({
-        title: "Sleep trend",
-        data: reportTrendModel.graphs.sleep,
-        suffix: "h",
-        tone: tones.indigo,
-        note: "Sleep duration by logged day.",
+        note: "Daily fluid intake across the selected period.",
       });
       drawMedicationConsistencyPdf();
       drawSimpleBarChart({
-        title: "Toileting pattern",
+        title: "Sleep",
+        data: reportTrendModel.graphs.sleep,
+        suffix: "h",
+        tone: tones.indigo,
+        note: "Sleep duration per night based on logged entries.",
+      });
+      drawSimpleBarChart({
+        title: "Toileting",
         data: reportTrendModel.graphs.toileting,
         suffix: "",
         tone: tones.amber,
-        note: "Daily toileting entry frequency.",
+        note: "Number of toileting entries recorded per day.",
       });
     };
 
@@ -4836,26 +4749,7 @@ export default function KaylenCareMonitorDashboard({
     }
 
     if (isTrendsPdf) {
-      addSectionTitle("Key changes");
-      reportTrendModel.keyChanges.forEach((item) => {
-        const tone =
-          item.type === "increase"
-            ? tones.emerald
-            : item.type === "decrease"
-              ? tones.rose
-              : item.type === "warning"
-                ? tones.amber
-                : tones.slate;
-        drawCard({
-          title: item.title,
-          lines: [item.text],
-          fill: tone.fill,
-          stroke: tone.stroke,
-          titleColor: tone.accent,
-        });
-      });
-
-      addSectionTitle("Summary stats");
+      addSectionTitle("Key metrics");
       drawMetricGrid(
         reportTrendModel.summaryStats.map((item) => ({
           label: item.label,
@@ -4871,24 +4765,26 @@ export default function KaylenCareMonitorDashboard({
         })),
       );
 
-      addSectionTitle("At a glance");
-      drawMetricGrid([
-        { label: "Sleep", value: atAGlance.sleep, tone: tones.indigo },
-        { label: "Medication", value: atAGlance.medication, tone: tones.rose },
-        { label: "Appetite", value: atAGlance.appetite, tone: tones.amber },
-        { label: "Health", value: atAGlance.health, tone: tones.emerald },
-      ]);
-
-      if (showReportCharts) {
-        addSectionTitle("Trends and patterns");
-        drawTrendGrid();
-        drawTrendVisuals();
-      }
-
       addSectionTitle("Insights");
       drawCard({
         title: "Insights",
         lines: reportTrendModel.insights.map((item) => `- ${item}`),
+        fill: tones.slate.fill,
+        stroke: tones.slate.stroke,
+        titleColor: tones.slate.accent,
+      });
+
+      if (showReportCharts) {
+        addSectionTitle("Visual patterns");
+        drawTrendVisuals();
+      }
+
+      addSectionTitle("Data completeness");
+      drawCard({
+        title: "Data Completeness",
+        lines: reportTrendModel.dataCompleteness.map(
+          (item) => `${item.label}: ${item.value}`,
+        ),
       });
     }
 
@@ -7191,12 +7087,9 @@ export default function KaylenCareMonitorDashboard({
               {stat.label}
             </p>
             <p className="mt-1 truncate text-lg font-black text-slate-950">{stat.value}</p>
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              {renderTrendPill(stat.trend)}
-              <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold text-slate-600">
-                {stat.change}
-              </span>
-            </div>
+            <p className="mt-1.5 text-[11px] font-bold leading-4 text-slate-600">
+              {stat.meta}
+            </p>
           </div>
         ))}
       </div>
@@ -7212,7 +7105,12 @@ export default function KaylenCareMonitorDashboard({
     emptyText = "Not enough data yet",
     minPoints = 1,
   }) => {
-    const points = data.filter((item) => Number.isFinite(Number(item.value)));
+    const points = data.filter(
+      (item) =>
+        item?.hasData !== false &&
+        item?.value !== null &&
+        Number.isFinite(Number(item.value)),
+    );
     const hasEnoughPoints = points.length >= minPoints;
     const values = points.map((item) => Number(item.value));
     const min = values.length ? Math.min(...values) : 0;
@@ -7285,8 +7183,11 @@ export default function KaylenCareMonitorDashboard({
 
   const renderFluidBarGraph = () => {
     const data = reportTrendModel.graphs.fluid;
-    const target = 1000;
-    const max = Math.max(target, ...data.map((item) => item.value), 1);
+    const target = reportTrendModel.fluidTargetMl || 0;
+    const values = data
+      .filter((item) => item.hasData && item.value !== null)
+      .map((item) => Number(item.value || 0));
+    const max = Math.max(target, ...values, 1);
 
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -7296,25 +7197,30 @@ export default function KaylenCareMonitorDashboard({
               Fluid intake
             </p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
-              Daily drink totals in ml
+              Daily fluid intake across the selected period.
             </p>
           </div>
-          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
-            target {target}ml
-          </span>
+          {target ? (
+            <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-bold text-sky-700">
+              target {target}ml
+            </span>
+          ) : null}
         </div>
         <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
-          {data.length ? (
+          {values.length ? (
             data.map((item) => {
-              const height = Math.max(6, (item.value / max) * 100);
-              const low = item.value > 0 && item.value < target * 0.5;
+              const hasData = item.hasData && item.value !== null;
+              const height = hasData ? Math.max(6, (item.value / max) * 100) : 0;
+              const low = target ? hasData && item.value < target : false;
               return (
                 <div key={`fluid-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                   <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
-                    <div
-                      className={`w-full rounded-t-lg ${low ? "bg-amber-400" : "bg-sky-500"}`}
-                      style={{ height: `${height}%` }}
-                    />
+                    {hasData ? (
+                      <div
+                        className={`w-full rounded-t-lg ${low ? "bg-amber-400" : "bg-sky-500"}`}
+                        style={{ height: `${height}%` }}
+                      />
+                    ) : null}
                   </div>
                   <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
                 </div>
@@ -7336,7 +7242,10 @@ export default function KaylenCareMonitorDashboard({
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
-          Medication routine consistency
+          Medication adherence
+        </p>
+        <p className="mt-0.5 text-xs font-semibold text-slate-500">
+          Medication doses logged compared to expected schedule.
         </p>
         <div className="mt-3 flex items-end justify-between gap-3">
           <div>
@@ -7347,9 +7256,11 @@ export default function KaylenCareMonitorDashboard({
                 : `${graph.logged} medication log${graph.logged === 1 ? "" : "s"}`}
             </p>
           </div>
-          <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
-            not strict schedule
-          </span>
+          {graph.typical ? null : (
+            <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-bold text-rose-700">
+              schedule not set
+            </span>
+          )}
         </div>
         <div className="mt-4 h-3 overflow-hidden rounded-full bg-slate-100">
           <div
@@ -7376,23 +7287,25 @@ export default function KaylenCareMonitorDashboard({
           Toileting pattern
         </p>
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
-          Wet and soiled entries by day
+          Number of toileting entries recorded per day.
         </p>
         <div className="mt-3 flex h-32 items-end gap-1.5 border-b border-slate-200 pb-1">
-          {data.length ? (
+          {data.some((item) => item.hasData) ? (
             data.map((item) => (
               <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
                 <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
-                  <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
-                    <div
-                      className="bg-cyan-500"
-                      style={{ height: `${Math.max(0, (item.wet / max) * 100)}%` }}
-                    />
-                    <div
-                      className="bg-amber-500"
-                      style={{ height: `${Math.max(0, (item.soiled / max) * 100)}%` }}
-                    />
-                  </div>
+                  {item.hasData ? (
+                    <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
+                      <div
+                        className="bg-cyan-500"
+                        style={{ height: `${Math.max(0, (item.wet / max) * 100)}%` }}
+                      />
+                      <div
+                        className="bg-amber-500"
+                        style={{ height: `${Math.max(0, (item.soiled / max) * 100)}%` }}
+                      />
+                    </div>
+                  ) : null}
                 </div>
                 <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
               </div>
@@ -7452,28 +7365,54 @@ export default function KaylenCareMonitorDashboard({
             Simple visual checks for this report range
           </p>
         </div>
-        {renderReportStreaks()}
       </div>
       <div className={`mt-3 grid gap-3 ${mode === "pdf" ? "grid-cols-2" : "lg:grid-cols-2"}`}>
-        {renderLineGraphCard({
-          title: "Weight progress",
-          data: reportTrendModel.graphs.weight,
-          suffix: "kg",
-          stroke: "#10b981",
-          markerDrop: true,
-          emptyText: "Add at least two weight measurements",
-        })}
         {renderFluidBarGraph()}
+        {renderMedicationConsistencyCard()}
         {renderLineGraphCard({
-          title: "Sleep trend",
+          title: "Sleep",
           data: reportTrendModel.graphs.sleep,
           suffix: "h",
           stroke: "#6366f1",
-          minPoints: 2,
-          emptyText: "Not enough completed sleep logs yet",
+          minPoints: 1,
+          emptyText: "No completed sleep logs available",
         })}
-        {renderMedicationConsistencyCard()}
         {renderToiletingPatternCard()}
+      </div>
+    </section>
+  );
+
+  const renderDataCompletenessSection = (mode = "screen") => (
+    <section
+      data-report-pdf-card="half"
+      className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(
+        mode,
+      )}`}
+    >
+      <h3 className="text-base font-black text-slate-950">
+        Data Completeness
+      </h3>
+      <p className="mt-1 text-sm font-semibold text-slate-500">
+        This shows how much evidence is available for the selected range.
+      </p>
+      <div
+        className={`mt-3 grid gap-2 ${
+          mode === "pdf" ? "grid-cols-4" : "grid-cols-2 lg:grid-cols-4"
+        }`}
+      >
+        {reportTrendModel.dataCompleteness.map((item) => (
+          <div
+            key={item.label}
+            className={`rounded-xl border px-3 py-2 ${statToneClass(item.tone)}`}
+          >
+            <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+              {item.label}
+            </p>
+            <p className="mt-1 text-sm font-black text-slate-950">
+              {item.value}
+            </p>
+          </div>
+        ))}
       </div>
     </section>
   );
@@ -7524,25 +7463,7 @@ export default function KaylenCareMonitorDashboard({
 
         {!detailedOnly ? (
           <>
-            {renderKeyChangesSection(mode)}
             {renderReportSummaryStatsRow(mode)}
-
-            <section
-              data-report-pdf-card="half"
-              className={`rounded-2xl border border-slate-200 bg-white ${compactSectionPadding(mode)}`}
-            >
-              <h3 className="text-base font-black text-slate-950">
-                At a glance
-              </h3>
-              <div className={`mt-2 grid gap-2 ${isPdf ? "grid-cols-4" : "sm:grid-cols-2 lg:grid-cols-4"}`}>
-                {renderSummaryCard("Sleep", atAGlance.sleep, mode)}
-                {renderSummaryCard("Medication", atAGlance.medication, mode)}
-                {renderSummaryCard("Appetite", atAGlance.appetite, mode)}
-                {renderSummaryCard("Health", atAGlance.health, mode)}
-              </div>
-            </section>
-
-            {showReportCharts ? renderReportChartCards(mode) : null}
 
             <section
               data-report-pdf-card="half"
@@ -7559,6 +7480,8 @@ export default function KaylenCareMonitorDashboard({
                 ))}
               </ul>
             </section>
+            {showReportCharts ? renderReportChartCards(mode) : null}
+            {renderDataCompletenessSection(mode)}
           </>
         ) : null}
 
@@ -7895,7 +7818,7 @@ export default function KaylenCareMonitorDashboard({
               Report Trends
             </h3>
             <p className="mt-1 text-sm leading-6 text-slate-600">
-              A quick answer to what is changing for {childName}.
+              EHCP-friendly evidence for ongoing patterns, routines and support needs.
             </p>
           </div>
           <button
@@ -7953,18 +7876,16 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
       </section>
 
-      {renderKeyChangesSection()}
       {renderReportSummaryStatsRow()}
-      {showReportCharts ? renderReportChartCards() : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
           <h3 className="text-base font-black text-slate-950">
-            Smart insights
+            Insights
           </h3>
             <p className="mt-1 text-sm font-semibold text-slate-500">
-              Short observations from this range.
+              Clear statements are used where the data supports them. Limited data is labelled clearly.
             </p>
           </div>
         </div>
@@ -7980,30 +7901,8 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <h3 className="text-base font-black text-slate-950">
-          Weekly comparison
-        </h3>
-        <p className="mt-1 text-sm font-semibold text-slate-500">
-          Current range compared with the previous matching range.
-        </p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-          {reportTrendModel.summaryStats.map((stat) => (
-            <div
-              key={`comparison-${stat.key}`}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-            >
-              <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
-                {stat.label}
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-900">
-                {stat.change}
-              </p>
-              <div className="mt-1">{renderTrendPill(stat.trend)}</div>
-            </div>
-          ))}
-        </div>
-      </section>
+      {showReportCharts ? renderReportChartCards() : null}
+      {renderDataCompletenessSection()}
     </div>
   );
 
