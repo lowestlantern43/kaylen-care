@@ -2515,6 +2515,115 @@ export default function KaylenCareMonitorDashboard({
     [snapshotEntries],
   );
 
+  const snapshotSummaryStats = useMemo(() => {
+    const dayKey = (entry) => {
+      const parsed = getCareSnapshotEntryDate(entry);
+      if (!parsed) return "";
+      return `${String(parsed.getDate()).padStart(2, "0")}/${String(
+        parsed.getMonth() + 1,
+      ).padStart(2, "0")}/${parsed.getFullYear()}`;
+    };
+
+    const fluidByDay = new Map();
+    const sleepByDay = new Map();
+    const toiletingByDay = new Map();
+
+    snapshotEntries.forEach((entry) => {
+      const key = dayKey(entry);
+      if (!key) return;
+
+      if (entry.section === "Food Diary") {
+        const fluidMl = getFluidMlFromEntry(entry);
+        if (fluidMl > 0) {
+          fluidByDay.set(key, (fluidByDay.get(key) || 0) + fluidMl);
+        }
+      }
+
+      if (entry.section === "Sleep") {
+        const minutes = toFiniteNumber(entry.durationMinutes);
+        if (minutes > 0) {
+          sleepByDay.set(key, (sleepByDay.get(key) || 0) + minutes);
+        }
+      }
+
+      if (entry.section === "Toileting") {
+        toiletingByDay.set(key, (toiletingByDay.get(key) || 0) + 1);
+      }
+    });
+
+    const average = (values) =>
+      values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+
+    const requiredMedicationPerDay = profileMedicationOptions
+      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
+      .reduce((sum, medicine) => {
+        const windows = normaliseMedicationTimeWindows(
+          medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+        );
+        return sum + Math.max(1, windows.length || medicine.times?.length || 0);
+      }, 0);
+    const expectedMedicationDoses = requiredMedicationPerDay * 3;
+    const medicationLogged = snapshotBySection.medication.length;
+    const sleepAverageMinutes = average(Array.from(sleepByDay.values()));
+    const fluidAverageMl = average(Array.from(fluidByDay.values()));
+    const toiletingAverage = average(Array.from(toiletingByDay.values()));
+
+    return [
+      {
+        key: "sleep",
+        label: "Sleep average",
+        value:
+          sleepAverageMinutes === null
+            ? "No data recorded"
+            : `${roundTo(sleepAverageMinutes / 60)}h avg`,
+        meta:
+          sleepAverageMinutes === null
+            ? "No completed sleep entries"
+            : `${sleepByDay.size} day${sleepByDay.size === 1 ? "" : "s"} logged`,
+        tone: "indigo",
+      },
+      {
+        key: "fluids",
+        label: "Fluid intake",
+        value:
+          fluidAverageMl === null
+            ? "No data recorded"
+            : `${Math.round(fluidAverageMl)}ml avg`,
+        meta:
+          fluidAverageMl === null
+            ? "No drink entries"
+            : `${fluidByDay.size} day${fluidByDay.size === 1 ? "" : "s"} logged`,
+        tone: "sky",
+      },
+      {
+        key: "medication",
+        label: "Medication adherence",
+        value: expectedMedicationDoses
+          ? `${medicationLogged} of ${expectedMedicationDoses} doses`
+          : medicationLogged
+            ? `${medicationLogged} doses logged`
+            : "No data recorded",
+        meta: expectedMedicationDoses
+          ? "Logged vs expected"
+          : "No required schedule set",
+        tone: "rose",
+      },
+      {
+        key: "toileting",
+        label: "Toileting average",
+        value:
+          toiletingAverage === null
+            ? "No data recorded"
+            : `${roundTo(toiletingAverage)} / day`,
+        meta:
+          toiletingAverage === null
+            ? "No toileting entries"
+            : `${toiletingByDay.size} day${toiletingByDay.size === 1 ? "" : "s"} logged`,
+        tone: "cyan",
+      },
+    ];
+  }, [profileMedicationOptions, snapshotBySection.medication.length, snapshotEntries]);
+
   const snapshotTrendSummary = useMemo(() => {
     const now = new Date();
     const currentStart = new Date(now);
@@ -8311,6 +8420,16 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
+  const snapshotStatToneClass = (tone) => {
+    const classes = {
+      indigo: "border-indigo-100 bg-indigo-50 text-indigo-900",
+      sky: "border-sky-100 bg-sky-50 text-sky-900",
+      rose: "border-rose-100 bg-rose-50 text-rose-900",
+      cyan: "border-cyan-100 bg-cyan-50 text-cyan-900",
+    };
+    return classes[tone] || "border-slate-100 bg-slate-50 text-slate-900";
+  };
+
   const renderCareSnapshotDocument = ({ mode = "screen" } = {}) => {
     const isPdf = mode === "pdf";
     const generatedDate = new Date().toLocaleString("en-GB", {
@@ -8349,6 +8468,41 @@ export default function KaylenCareMonitorDashboard({
               <p>NHS number: {childNhsNumber || "Not added"}</p>
             ) : null}
             <p>Generated: {generatedDate}</p>
+          </div>
+        </section>
+
+        <section
+          data-snapshot-pdf-card="full"
+          className={`pdf-avoid-break border border-slate-200 bg-white ${
+            isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"
+          }`}
+        >
+          <h4 className="text-xs font-bold uppercase tracking-[0.14em] text-slate-700">
+            Summary Stats
+          </h4>
+          <div
+            className={`mt-2 grid gap-2 ${
+              isPdf ? "grid-cols-4" : "grid-cols-2 lg:grid-cols-4"
+            }`}
+          >
+            {snapshotSummaryStats.map((stat) => (
+              <div
+                key={stat.key}
+                className={`rounded-xl border px-2.5 py-2 ${snapshotStatToneClass(
+                  stat.tone,
+                )}`}
+              >
+                <p className="text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                  {stat.label}
+                </p>
+                <p className={`${isPdf ? "text-xs" : "text-sm"} mt-1 font-black text-slate-950`}>
+                  {stat.value}
+                </p>
+                <p className="mt-0.5 text-[11px] font-bold leading-4 text-slate-600">
+                  {stat.meta}
+                </p>
+              </div>
+            ))}
           </div>
         </section>
 
