@@ -7664,9 +7664,29 @@ export default function KaylenCareMonitorDashboard({
       1,
     );
     const totalEvents = values.reduce((sum, value) => sum + value, 0);
-    const max = Math.max(stackedMax, 1);
-    const scaleTop = Math.max(1, Math.ceil(max));
+    const roundScaleTop = (value) => {
+      if (value <= 2) return 2;
+      if (value <= 10) return Math.ceil(value / 2) * 2;
+      return Math.ceil(value / 5) * 5;
+    };
+    const scaleTop = roundScaleTop(Math.max(stackedMax, 1));
     const scaleMid = Math.round(scaleTop / 2);
+    const busiestDay = daysWithData.length
+      ? dailyChartData
+          .filter((item) => item.hasData)
+          .reduce(
+            (busiest, item) =>
+              item.totalCount > busiest.totalCount ? item : busiest,
+            { dateLabel: "", totalCount: 0 },
+          )
+      : null;
+    const bowelDays = dailyChartData.filter(
+      (item) => item.hasData && item.bowelCount > 0,
+    ).length;
+    const patternInsight =
+      daysWithData.length >= 2 && busiestDay?.totalCount
+        ? `Most toileting activity recorded on ${busiestDay.dateLabel}. Bowel movements recorded on ${bowelDays} of ${daysWithData.length} logged day${daysWithData.length === 1 ? "" : "s"}.`
+        : "Not enough data to identify patterns yet.";
     const timeBuckets = [
       ["Morning", data.reduce((sum, item) => sum + Number(item.morning || 0), 0)],
       ["Afternoon", data.reduce((sum, item) => sum + Number(item.afternoon || 0), 0)],
@@ -7674,9 +7694,9 @@ export default function KaylenCareMonitorDashboard({
       ["Night", data.reduce((sum, item) => sum + Number(item.night || 0), 0)],
     ].filter(([, value]) => value > 0);
     const typeBadges = [
-      ["Wet", typeTotals.wet, "bg-cyan-500"],
-      ["Bowel", typeTotals.bowel, "bg-amber-500"],
-      ["Other", typeTotals.accident + typeTotals.dry + typeTotals.other, "bg-violet-400"],
+      ["Wet", typeTotals.wet, "bg-teal-600"],
+      ["Bowel", typeTotals.bowel, "bg-orange-500"],
+      ["Other", typeTotals.accident + typeTotals.dry + typeTotals.other, "bg-violet-500"],
     ].filter(([, value]) => value > 0);
 
     return (
@@ -7691,15 +7711,16 @@ export default function KaylenCareMonitorDashboard({
         </p>
         {daysWithData.length ? (
           <>
-            <div className="mt-3 grid h-40 grid-cols-[34px_minmax(0,1fr)] gap-2">
+            <div className="mt-3 grid h-40 grid-cols-[34px_minmax(0,1fr)] gap-3">
               <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
                 <span>{scaleTop}</span>
                 <span>{scaleMid}</span>
                 <span>0</span>
               </div>
-              <div className="relative flex min-w-0 items-end gap-1.5 overflow-hidden border-b border-slate-200 pb-5">
-                <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
-                <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
+              <div className="relative flex min-w-0 items-end gap-2 overflow-visible border-b border-slate-200 pb-5">
+                <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200/80" />
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200/80" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-5 border-t border-slate-200" />
                 {dailyChartData.map((item) => {
                   const totalHeight = item.totalCount
                     ? Math.max(8, (item.totalCount / scaleTop) * 96)
@@ -7710,28 +7731,35 @@ export default function KaylenCareMonitorDashboard({
                       : 0;
 
                   return (
-                    <div key={`toileting-${item.dateLabel}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                      <div className="flex h-28 w-full items-end justify-center rounded-t-xl bg-slate-100/80 px-1">
+                    <div
+                      key={`toileting-${item.dateLabel}`}
+                      className="group relative flex min-w-0 flex-1 flex-col items-center gap-1 outline-none"
+                      tabIndex={0}
+                      role="img"
+                      aria-label={`${item.dateLabel}: ${item.totalCount} toileting events, ${item.wetCount} wet, ${item.bowelCount} bowel`}
+                      title={`${item.dateLabel}: ${item.totalCount} total, ${item.wetCount} wet, ${item.bowelCount} bowel`}
+                    >
+                      <div className="flex h-28 w-full items-end justify-center rounded-t-xl bg-slate-100 px-1 shadow-inner ring-1 ring-slate-200/70">
                         {item.totalCount > 0 ? (
                           <div
-                            className="flex w-full max-w-8 flex-col-reverse overflow-hidden rounded-t-lg shadow-sm"
+                            className="flex w-full max-w-9 flex-col-reverse overflow-hidden rounded-t-lg shadow-md ring-1 ring-slate-900/5"
                             style={{ height: `${totalHeight}px` }}
                           >
                             {item.wetCount > 0 ? (
                               <div
-                                className="bg-cyan-500"
+                                className="bg-teal-600"
                                 style={{ height: `${segmentHeight(item.wetCount)}px` }}
                               />
                             ) : null}
                             {item.bowelCount > 0 ? (
                               <div
-                                className="bg-amber-500"
+                                className="bg-orange-500"
                                 style={{ height: `${segmentHeight(item.bowelCount)}px` }}
                               />
                             ) : null}
                             {item.otherCount > 0 ? (
                               <div
-                                className="bg-violet-400"
+                                className="bg-violet-500"
                                 style={{ height: `${segmentHeight(item.otherCount)}px` }}
                               />
                             ) : null}
@@ -7739,6 +7767,12 @@ export default function KaylenCareMonitorDashboard({
                         ) : null}
                       </div>
                       <span className="text-[10px] font-bold text-slate-400">{item.dateLabel}</span>
+                      <div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-36 -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-[11px] font-bold text-slate-700 shadow-lg group-hover:block group-focus:block">
+                        <p className="text-slate-950">{item.dateLabel}</p>
+                        <p>Total: {item.totalCount}</p>
+                        <p>Wet: {item.wetCount}</p>
+                        <p>Bowel: {item.bowelCount}</p>
+                      </div>
                     </div>
                   );
                 })}
@@ -7754,6 +7788,9 @@ export default function KaylenCareMonitorDashboard({
                 </span>
               ))}
             </div>
+            <p className="mt-3 rounded-xl bg-cyan-50 px-3 py-2 text-xs font-semibold leading-5 text-cyan-900">
+              {patternInsight}
+            </p>
           </>
         ) : (
           <div className="mt-3 flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 px-3 text-center text-xs font-semibold text-slate-500">
