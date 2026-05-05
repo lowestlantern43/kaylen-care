@@ -2693,6 +2693,20 @@ export default function KaylenCareMonitorDashboard({
       return hour >= range.end;
     };
 
+    const isWindowUpcoming = (windowName) => {
+      const range = getWindowRange(windowName);
+      if (!range) return false;
+      const hour = now.getHours();
+      return hour < range.start;
+    };
+
+    const isWindowCurrent = (windowName) => {
+      const range = getWindowRange(windowName);
+      if (!range) return false;
+      const hour = now.getHours();
+      return hour >= range.start && hour < range.end;
+    };
+
     const isEntryInWindow = (entry, windowName) => {
       if (!windowName) return true;
       const lowerWindow = String(windowName).toLowerCase();
@@ -2749,11 +2763,24 @@ export default function KaylenCareMonitorDashboard({
             due.setHours(hours || 0, minutes || 0, 0, 0);
             return now.getTime() > due.getTime() + 60 * 60 * 1000;
           });
+          const hasFutureTime = !windowName && scheduledTimes.length
+            ? scheduledTimes.every((time) => {
+                if (!time || !time.includes(":")) return false;
+                const [hours, minutes] = time.split(":").map(Number);
+                const due = new Date();
+                due.setHours(hours || 0, minutes || 0, 0, 0);
+                return now.getTime() < due.getTime();
+              })
+            : false;
           const status = givenLog
             ? "taken"
             : missedLog || hasPastTime || isWindowPast(windowName)
               ? "missed"
-              : "due";
+              : isWindowUpcoming(windowName) || hasFutureTime
+                ? "upcoming"
+                : isWindowCurrent(windowName) || !scheduledTimes.length
+                  ? "due"
+                  : "upcoming";
           const id = [
             medicine.name,
             medicine.dose,
@@ -2768,7 +2795,13 @@ export default function KaylenCareMonitorDashboard({
             timeWindow: windowName,
             status,
             statusLabel:
-              status === "taken" ? "Taken" : status === "missed" ? "Missed" : "Due",
+              status === "taken"
+                ? "Taken"
+                : status === "missed"
+                  ? "Missed"
+                  : status === "upcoming"
+                    ? "Later"
+                    : "Due now",
           };
         });
       });
@@ -2779,7 +2812,7 @@ export default function KaylenCareMonitorDashboard({
 
     const alerts = [];
     if (!fluidMl) alerts.push("No fluids logged today");
-    if (requiredMedication.length) {
+    if (requiredMedication.some((item) => item.status !== "upcoming")) {
       alerts.push("Medication due but not fully logged");
     }
 
@@ -9419,8 +9452,24 @@ export default function KaylenCareMonitorDashboard({
 
             <div>
             {todayDashboard.requiredMedication.length ? (
-              <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3">
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700">
+              <div
+                className={`rounded-2xl border p-3 ${
+                  todayDashboard.requiredMedication.some(
+                    (medicine) => medicine.status === "due" || medicine.status === "missed",
+                  )
+                    ? "border-rose-100 bg-rose-50"
+                    : "border-sky-100 bg-sky-50"
+                }`}
+              >
+                <p
+                  className={`text-xs font-black uppercase tracking-[0.14em] ${
+                    todayDashboard.requiredMedication.some(
+                      (medicine) => medicine.status === "due" || medicine.status === "missed",
+                    )
+                      ? "text-rose-700"
+                      : "text-sky-700"
+                  }`}
+                >
                   Required medication today
                 </p>
                 <div className="mt-2 space-y-2">
@@ -9429,10 +9478,16 @@ export default function KaylenCareMonitorDashboard({
                       type="button"
                       key={medicine.id}
                       onClick={() =>
-                        !isReadOnly && openRequiredMedicationLog(medicine)
+                        !isReadOnly &&
+                        medicine.status !== "upcoming" &&
+                        openRequiredMedicationLog(medicine)
                       }
-                      disabled={isReadOnly}
-                      className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isReadOnly || medicine.status === "upcoming"}
+                      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-left disabled:cursor-not-allowed ${
+                        medicine.status === "upcoming"
+                          ? "bg-white/70 opacity-85"
+                          : "bg-white"
+                      }`}
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-black text-slate-900">
@@ -9452,12 +9507,16 @@ export default function KaylenCareMonitorDashboard({
                               ? "bg-emerald-100 text-emerald-700"
                               : medicine.status === "missed"
                                 ? "bg-rose-100 text-rose-700"
-                                : "bg-amber-100 text-amber-700"
+                                : medicine.status === "upcoming"
+                                  ? "bg-sky-100 text-sky-700"
+                                  : "bg-amber-100 text-amber-700"
                           }`}
                         >
                           {medicine.statusLabel}
                         </span>
-                        {medicine.status !== "taken" && !isReadOnly ? (
+                        {medicine.status !== "taken" &&
+                        medicine.status !== "upcoming" &&
+                        !isReadOnly ? (
                           <span className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white">
                             Log
                           </span>
