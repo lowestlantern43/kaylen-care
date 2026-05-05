@@ -2679,12 +2679,18 @@ export default function KaylenCareMonitorDashboard({
       ? Math.min(100, Math.round((fluidMl / fluidTargetMl) * 100))
       : 0;
 
+    const getWindowRange = (windowName) => {
+      if (windowName === "morning") return { start: 6, end: 12 };
+      if (windowName === "afternoon") return { start: 12, end: 18 };
+      if (windowName === "evening") return { start: 18, end: 24 };
+      return null;
+    };
+
     const isWindowPast = (windowName) => {
+      const range = getWindowRange(windowName);
+      if (!range) return false;
       const hour = now.getHours();
-      if (windowName === "morning") return hour >= 12;
-      if (windowName === "afternoon") return hour >= 17;
-      if (windowName === "evening") return hour >= 23;
-      return false;
+      return hour >= range.end;
     };
 
     const isEntryInWindow = (entry, windowName) => {
@@ -2697,10 +2703,8 @@ export default function KaylenCareMonitorDashboard({
       if (entryText.includes(lowerWindow)) return true;
       if (!entry.time || !String(entry.time).includes(":")) return false;
       const [hours] = String(entry.time).split(":").map(Number);
-      if (lowerWindow === "morning") return hours < 12;
-      if (lowerWindow === "afternoon") return hours >= 12 && hours < 17;
-      if (lowerWindow === "evening") return hours >= 17;
-      return false;
+      const range = getWindowRange(lowerWindow);
+      return range ? hours >= range.start && hours < range.end : false;
     };
 
     const allRequiredMedication = profileMedicationOptions
@@ -2731,8 +2735,14 @@ export default function KaylenCareMonitorDashboard({
               String(entry.medicationStatus || "").toLowerCase(),
             ),
           );
-          const scheduledTimes = medicine.times || [];
-          const hasPastTime = scheduledTimes.some((time) => {
+          const scheduledTimes = (medicine.times || []).filter((time) => {
+            if (!time || !time.includes(":")) return false;
+            if (!windowName) return true;
+            const [hours] = time.split(":").map(Number);
+            const range = getWindowRange(windowName);
+            return range ? hours >= range.start && hours < range.end : false;
+          });
+          const hasPastTime = !windowName && scheduledTimes.some((time) => {
             if (!time || !time.includes(":")) return false;
             const [hours, minutes] = time.split(":").map(Number);
             const due = new Date();
@@ -9353,89 +9363,62 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
-        <section className="mb-4 rounded-[1.75rem] border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              {
-                label: "Fluids",
-                value: todayDashboard.fluidTargetMl
-                  ? `${todayDashboard.fluidPercent}%`
-                  : `${Math.round(todayDashboard.fluidMl)}ml`,
-                meta: todayDashboard.fluidTargetMl
-                  ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
-                  : "No target set",
-                tone: todayDashboard.fluidTargetMl && todayDashboard.fluidPercent >= 60
-                  ? "border-sky-200 bg-sky-50 text-sky-800"
-                  : "border-amber-200 bg-amber-50 text-amber-800",
-              },
-              {
-                label: "Medication",
-                value: todayDashboard.medicationRequired
-                  ? `${todayDashboard.medicationTaken}/${todayDashboard.medicationRequired}`
-                  : "Not set",
-                meta: "taken / required",
-                tone:
-                  todayDashboard.medicationRequired &&
-                  todayDashboard.medicationTaken < todayDashboard.medicationRequired
-                    ? "border-rose-200 bg-rose-50 text-rose-800"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-800",
-              },
-            ].map((item) => (
-              <div
-                key={item.label}
-                className={`min-w-0 rounded-2xl border px-3 py-2 ${item.tone}`}
-              >
-                <p className="text-[10px] font-black uppercase tracking-[0.14em] opacity-75">
-                  {item.label}
-                </p>
-                <p className="mt-1 truncate text-lg font-black">{item.value}</p>
-                <p className="truncate text-[11px] font-bold opacity-75">{item.meta}</p>
-              </div>
-            ))}
+        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Today
+              </p>
+              <h2 className="text-lg font-black text-slate-950">
+                Fluids and required medication
+              </h2>
+            </div>
+            <p className="text-xs font-bold text-slate-500">
+              {todayDashboard.medicationRequired
+                ? `${todayDashboard.medicationTaken}/${todayDashboard.medicationRequired} medication doses logged`
+                : "No required medication set"}
+            </p>
           </div>
-        </section>
 
-        <section className="mb-5 grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-[2rem] border border-sky-100 bg-white p-4 shadow-sm">
+          <div className="mt-3 grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
             <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">
-                    Fluids today
-                  </p>
-                  <p className="mt-0.5 text-sm font-bold text-slate-700">
-                    {todayDashboard.fluidTargetMl
-                      ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
-                      : `${Math.round(todayDashboard.fluidMl)}ml logged`}
-                  </p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">
+                      Fluids today
+                    </p>
+                    <p className="mt-0.5 text-sm font-bold text-slate-700">
+                      {todayDashboard.fluidTargetMl
+                        ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+                        : `${Math.round(todayDashboard.fluidMl)}ml logged`}
+                    </p>
+                  </div>
+                  {todayDashboard.fluidTargetMl ? (
+                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700">
+                      {todayDashboard.fluidPercent}%
+                    </span>
+                  ) : null}
                 </div>
-                {todayDashboard.fluidTargetMl ? (
-                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700">
-                    {todayDashboard.fluidPercent}%
-                  </span>
+                <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
+                  <div
+                    className="h-full rounded-full bg-sky-500 transition-all"
+                    style={{
+                      width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
+                    }}
+                  />
+                </div>
+                {!todayDashboard.fluidTargetMl ? (
+                  <button
+                    type="button"
+                    onClick={onOpenChildSetup}
+                    className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
+                  >
+                    Set a daily fluid target in Care Profile
+                  </button>
                 ) : null}
               </div>
-              <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
-                <div
-                  className="h-full rounded-full bg-sky-500 transition-all"
-                  style={{
-                    width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
-                  }}
-                />
-              </div>
-              {!todayDashboard.fluidTargetMl ? (
-                <button
-                  type="button"
-                  onClick={onOpenChildSetup}
-                  className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
-                >
-                  Set a daily fluid target in Care Profile
-                </button>
-              ) : null}
-            </div>
-          </div>
 
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
             {todayDashboard.requiredMedication.length ? (
               <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700">
@@ -9521,6 +9504,7 @@ export default function KaylenCareMonitorDashboard({
                 ))}
               </div>
             ) : null}
+            </div>
           </div>
         </section>
 
