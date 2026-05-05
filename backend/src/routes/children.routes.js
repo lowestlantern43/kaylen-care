@@ -30,6 +30,7 @@ const profileFields = [
   "triggers",
   "calmingStrategies",
   "eatingPreferences",
+  "dailyFluidTargetMl",
   "sleepPreferences",
   "toiletingNotes",
   "sensoryNeeds",
@@ -49,12 +50,23 @@ const profileColumnMap = {
   triggers: "triggers",
   calmingStrategies: "calming_strategies",
   eatingPreferences: "eating_preferences",
+  dailyFluidTargetMl: "daily_fluid_target_ml",
   sleepPreferences: "sleep_preferences",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
   schoolEhcpNotes: "school_ehcp_notes",
   medicalNotes: "medical_notes",
 };
+
+function optionalInteger(reqBody, key, label) {
+  const value = reqBody?.[key];
+  if (value === undefined || value === null || value === "") return null;
+  const numberValue = Number.parseInt(value, 10);
+  if (!Number.isFinite(numberValue) || numberValue < 0) {
+    throw badRequest(`${label} must be a positive number.`);
+  }
+  return numberValue;
+}
 
 async function assertChildInFamily(childId, familyId) {
   const { rows } = await query(
@@ -271,6 +283,7 @@ childrenRouter.get(
           triggers,
           calming_strategies AS "calmingStrategies",
           eating_preferences AS "eatingPreferences",
+          daily_fluid_target_ml AS "dailyFluidTargetMl",
           sleep_preferences AS "sleepPreferences",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
@@ -297,7 +310,11 @@ childrenRouter.put(
     const childId = requireUuid(req.params.childId, "Child ID");
     await assertChildInFamily(childId, req.familyMember.family_id);
 
-    const values = profileFields.map((field) => optionalString(req.body, field));
+    const values = profileFields.map((field) =>
+      field === "dailyFluidTargetMl"
+        ? optionalInteger(req.body, field, "Daily fluid target")
+        : optionalString(req.body, field),
+    );
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
     const updateColumns = profileFields.map(
@@ -330,6 +347,7 @@ childrenRouter.put(
           triggers,
           calming_strategies AS "calmingStrategies",
           eating_preferences AS "eatingPreferences",
+          daily_fluid_target_ml AS "dailyFluidTargetMl",
           sleep_preferences AS "sleepPreferences",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",

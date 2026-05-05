@@ -51,6 +51,27 @@ const safeRandomId = () => {
   return randomUuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const medicationTimeWindows = ["morning", "afternoon", "evening"];
+
+const formatTimeWindowLabel = (value) =>
+  cleanFormText(value).replace(/^./, (letter) => letter.toUpperCase());
+
+const normaliseMedicationTimeWindows = (value) => {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => item.trim());
+
+  return Array.from(
+    new Set(
+      rawItems
+        .map((item) => cleanFormText(item).toLowerCase())
+        .filter((item) => medicationTimeWindows.includes(item)),
+    ),
+  );
+};
+
 const parseMedicationProfile = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -73,6 +94,7 @@ const parseMedicationProfile = (value = "") => {
           .split("|")
           .map((part) => cleanFormText(part));
         const dose = [doseAmount, doseUnit].filter(Boolean).join(" ");
+        const timeWindows = normaliseMedicationTimeWindows(timeWindow);
         return {
           name,
           doseAmount,
@@ -85,7 +107,8 @@ const parseMedicationProfile = (value = "") => {
           active: active !== "inactive",
           notes,
           requiredDaily: requiredDaily === "required",
-          timeWindow,
+          timeWindow: timeWindows[0] || "",
+          timeWindows,
         };
       }
 
@@ -93,7 +116,7 @@ const parseMedicationProfile = (value = "") => {
         line.includes(item),
       );
       if (!separator) {
-        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "" };
+        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "", timeWindows: [] };
       }
       const [name, ...doseParts] = line.split(separator);
       const dose = cleanFormText(doseParts.join(separator));
@@ -107,6 +130,7 @@ const parseMedicationProfile = (value = "") => {
         notes: "",
         requiredDaily: false,
         timeWindow: "",
+        timeWindows: [],
       };
     })
     .filter((item) => item.name && item.active !== false);
@@ -541,7 +565,6 @@ export default function KaylenCareMonitorDashboard({
 
   const [activeSaveAction, setActiveSaveAction] = useState("");
   const saveLockRef = useRef(false);
-  const [overviewIndex, setOverviewIndex] = useState(0);
   const [reportOverviewIndex, setReportOverviewIndex] = useState(0);
   const offlineQueueKey = `familytrack:offline-log-queue:${familyId || "legacy"}`;
   const careSnapshotPromptKey = `familytrack:care-snapshot-prompt-dismissed:${familyId || "legacy"}:${childId || "legacy"}`;
@@ -2644,7 +2667,13 @@ export default function KaylenCareMonitorDashboard({
       (sum, entry) => sum + getFluidMlFromEntry(entry),
       0,
     );
-    const lastSleep = latestTwoBySection.sleep?.[0] || null;
+    const fluidTargetMl = Math.max(
+      0,
+      Number.parseInt(childProfile.dailyFluidTargetMl || 0, 10) || 0,
+    );
+    const fluidPercent = fluidTargetMl
+      ? Math.min(100, Math.round((fluidMl / fluidTargetMl) * 100))
+      : 0;
 
     const isWindowPast = (windowName) => {
       const hour = now.getHours();
@@ -2654,154 +2683,109 @@ export default function KaylenCareMonitorDashboard({
       return false;
     };
 
-    const requiredMedication = profileMedicationOptions
+    const isEntryInWindow = (entry, windowName) => {
+      if (!windowName) return true;
+      const lowerWindow = String(windowName).toLowerCase();
+      const entryText = [entry.summary, entry.notes, entry.details]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      if (entryText.includes(lowerWindow)) return true;
+      if (!entry.time || !String(entry.time).includes(":")) return false;
+      const [hours] = String(entry.time).split(":").map(Number);
+      if (lowerWindow === "morning") return hours < 12;
+      if (lowerWindow === "afternoon") return hours >= 12 && hours < 17;
+      if (lowerWindow === "evening") return hours >= 17;
+      return false;
+    };
+
+    const allRequiredMedication = profileMedicationOptions
       .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
-      .map((medicine) => {
+      .flatMap((medicine) => {
+        const windows = normaliseMedicationTimeWindows(
+          medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+        );
+        const doseWindows = windows.length ? windows : [""];
         const matchingLogs = todayMedicationEntries.filter((entry) =>
           String(entry.summary || "")
             .toLowerCase()
             .includes(String(medicine.name || "").toLowerCase()),
         );
-        const givenLog = matchingLogs.find(
-          (entry) =>
-            !["missed", "refused"].includes(
+
+        return doseWindows.map((windowName) => {
+          const slotLogs = matchingLogs.filter((entry) =>
+            isEntryInWindow(entry, windowName),
+          );
+          const givenLog = slotLogs.find(
+            (entry) =>
+              !["missed", "refused"].includes(
+                String(entry.medicationStatus || "").toLowerCase(),
+              ),
+          );
+          const missedLog = slotLogs.find((entry) =>
+            ["missed", "refused"].includes(
               String(entry.medicationStatus || "").toLowerCase(),
             ),
-        );
-        const missedLog = matchingLogs.find((entry) =>
-          ["missed", "refused"].includes(
-            String(entry.medicationStatus || "").toLowerCase(),
-          ),
-        );
-        const scheduledTimes = medicine.times || [];
-        const hasPastTime = scheduledTimes.some((time) => {
-          if (!time || !time.includes(":")) return false;
-          const [hours, minutes] = time.split(":").map(Number);
-          const due = new Date();
-          due.setHours(hours || 0, minutes || 0, 0, 0);
-          return now.getTime() > due.getTime() + 60 * 60 * 1000;
+          );
+          const scheduledTimes = medicine.times || [];
+          const hasPastTime = scheduledTimes.some((time) => {
+            if (!time || !time.includes(":")) return false;
+            const [hours, minutes] = time.split(":").map(Number);
+            const due = new Date();
+            due.setHours(hours || 0, minutes || 0, 0, 0);
+            return now.getTime() > due.getTime() + 60 * 60 * 1000;
+          });
+          const status = givenLog
+            ? "taken"
+            : missedLog || hasPastTime || isWindowPast(windowName)
+              ? "missed"
+              : "due";
+          const id = [
+            medicine.name,
+            medicine.dose,
+            windowName || "daily",
+          ]
+            .filter(Boolean)
+            .join("|")
+            .toLowerCase();
+          return {
+            ...medicine,
+            id,
+            timeWindow: windowName,
+            status,
+            statusLabel:
+              status === "taken" ? "Taken" : status === "missed" ? "Missed" : "Due",
+          };
         });
-        const status = givenLog
-          ? "taken"
-          : missedLog || hasPastTime || isWindowPast(medicine.timeWindow)
-            ? "missed"
-            : "due";
-        return {
-          ...medicine,
-          status,
-          statusLabel:
-            status === "taken" ? "Taken" : status === "missed" ? "Missed" : "Due",
-        };
       });
+
+    const requiredMedication = allRequiredMedication.filter(
+      (item) => item.status !== "taken",
+    );
 
     const alerts = [];
     if (!fluidMl) alerts.push("No fluids logged today");
-    if (requiredMedication.some((item) => item.status !== "taken")) {
+    if (requiredMedication.length) {
       alerts.push("Medication due but not fully logged");
     }
-    if (!lastSleep) alerts.push("No sleep logged last night");
-    if (!todayToiletingEntries.length) alerts.push("No toileting logged today");
 
     return {
       today,
       entriesToday: todayEntries.length,
       healthToday: todayHealthEntries.length,
       fluidMl,
+      fluidTargetMl,
+      fluidPercent,
       drinkCount: todayDrinkEntries.length,
       toiletingCount: todayToiletingEntries.length,
-      medicationTaken: requiredMedication.filter((item) => item.status === "taken")
+      medicationTaken: allRequiredMedication.filter((item) => item.status === "taken")
         .length,
-      medicationRequired: requiredMedication.length,
+      medicationRequired: allRequiredMedication.length,
+      allRequiredMedication,
       requiredMedication,
-      lastSleep,
       alerts,
     };
-  }, [latestTwoBySection.sleep, profileMedicationOptions, sharedLog]);
-
-  const overviewItems = useMemo(() => {
-    const lastMedication = latestTwoBySection.medication?.[0];
-    const lastDrink = sharedLog.find(
-      (entry) => entry.section === "Food Diary" && entry.isMilk,
-    );
-    const pendingRegularMedication = medicationSchedules.filter(
-      (schedule) => schedule.status === "missed",
-    ).length;
-    const nothingLoggedToday = todayDashboard.entriesToday === 0;
-    const requiredMedicationMissing =
-      todayDashboard.medicationRequired - todayDashboard.medicationTaken;
-
-    return [
-      {
-        key: "today",
-        title: "Today status",
-        emoji: "Today",
-        tone: nothingLoggedToday
-          ? "border-amber-200 bg-amber-50 text-amber-800"
-          : "border-emerald-200 bg-emerald-50 text-emerald-800",
-        summary: nothingLoggedToday
-          ? "Nothing logged today yet"
-          : `${todayDashboard.entriesToday} entr${todayDashboard.entriesToday === 1 ? "y" : "ies"} logged today`,
-        meta: todayDashboard.healthToday
-          ? `${todayDashboard.healthToday} health note${todayDashboard.healthToday === 1 ? "" : "s"}`
-          : "No health alerts today",
-      },
-      {
-        key: "sleep",
-        title: "Last sleep",
-        emoji: "Sleep",
-        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
-        summary: todayDashboard.lastSleep
-          ? todayDashboard.lastSleep.durationMinutes
-            ? `${formatHoursMinutes(todayDashboard.lastSleep.durationMinutes)} sleep recorded`
-            : todayDashboard.lastSleep.wakeTime
-              ? todayDashboard.lastSleep.summary
-              : "Bedtime logged, wake time still needed"
-          : "No sleep logged yet",
-        meta: todayDashboard.lastSleep?.date || "Add sleep to build a clearer picture",
-      },
-      {
-        key: "drink",
-        title: "Drink check",
-        emoji: "Drink",
-        tone: "border-sky-200 bg-sky-50 text-sky-800",
-        summary: todayDashboard.fluidMl
-          ? `${Math.round(todayDashboard.fluidMl)}ml logged today`
-          : lastDrink
-            ? `No drinks today yet. Last drink: ${lastDrink.summary}`
-            : "No drinks logged yet",
-        meta: todayDashboard.drinkCount
-          ? `${todayDashboard.drinkCount} drink entr${todayDashboard.drinkCount === 1 ? "y" : "ies"}`
-          : "Good to log fluids as the day goes on",
-      },
-      {
-        key: "medication",
-        title: "Medication check",
-        emoji: "Meds",
-        tone:
-          requiredMedicationMissing || pendingRegularMedication
-            ? "border-rose-200 bg-rose-50 text-rose-800"
-            : "border-violet-200 bg-violet-50 text-violet-800",
-        summary: requiredMedicationMissing
-          ? `${todayDashboard.medicationTaken} of ${todayDashboard.medicationRequired} required medication${todayDashboard.medicationRequired === 1 ? "" : "s"} logged`
-          : pendingRegularMedication
-            ? `${pendingRegularMedication} regular medication reminder${pendingRegularMedication === 1 ? "" : "s"} need attention`
-            : lastMedication
-              ? `Last medication: ${lastMedication.summary}`
-              : "No medication logged yet",
-        meta: todayDashboard.medicationRequired
-          ? "Daily medication checklist"
-          : "No required daily meds set",
-      },
-    ];
-  }, [latestTwoBySection, medicationSchedules, sharedLog, todayDashboard]);
-
-  useEffect(() => {
-    if (!overviewItems.length) return;
-    const timer = setInterval(() => {
-      setOverviewIndex((current) => (current + 1) % overviewItems.length);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, [overviewItems.length]);
+  }, [childProfile.dailyFluidTargetMl, profileMedicationOptions, sharedLog]);
 
   useEffect(() => {
     const reportCardCount = 3;
@@ -2810,8 +2794,6 @@ export default function KaylenCareMonitorDashboard({
     }, 3200);
     return () => clearInterval(timer);
   }, []);
-
-  const activeOverview = overviewItems[overviewIndex] || overviewItems[0];
 
   const reportCategoryOrder = [
     "Food Diary",
@@ -6278,13 +6260,15 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const markRequiredMedicationAsTaken = async (medicine) => {
-    if (!medicine?.name || medicine.status === "taken") return;
+    if (!medicine?.name || medicine.status === "taken" || activeSaveAction) return;
     if (!familyId || !childId) {
       alert("Choose a family and child before saving.");
       return;
     }
 
+    const actionKey = `required-medication-${medicine.id || medicine.name}`;
     try {
+      setActiveSaveAction(actionKey);
       const saved = await createCareLogWithOfflineQueue({
         childId,
         category: "medication",
@@ -6295,9 +6279,10 @@ export default function KaylenCareMonitorDashboard({
           dose: medicine.dose || "",
           status: "given",
           given_by: "Quick checklist",
+          time_window: medicine.timeWindow || "",
         },
         notes: medicine.timeWindow
-          ? `Marked from daily checklist (${medicine.timeWindow})`
+          ? `Marked from daily checklist (${formatTimeWindowLabel(medicine.timeWindow)})`
           : "Marked from daily checklist",
       });
       await loadEntriesFromSupabase();
@@ -6305,6 +6290,8 @@ export default function KaylenCareMonitorDashboard({
     } catch (error) {
       console.error("Daily medication checklist save failed:", error);
       alert(error.message || "Medication save failed");
+    } finally {
+      setActiveSaveAction("");
     }
   };
 
@@ -9363,25 +9350,17 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <section className="mb-4 rounded-[1.75rem] border border-slate-200 bg-white p-3 shadow-sm">
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2">
             {[
               {
-                label: "Sleep",
-                value: todayDashboard.lastSleep?.durationMinutes
-                  ? formatHoursMinutes(todayDashboard.lastSleep.durationMinutes)
-                  : "Missing",
-                meta: todayDashboard.lastSleep?.quality
-                  ? `Quality: ${todayDashboard.lastSleep.quality}`
-                  : "Last sleep",
-                tone: todayDashboard.lastSleep
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-amber-200 bg-amber-50 text-amber-800",
-              },
-              {
                 label: "Fluids",
-                value: `${Math.round(todayDashboard.fluidMl)}ml`,
-                meta: `${todayDashboard.drinkCount} drink entr${todayDashboard.drinkCount === 1 ? "y" : "ies"}`,
-                tone: todayDashboard.fluidMl
+                value: todayDashboard.fluidTargetMl
+                  ? `${todayDashboard.fluidPercent}%`
+                  : `${Math.round(todayDashboard.fluidMl)}ml`,
+                meta: todayDashboard.fluidTargetMl
+                  ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+                  : "No target set",
+                tone: todayDashboard.fluidTargetMl && todayDashboard.fluidPercent >= 60
                   ? "border-sky-200 bg-sky-50 text-sky-800"
                   : "border-amber-200 bg-amber-50 text-amber-800",
               },
@@ -9395,15 +9374,7 @@ export default function KaylenCareMonitorDashboard({
                   todayDashboard.medicationRequired &&
                   todayDashboard.medicationTaken < todayDashboard.medicationRequired
                     ? "border-rose-200 bg-rose-50 text-rose-800"
-                    : "border-emerald-200 bg-emerald-50 text-emerald-800",
-              },
-              {
-                label: "Toileting",
-                value: `${todayDashboard.toiletingCount}`,
-                meta: "today",
-                tone: todayDashboard.toiletingCount
-                  ? "border-cyan-200 bg-cyan-50 text-cyan-800"
-                  : "border-amber-200 bg-amber-50 text-amber-800",
+                  : "border-emerald-200 bg-emerald-50 text-emerald-800",
               },
             ].map((item) => (
               <div
@@ -9420,71 +9391,71 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </section>
 
-        <section className="mb-5">
-          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Quick overview
-                </p>
-                <h2 className="mt-1 text-lg font-bold tracking-tight text-slate-900 md:text-xl">
-                  Today at a glance
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                {overviewItems.map((item, index) => (
-                  <span
-                    key={item.key}
-                    className={`h-2 w-2 rounded-full transition ${
-                      index === overviewIndex ? "bg-slate-700" : "bg-slate-300"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 p-3">
+        <section className="mb-5 grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-[2rem] border border-sky-100 bg-white p-4 shadow-sm">
+            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">
                     Fluids today
                   </p>
                   <p className="mt-0.5 text-sm font-bold text-slate-700">
-                    {Math.round(todayDashboard.fluidMl)}ml logged
+                    {todayDashboard.fluidTargetMl
+                      ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+                      : `${Math.round(todayDashboard.fluidMl)}ml logged`}
                   </p>
                 </div>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700">
-                  target 1000ml
-                </span>
+                {todayDashboard.fluidTargetMl ? (
+                  <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700">
+                    {todayDashboard.fluidPercent}%
+                  </span>
+                ) : null}
               </div>
               <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
                 <div
                   className="h-full rounded-full bg-sky-500 transition-all"
                   style={{
-                    width: `${Math.min(100, Math.round((todayDashboard.fluidMl / 1000) * 100))}%`,
+                    width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
                   }}
                 />
               </div>
+              {!todayDashboard.fluidTargetMl ? (
+                <button
+                  type="button"
+                  onClick={onOpenChildSetup}
+                  className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
+                >
+                  Set a daily fluid target in Care Profile
+                </button>
+              ) : null}
             </div>
+          </div>
 
+          <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
             {todayDashboard.requiredMedication.length ? (
-              <div className="mt-3 rounded-2xl border border-rose-100 bg-rose-50 p-3">
+              <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3">
                 <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700">
                   Required medication today
                 </p>
                 <div className="mt-2 space-y-2">
                   {todayDashboard.requiredMedication.map((medicine) => (
-                    <div
-                      key={`${medicine.name}-${medicine.timeWindow || "daily"}`}
-                      className="flex items-center justify-between gap-2 rounded-xl bg-white px-3 py-2"
+                    <button
+                      type="button"
+                      key={medicine.id}
+                      onClick={() =>
+                        !isReadOnly && markRequiredMedicationAsTaken(medicine)
+                      }
+                      disabled={isReadOnly || activeSaveAction === `required-medication-${medicine.id}`}
+                      className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-black text-slate-900">
                           {medicine.name}
                         </p>
                         <p className="truncate text-xs font-bold text-slate-500">
-                          {[medicine.dose, medicine.timeWindow].filter(Boolean).join(" - ") ||
+                          {[medicine.dose, formatTimeWindowLabel(medicine.timeWindow)]
+                            .filter(Boolean)
+                            .join(" - ") ||
                             "Daily medication"}
                         </p>
                       </div>
@@ -9501,20 +9472,38 @@ export default function KaylenCareMonitorDashboard({
                           {medicine.statusLabel}
                         </span>
                         {medicine.status !== "taken" && !isReadOnly ? (
-                          <button
-                            type="button"
-                            onClick={() => markRequiredMedicationAsTaken(medicine)}
-                            className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white"
-                          >
-                            Mark
-                          </button>
+                          <span className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white">
+                            {activeSaveAction === `required-medication-${medicine.id}`
+                              ? "Saving"
+                              : "Mark"}
+                          </span>
                         ) : null}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
-            ) : null}
+            ) : (
+              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
+                  Required medication today
+                </p>
+                <p className="mt-1 text-sm font-bold text-emerald-900">
+                  {todayDashboard.medicationRequired
+                    ? "All required medication doses have been logged today."
+                    : "No required daily medication is set for this child."}
+                </p>
+                {!todayDashboard.medicationRequired ? (
+                  <button
+                    type="button"
+                    onClick={onOpenChildSetup}
+                    className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700"
+                  >
+                    Set required medication
+                  </button>
+                ) : null}
+              </div>
+            )}
 
             {todayDashboard.alerts.length ? (
               <div className="mt-3 flex flex-wrap gap-1.5">
@@ -9528,31 +9517,6 @@ export default function KaylenCareMonitorDashboard({
                 ))}
               </div>
             ) : null}
-
-            <div
-              className={`mt-3 rounded-2xl border px-4 py-3 ${activeOverview.tone}`}
-            >
-              <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/70 text-2xl shadow-sm">
-                  {activeOverview.emoji}
-                </div>
-
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs font-bold uppercase tracking-[0.14em]">
-                      {activeOverview.title}
-                    </p>
-                    <span className="rounded-full bg-white/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                      {activeOverview.meta}
-                    </span>
-                  </div>
-
-                  <p className="mt-1.5 break-words text-sm font-bold leading-5 text-slate-900">
-                    {activeOverview.summary}
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 

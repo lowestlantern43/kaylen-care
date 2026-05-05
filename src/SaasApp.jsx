@@ -570,6 +570,27 @@ const issueSeverityLabels = {
   blocking: "Blocking",
 };
 
+const medicationTimeWindows = ["morning", "afternoon", "evening"];
+
+const formatTimeWindowLabel = (value) =>
+  cleanFormText(value).replace(/^./, (letter) => letter.toUpperCase());
+
+const normaliseMedicationTimeWindows = (value) => {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => item.trim());
+
+  return Array.from(
+    new Set(
+      rawItems
+        .map((item) => cleanFormText(item).toLowerCase())
+        .filter((item) => medicationTimeWindows.includes(item)),
+    ),
+  );
+};
+
 const parseCareMedicationRows = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -591,6 +612,7 @@ const parseCareMedicationRows = (value = "") => {
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
+        const timeWindows = normaliseMedicationTimeWindows(timeWindow);
         return {
           name,
           doseAmount,
@@ -602,7 +624,8 @@ const parseCareMedicationRows = (value = "") => {
           active: active !== "inactive",
           notes,
           requiredDaily: requiredDaily === "required",
-          timeWindow,
+          timeWindow: timeWindows[0] || "",
+          timeWindows,
         };
       }
 
@@ -619,6 +642,7 @@ const parseCareMedicationRows = (value = "") => {
           notes: "",
           requiredDaily: false,
           timeWindow: "",
+          timeWindows: [],
         };
       }
 
@@ -632,6 +656,7 @@ const parseCareMedicationRows = (value = "") => {
         notes: "",
         requiredDaily: false,
         timeWindow: "",
+        timeWindows: [],
       };
     })
     .filter((item) => item.name || item.doseAmount || item.notes);
@@ -649,7 +674,9 @@ const serializeCareMedicationRows = (rows) =>
       active: row.active === false ? "inactive" : "active",
       notes: cleanFormText(row.notes),
       requiredDaily: row.requiredDaily ? "required" : "",
-      timeWindow: cleanFormText(row.timeWindow),
+      timeWindow: normaliseMedicationTimeWindows(
+        row.timeWindows?.length ? row.timeWindows : row.timeWindow,
+      ).join(","),
     }))
     .filter((row) => row.name || row.doseAmount || row.notes)
     .map((row) =>
@@ -675,6 +702,7 @@ const emptyCareMedicationRow = () => ({
   notes: "",
   requiredDaily: false,
   timeWindow: "",
+  timeWindows: [],
 });
 
 const careMedicationRowsFromProfile = (value = "") => {
@@ -929,6 +957,7 @@ const emptyChildProfile = {
   triggers: "",
   calmingStrategies: "",
   eatingPreferences: "",
+  dailyFluidTargetMl: "",
   sleepPreferences: "",
   toiletingNotes: "",
   sensoryNeeds: "",
@@ -3104,6 +3133,11 @@ function WorkspaceGate({ session, onLogout }) {
       times: (regularMedicationDraft.times || [])
         .map((time) => cleanFormText(time))
         .filter(Boolean),
+      timeWindows: normaliseMedicationTimeWindows(
+        regularMedicationDraft.timeWindows?.length
+          ? regularMedicationDraft.timeWindows
+          : regularMedicationDraft.timeWindow,
+      ),
       active: regularMedicationDraft.active !== false,
       notes: cleanFormText(regularMedicationDraft.notes),
     };
@@ -3126,6 +3160,9 @@ function WorkspaceGate({ session, onLogout }) {
       ...emptyCareMedicationRow(),
       ...row,
       times: row.times?.length ? row.times : [""],
+      timeWindows: normaliseMedicationTimeWindows(
+        row.timeWindows?.length ? row.timeWindows : row.timeWindow,
+      ),
     });
     setEditingCareMedicationIndex(index);
   };
@@ -3161,6 +3198,7 @@ function WorkspaceGate({ session, onLogout }) {
         notes: "",
         requiredDaily: false,
         timeWindow: "",
+        timeWindows: [],
       },
     ];
     const nextProfile = {
@@ -5426,21 +5464,54 @@ function WorkspaceGate({ session, onLogout }) {
                           />
                           Required daily
                         </label>
-                        <select
-                          className={`${inputClass} mt-0`}
-                          value={regularMedicationDraft.timeWindow || ""}
-                          onChange={(event) =>
-                            updateRegularMedicationDraft(
-                              "timeWindow",
-                              event.target.value,
-                            )
-                          }
-                        >
-                          <option value="">Any time</option>
-                          <option value="morning">Morning</option>
-                          <option value="afternoon">Afternoon</option>
-                          <option value="evening">Evening</option>
-                        </select>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 md:col-span-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                            Required dose windows
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {medicationTimeWindows.map((windowName) => {
+                              const selectedWindows =
+                                normaliseMedicationTimeWindows(
+                                  regularMedicationDraft.timeWindows?.length
+                                    ? regularMedicationDraft.timeWindows
+                                    : regularMedicationDraft.timeWindow,
+                                );
+                              const checked =
+                                selectedWindows.includes(windowName);
+                              return (
+                                <label
+                                  key={windowName}
+                                  className={`flex min-h-[40px] items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold ${
+                                    checked
+                                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                                      : "border-slate-200 bg-slate-50 text-slate-600"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={(event) => {
+                                      const nextWindows = event.target.checked
+                                        ? [...selectedWindows, windowName]
+                                        : selectedWindows.filter(
+                                            (item) => item !== windowName,
+                                          );
+                                      setRegularMedicationDraft((current) => ({
+                                        ...current,
+                                        timeWindows: nextWindows,
+                                        timeWindow: nextWindows[0] || "",
+                                      }));
+                                    }}
+                                  />
+                                  {formatTimeWindowLabel(windowName)}
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <p className="mt-2 text-xs font-semibold text-slate-500">
+                            Pick each daily dose slot this medicine is required for.
+                          </p>
+                        </div>
                         <div className="min-w-0 md:col-span-3">
                           <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                             Rough scheduled times
@@ -5565,9 +5636,18 @@ function WorkspaceGate({ session, onLogout }) {
                                         </span>
                                       ) : null}
                                       {row.timeWindow ? (
-                                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">
-                                          {row.timeWindow}
-                                        </span>
+                                        normaliseMedicationTimeWindows(
+                                          row.timeWindows?.length
+                                            ? row.timeWindows
+                                            : row.timeWindow,
+                                        ).map((windowName) => (
+                                          <span
+                                            key={windowName}
+                                            className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700"
+                                          >
+                                            {formatTimeWindowLabel(windowName)}
+                                          </span>
+                                        ))
                                       ) : null}
                                     </div>
                                   </div>
@@ -5607,6 +5687,33 @@ function WorkspaceGate({ session, onLogout }) {
                         </p>
                       )}
                     </div>
+                  </section>
+
+                  <section className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
+                    <h4 className="font-bold text-slate-900">
+                      Daily fluid target
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Used for the dashboard fluids progress bar. Leave blank if
+                      you do not want a target yet.
+                    </p>
+                    <label className="mt-3 block text-sm font-semibold text-slate-700">
+                      Target per day (ml)
+                      <input
+                        className={inputClass}
+                        inputMode="numeric"
+                        min="0"
+                        type="number"
+                        value={childProfile.dailyFluidTargetMl || ""}
+                        onChange={(event) =>
+                          setChildProfile({
+                            ...childProfile,
+                            dailyFluidTargetMl: event.target.value,
+                          })
+                        }
+                        placeholder="e.g. 1000"
+                      />
+                    </label>
                   </section>
 
                   <div className="grid gap-3 md:grid-cols-2">
