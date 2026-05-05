@@ -2525,96 +2525,102 @@ export default function KaylenCareMonitorDashboard({
   }, [sharedLog]);
 
   const overviewItems = useMemo(() => {
-    const sleepDurations = recentEntries
-      .filter((entry) => entry.section === "Sleep" && Number(entry.durationMinutes) > 0)
-      .map((entry) => Number(entry.durationMinutes));
-    const avgSleepMinutes = sleepDurations.length
-      ? Math.round(
-          sleepDurations.reduce((sum, minutes) => sum + minutes, 0) /
-            sleepDurations.length,
-        )
-      : 0;
-    const fluidMl = recentEntries.reduce(
+    const today = todayValue();
+    const todayEntries = sharedLog.filter((entry) => entry.date === today);
+    const todayDrinkEntries = todayEntries.filter(
+      (entry) => entry.section === "Food Diary" && entry.isMilk,
+    );
+    const todayMedicationEntries = todayEntries.filter(
+      (entry) => entry.section === "Medication",
+    );
+    const todayHealthEntries = todayEntries.filter(
+      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
+    );
+    const todayFluidMl = todayDrinkEntries.reduce(
       (sum, entry) => sum + getFluidMlFromEntry(entry),
       0,
     );
-    const medicationLogs = recentEntries.filter(
-      (entry) => entry.section === "Medication",
-    ).length;
-    const medicationIssues = recentEntries.filter(
+
+    const lastSleep = latestTwoBySection.sleep?.[0];
+    const lastMedication = latestTwoBySection.medication?.[0];
+    const lastDrink = sharedLog.find(
+      (entry) => entry.section === "Food Diary" && entry.isMilk,
+    );
+    const medicationIssuesToday = todayMedicationEntries.filter(
       (entry) =>
-        entry.section === "Medication" &&
         ["missed", "late", "refused"].includes(
           String(entry.medicationStatus || "").toLowerCase(),
         ),
     ).length;
-    const toiletingDays = new Set(
-      recentEntries
-        .filter((entry) => entry.section === "Toileting")
-        .map((entry) => entry.date),
-    ).size;
-    const healthAlerts = recentEntries.filter(
-      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
+    const pendingRegularMedication = medicationSchedules.filter(
+      (schedule) => schedule.status === "missed",
     ).length;
+    const nothingLoggedToday = todayEntries.length === 0;
 
     return [
       {
-        key: "sleep",
-        title: "Sleep signal",
-        emoji: "Moon",
-        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
-        summary: avgSleepMinutes
-          ? `Average ${formatHoursMinutes(avgSleepMinutes)} over this range`
-          : "Not enough completed sleep logs yet",
-        meta:
-          sleepDurations.length >= 2
-            ? `${sleepDurations.length} completed sleeps`
-            : "Add wake times for clearer trends",
+        key: "today",
+        title: "Today status",
+        emoji: "Today",
+        tone: nothingLoggedToday
+          ? "border-amber-200 bg-amber-50 text-amber-800"
+          : "border-emerald-200 bg-emerald-50 text-emerald-800",
+        summary: nothingLoggedToday
+          ? "Nothing logged today yet"
+          : `${todayEntries.length} entr${todayEntries.length === 1 ? "y" : "ies"} logged today`,
+        meta: todayHealthEntries.length
+          ? `${todayHealthEntries.length} health note${todayHealthEntries.length === 1 ? "" : "s"}`
+          : "No health alerts today",
       },
       {
-        key: "fluids",
-        title: "Fluid signal",
-        emoji: "Water",
+        key: "sleep",
+        title: "Last sleep",
+        emoji: "Sleep",
+        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
+        summary: lastSleep
+          ? lastSleep.durationMinutes
+            ? `${formatHoursMinutes(lastSleep.durationMinutes)} sleep recorded`
+            : lastSleep.wakeTime
+              ? lastSleep.summary
+              : "Bedtime logged, wake time still needed"
+          : "No sleep logged yet",
+        meta: lastSleep?.date || "Add sleep to build a clearer picture",
+      },
+      {
+        key: "drink",
+        title: "Drink check",
+        emoji: "Drink",
         tone: "border-sky-200 bg-sky-50 text-sky-800",
-        summary: fluidMl
-          ? `${Math.round(fluidMl)}ml logged in this range`
-          : "No drink volume logged yet",
-        meta: fluidMl
-          ? "Useful for appointments and reviews"
-          : "Drink entries build this signal",
+        summary: todayFluidMl
+          ? `${Math.round(todayFluidMl)}ml logged today`
+          : lastDrink
+            ? `No drinks today yet. Last drink: ${lastDrink.summary}`
+            : "No drinks logged yet",
+        meta: todayDrinkEntries.length
+          ? `${todayDrinkEntries.length} drink entr${todayDrinkEntries.length === 1 ? "y" : "ies"}`
+          : "Good to log fluids as the day goes on",
       },
       {
         key: "medication",
-        title: "Medication signal",
+        title: "Medication check",
         emoji: "Meds",
-        tone: "border-rose-200 bg-rose-50 text-rose-800",
-        summary: medicationIssues
-          ? `${medicationIssues} missed, late or refused dose${medicationIssues === 1 ? "" : "s"}`
-          : "No medication concerns in this range",
-        meta: `${medicationLogs} medication log${medicationLogs === 1 ? "" : "s"}`,
-      },
-      {
-        key: "toileting",
-        title: "Toileting signal",
-        emoji: "WC",
-        tone: "border-cyan-200 bg-cyan-50 text-cyan-800",
-        summary: toiletingDays
-          ? `Toileting logged on ${toiletingDays} day${toiletingDays === 1 ? "" : "s"}`
-          : "No toileting pattern yet",
-        meta: "Shows frequency rather than latest entry",
-      },
-      {
-        key: "health",
-        title: "Health signal",
-        emoji: "Health",
-        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-        summary: healthAlerts
-          ? `${healthAlerts} health note${healthAlerts === 1 ? "" : "s"} in this range`
-          : "No health alerts in this range",
-        meta: "Measurements are tracked separately",
+        tone:
+          medicationIssuesToday || pendingRegularMedication
+            ? "border-rose-200 bg-rose-50 text-rose-800"
+            : "border-violet-200 bg-violet-50 text-violet-800",
+        summary: medicationIssuesToday
+          ? `${medicationIssuesToday} missed, late or refused dose${medicationIssuesToday === 1 ? "" : "s"} today`
+          : pendingRegularMedication
+            ? `${pendingRegularMedication} regular medication reminder${pendingRegularMedication === 1 ? "" : "s"} need attention`
+            : lastMedication
+              ? `Last medication: ${lastMedication.summary}`
+              : "No medication logged yet",
+        meta: todayMedicationEntries.length
+          ? `${todayMedicationEntries.length} medication entr${todayMedicationEntries.length === 1 ? "y" : "ies"} today`
+          : "No medication entries today",
       },
     ];
-  }, [recentEntries]);
+  }, [latestTwoBySection, medicationSchedules, sharedLog]);
 
   useEffect(() => {
     if (!overviewItems.length) return;

@@ -360,7 +360,18 @@ adminRouter.get(
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
-      query("SELECT count(*)::int AS count FROM children WHERE deleted_at IS NULL"),
+      query(`
+        SELECT count(*)::int AS count
+        FROM (
+          SELECT DISTINCT
+            family_id,
+            lower(trim(first_name)) AS first_name_key,
+            lower(trim(COALESCE(last_name, ''))) AS last_name_key,
+            date_of_birth
+          FROM children
+          WHERE deleted_at IS NULL
+        ) canonical_children
+      `),
       query("SELECT count(*)::int AS count FROM care_logs WHERE deleted_at IS NULL"),
       query(
         `
@@ -681,7 +692,14 @@ adminRouter.get(
           s.access_paused_at AS "accessPausedAt",
           s.access_pause_reason AS "accessPauseReason",
           count(DISTINCT fm.id)::int AS "memberCount",
-          count(DISTINCT c.id)::int AS "childCount",
+          count(
+            DISTINCT concat_ws(
+              '|',
+              lower(trim(c.first_name)),
+              lower(trim(COALESCE(c.last_name, ''))),
+              COALESCE(c.date_of_birth::text, '')
+            )
+          )::int AS "childCount",
           count(DISTINCT cl.id)::int AS "logCount",
           COALESCE(
             array_agg(DISTINCT trim(concat_ws(' ', c.first_name, c.last_name)))
@@ -778,15 +796,41 @@ adminRouter.get(
       ),
       query(
         `
+          WITH canonical_children AS (
+            SELECT DISTINCT ON (
+              lower(trim(first_name)),
+              lower(trim(COALESCE(last_name, ''))),
+              date_of_birth
+            )
+              id,
+              first_name,
+              last_name,
+              date_of_birth,
+              created_at,
+              count(*) OVER (
+                PARTITION BY
+                  lower(trim(first_name)),
+                  lower(trim(COALESCE(last_name, ''))),
+                  date_of_birth
+              ) AS duplicate_count
+            FROM children
+            WHERE family_id = $1
+              AND deleted_at IS NULL
+            ORDER BY
+              lower(trim(first_name)),
+              lower(trim(COALESCE(last_name, ''))),
+              date_of_birth,
+              created_at ASC,
+              id ASC
+          )
           SELECT
             id,
             first_name AS "firstName",
             last_name AS "lastName",
             date_of_birth::text AS "dateOfBirth",
-            created_at AS "createdAt"
-          FROM children
-          WHERE family_id = $1
-            AND deleted_at IS NULL
+            created_at AS "createdAt",
+            duplicate_count::int AS "duplicateCount"
+          FROM canonical_children
           ORDER BY created_at ASC
         `,
         [familyId],

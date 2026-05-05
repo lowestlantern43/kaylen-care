@@ -1775,23 +1775,30 @@ function IssueAdminPanel({
   const noteForIssue = (issue) =>
     notes[issue.id] ?? issue.internalNote ?? "";
 
-  const updateStatus = (issue, status) => {
+  const updateStatus = async (issue, status) => {
     const previousStatus = issue.status;
-    onStatusChange(issue.id, {
-      status,
-      internalNote: noteForIssue(issue),
-    });
+    try {
+      await onStatusChange(issue.id, {
+        status,
+        internalNote: noteForIssue(issue),
+      });
 
-    if (status === "resolved") {
+      if (status === "resolved") {
+        showToast?.({
+          message: "Issue archived",
+          type: "success",
+          undoLabel: "Undo",
+          onUndo: async () =>
+            onStatusChange(issue.id, {
+              status: previousStatus === "resolved" ? "new" : previousStatus,
+              internalNote: noteForIssue(issue),
+            }),
+        });
+      }
+    } catch (error) {
       showToast?.({
-        message: "Issue archived",
-        type: "success",
-        undoLabel: "Undo",
-        onUndo: async () =>
-          onStatusChange(issue.id, {
-            status: previousStatus === "resolved" ? "new" : previousStatus,
-            internalNote: noteForIssue(issue),
-          }),
+        message: error.message || "Issue update failed. Please try again.",
+        type: "error",
       });
     }
   };
@@ -2026,12 +2033,20 @@ function WorkspaceGate({ session, onLogout }) {
   const childDisplayName = (child) =>
     child?.firstName || child?.first_name || "Child";
   const dedupeChildren = (items = []) => {
-    const byId = new Map();
+    const byId = new Set();
+    const byIdentity = new Map();
     items.forEach((child) => {
       if (!child?.id || byId.has(child.id)) return;
-      byId.set(child.id, child);
+      byId.add(child.id);
+      const identityKey = [
+        String(child.firstName || child.first_name || "").trim().toLowerCase(),
+        String(child.lastName || child.last_name || "").trim().toLowerCase(),
+        String(child.dateOfBirth || child.date_of_birth || "").trim(),
+      ].join("|");
+      if (byIdentity.has(identityKey)) return;
+      byIdentity.set(identityKey, child);
     });
-    return Array.from(byId.values());
+    return Array.from(byIdentity.values());
   };
   const childInitials = (child) =>
     childDisplayName(child)
@@ -2518,19 +2533,20 @@ function WorkspaceGate({ session, onLogout }) {
         if (nextFamilyId) {
           const loadedChildren = await api.listChildren(nextFamilyId);
           if (ignore) return;
-          setChildren(dedupeChildren(loadedChildren));
+          const canonicalChildren = dedupeChildren(loadedChildren);
+          setChildren(canonicalChildren);
           const storedChildId = localStorage.getItem(
             selectedChildStorageKey(nextFamilyId),
           );
-          const storedChildStillExists = loadedChildren.some(
+          const storedChildStillExists = canonicalChildren.some(
             (child) => child.id === storedChildId,
           );
           setSelectedChildId((current) =>
-            loadedChildren.some((child) => child.id === current)
+            canonicalChildren.some((child) => child.id === current)
               ? current
               : storedChildStillExists
                 ? storedChildId
-                : loadedChildren[0]?.id || "",
+                : canonicalChildren[0]?.id || "",
           );
         }
       } catch (caughtError) {
@@ -3443,6 +3459,7 @@ function WorkspaceGate({ session, onLogout }) {
                 status: updated.status,
                 internalNote: updated.internalNote,
                 resolved: updated.resolved,
+                resolvedAt: updated.resolvedAt,
                 notified: updated.notified,
                 updatedAt: updated.updatedAt,
               }
@@ -3454,8 +3471,10 @@ function WorkspaceGate({ session, onLogout }) {
           ? "Issue marked resolved. The user will see a one-time notification."
           : "Issue updated.",
       );
+      return updated;
     } catch (caughtError) {
       setError(caughtError.message);
+      throw caughtError;
     } finally {
       setIsPlatformSaving(false);
     }

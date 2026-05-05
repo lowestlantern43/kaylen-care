@@ -79,6 +79,36 @@ childrenRouter.get(
   asyncHandler(async (req, res) => {
     const { rows } = await query(
       `
+        WITH canonical_children AS (
+          SELECT DISTINCT ON (
+            lower(trim(first_name)),
+            lower(trim(COALESCE(last_name, ''))),
+            date_of_birth
+          )
+            id,
+            first_name,
+            last_name,
+            date_of_birth,
+            nhs_number,
+            avatar_url,
+            notes,
+            created_at,
+            updated_at,
+            count(*) OVER (
+              PARTITION BY
+                lower(trim(first_name)),
+                lower(trim(COALESCE(last_name, ''))),
+                date_of_birth
+            ) AS duplicate_count
+          FROM children
+          WHERE family_id = $1 AND deleted_at IS NULL
+          ORDER BY
+            lower(trim(first_name)),
+            lower(trim(COALESCE(last_name, ''))),
+            date_of_birth,
+            created_at ASC,
+            id ASC
+        )
         SELECT
           id,
           first_name AS "firstName",
@@ -88,9 +118,9 @@ childrenRouter.get(
           avatar_url AS "avatarUrl",
           notes,
           created_at AS "createdAt",
-          updated_at AS "updatedAt"
-        FROM children
-        WHERE family_id = $1 AND deleted_at IS NULL
+          updated_at AS "updatedAt",
+          duplicate_count::int AS "duplicateCount"
+        FROM canonical_children
         ORDER BY first_name ASC, created_at ASC
       `,
       [req.familyMember.family_id],
