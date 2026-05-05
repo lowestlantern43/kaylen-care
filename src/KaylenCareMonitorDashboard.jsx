@@ -4849,10 +4849,10 @@ export default function KaylenCareMonitorDashboard({
         suffix: "h",
         tone: tones.indigo,
         note: "Sleep duration per night based on logged entries.",
-        axisTitle: "Hours slept",
-        yAxisLabels: [0, 2, 4, 6, 8],
+        axisTitle: "Hours",
+        yAxisLabels: [0, 2, 4, 6, 8, 10, 12],
         yMin: 0,
-        yMax: 8,
+        yMax: 12,
         minPoints: 1,
         emptyText: "No completed sleep logs available for this period.",
       });
@@ -7354,6 +7354,7 @@ export default function KaylenCareMonitorDashboard({
     yAxisLabels = [],
     yMin,
     yMax,
+    note = "",
   }) => {
     const points = data.filter(
       (item) =>
@@ -7374,7 +7375,7 @@ export default function KaylenCareMonitorDashboard({
     const polyline = chartPoints.map((point) => `${point.x},${point.y}`).join(" ");
 
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="rounded-[1.35rem] border border-slate-100 bg-white/90 p-3 shadow-sm">
         <div className="flex items-start justify-between gap-2">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
@@ -7435,7 +7436,7 @@ export default function KaylenCareMonitorDashboard({
               ) : null}
             </svg>
           ) : (
-            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
+            <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 px-3 text-center text-xs font-semibold text-slate-500">
               {emptyText}
             </div>
           )}
@@ -7445,6 +7446,11 @@ export default function KaylenCareMonitorDashboard({
             <span>{points[0]?.label}</span>
             <span>{points[points.length - 1]?.label}</span>
           </div>
+        ) : null}
+        {note ? (
+          <p className="mt-2 rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold leading-5 text-slate-600">
+            {note}
+          </p>
         ) : null}
       </div>
     );
@@ -7684,16 +7690,16 @@ export default function KaylenCareMonitorDashboard({
         {renderMedicationConsistencyCard()}
         {renderLineGraphCard({
           title: "Sleep",
-          data: reportTrendModel.graphs.sleep,
-          suffix: "h",
-          stroke: "#6366f1",
-          minPoints: 1,
-          emptyText: "No completed sleep logs available",
-          axisTitle: "Hours slept",
-          yAxisLabels: [0, 2, 4, 6, 8],
-          yMin: 0,
-          yMax: 8,
-        })}
+        data: reportTrendModel.graphs.sleep,
+        suffix: "h",
+        stroke: "#6366f1",
+        minPoints: 1,
+        emptyText: "No completed sleep logs available",
+        axisTitle: "Hours",
+        yAxisLabels: [0, 2, 4, 6, 8, 10, 12],
+        yMin: 0,
+        yMax: 12,
+      })}
         {renderToiletingPatternCard()}
       </div>
     </section>
@@ -9317,55 +9323,74 @@ export default function KaylenCareMonitorDashboard({
       : "No entries in this period";
     const sleepStat = reportTrendModel.summaryStats.find((item) => item.key === "sleep");
     const medicationStat = reportTrendModel.summaryStats.find((item) => item.key === "medication");
+    const incompleteSleepEntries = sleepEntries.filter(
+      (entry) => !Number(entry.durationMinutes || 0),
+    );
+    const completedSleepValues = reportTrendModel.graphs.sleep
+      .filter(
+        (item) =>
+          item?.hasData !== false &&
+          item?.value !== null &&
+          Number.isFinite(Number(item.value)),
+      )
+      .map((item) => Number(item.value));
+    const maxSleepHours = completedSleepValues.length
+      ? Math.max(...completedSleepValues)
+      : 0;
+    const sleepAxisMax = Math.max(12, Math.ceil(maxSleepHours / 2) * 2);
+    const sleepAxisLabels = Array.from(
+      { length: Math.floor(sleepAxisMax / 2) + 1 },
+      (_, index) => index * 2,
+    );
 
     const summaryCards = [
       {
         label: "Total entries",
         value: recentEntries.length || "No entries",
         meta: reportCategoryFilter === "All" ? "All categories" : reportCategoryLabel(reportCategoryFilter),
-        tone: "border-slate-200 bg-white text-slate-800",
+        tone: "border-white/80 bg-white/80 text-slate-800",
       },
       {
         label: "Date range covered",
         value: reportRangeLabel,
         meta: dataCompleteness,
-        tone: "border-sky-200 bg-sky-50 text-sky-900",
+        tone: "border-sky-100 bg-sky-50/80 text-sky-900",
       },
       {
         label: "Data completeness",
         value: dataCompleteness,
         meta: "Based on days with logged entries",
-        tone: "border-indigo-200 bg-indigo-50 text-indigo-900",
+        tone: "border-indigo-100 bg-indigo-50/80 text-indigo-900",
       },
       {
         label: "Sleep average",
         value: sleepStat?.value || "No sleep data",
         meta: sleepStat?.meta || "No completed sleep entries",
-        tone: "border-violet-200 bg-violet-50 text-violet-900",
+        tone: "border-violet-100 bg-violet-50/80 text-violet-900",
       },
       {
         label: "Medication consistency",
         value: medicationStat?.value || "No medication data",
         meta: medicationStat?.meta || "No medication schedule set",
-        tone: "border-rose-200 bg-rose-50 text-rose-900",
+        tone: "border-rose-100 bg-rose-50/80 text-rose-900",
       },
       {
         label: "Food and fluid",
         value: foodEntries.length || "No entries",
         meta: `${foodEntries.length} food/drink entr${foodEntries.length === 1 ? "y" : "ies"}`,
-        tone: "border-emerald-200 bg-emerald-50 text-emerald-900",
+        tone: "border-emerald-100 bg-emerald-50/80 text-emerald-900",
       },
       {
         label: "Toileting",
         value: toiletingEntries.length || "No entries",
         meta: `${toiletingEntries.length} toileting entr${toiletingEntries.length === 1 ? "y" : "ies"}`,
-        tone: "border-cyan-200 bg-cyan-50 text-cyan-900",
+        tone: "border-cyan-100 bg-cyan-50/80 text-cyan-900",
       },
       {
         label: "Health",
         value: healthEntries.length || "No entries",
         meta: `${healthEntries.length} health entr${healthEntries.length === 1 ? "y" : "ies"}`,
-        tone: "border-amber-200 bg-amber-50 text-amber-900",
+        tone: "border-amber-100 bg-amber-50/80 text-amber-900",
       },
     ];
 
@@ -9402,9 +9427,9 @@ export default function KaylenCareMonitorDashboard({
       description,
       value,
       meta,
-      tone = "border-slate-200 bg-white",
+      tone = "border-slate-100 bg-white/85",
     }) => (
-      <div className={`rounded-2xl border p-4 shadow-sm ${tone}`}>
+      <div className={`rounded-[1.35rem] border p-4 shadow-sm ${tone}`}>
         <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
           {title}
         </p>
@@ -9415,7 +9440,7 @@ export default function KaylenCareMonitorDashboard({
           {description}
         </p>
         {meta ? (
-          <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs font-bold text-slate-600">
+          <p className="mt-3 rounded-xl bg-white/75 px-3 py-2 text-xs font-bold text-slate-600">
             {meta}
           </p>
         ) : null}
@@ -9578,10 +9603,10 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </section>
 
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+          <section className="rounded-[1.75rem] border border-sky-100 bg-sky-50/60 p-4 shadow-sm">
             <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
                   Report Summary
                 </p>
                 <h3 className="mt-1 text-xl font-black text-slate-950">
@@ -9596,7 +9621,7 @@ export default function KaylenCareMonitorDashboard({
               {summaryCards.map((card) => (
                 <div
                   key={card.label}
-                  className={`rounded-2xl border px-3 py-3 shadow-sm ${card.tone}`}
+                  className={`rounded-[1.35rem] border px-3 py-3 shadow-sm ${card.tone}`}
                 >
                   <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
                     {card.label}
@@ -9612,7 +9637,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </section>
 
-          <section className="rounded-[1.75rem] border border-sky-100 bg-sky-50/70 p-4 shadow-sm">
+          <section className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50/70 p-4 shadow-sm">
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
               Key Insights
             </p>
@@ -9620,7 +9645,7 @@ export default function KaylenCareMonitorDashboard({
               {displayInsights.map((insight) => (
                 <div
                   key={insight}
-                  className="rounded-2xl border border-white/80 bg-white px-3 py-3 text-sm font-semibold leading-6 text-slate-700 shadow-sm"
+                  className="rounded-[1.35rem] border border-white/80 bg-white/85 px-3 py-3 text-sm font-semibold leading-6 text-slate-700 shadow-sm"
                 >
                   {insight}
                 </div>
@@ -9628,9 +9653,9 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </section>
 
-          <section className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+          <section className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-slate-50 via-white to-sky-50/70 p-4 shadow-sm">
             <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
                 Key Trends
               </p>
               <h3 className="mt-1 text-xl font-black text-slate-950">
@@ -9651,10 +9676,15 @@ export default function KaylenCareMonitorDashboard({
                     stroke: "#6366f1",
                     minPoints: 1,
                     emptyText: "No completed sleep logs available yet",
-                    axisTitle: "Hours slept",
-                    yAxisLabels: [0, 2, 4, 6, 8],
+                    axisTitle: "Hours",
+                    yAxisLabels: sleepAxisLabels,
                     yMin: 0,
-                    yMax: 8,
+                    yMax: sleepAxisMax,
+                    note: incompleteSleepEntries.length
+                      ? `${incompleteSleepEntries.length} incomplete sleep entr${
+                          incompleteSleepEntries.length === 1 ? "y was" : "ies were"
+                        } not included in the graph.`
+                      : "",
                   })}
                   {renderFluidBarGraph()}
                   {renderMedicationConsistencyCard()}
