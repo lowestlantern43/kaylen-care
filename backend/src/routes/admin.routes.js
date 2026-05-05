@@ -1,7 +1,7 @@
 import { Router } from "express";
 import crypto from "node:crypto";
 import { config } from "../config.js";
-import { query } from "../db/pool.js";
+import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
@@ -510,6 +510,214 @@ adminRouter.patch(
       data: {
         enabled: rows[0]?.value?.enabled !== false,
         setupRequired: false,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.post(
+  "/family-accounts",
+  asyncHandler(async (req, res) => {
+    const parentName = requireString(
+      req.body,
+      "parentName",
+      "Parent/carer name",
+    );
+    const email = requireEmail(req.body);
+    const childName = requireString(req.body, "childName", "Child name");
+    const notes = optionalString(req.body, "notes");
+    const plan = req.body?.plan
+      ? requireEnum(req.body, "plan", planValues, "Plan")
+      : "trial";
+
+    const existing = await query(
+      `
+        SELECT id
+        FROM users
+        WHERE lower(email) = lower($1)
+          AND deleted_at IS NULL
+        LIMIT 1
+      `,
+      [email],
+    );
+
+    if (existing.rows[0]) {
+      throw badRequest(
+        "An active user already exists for that email. Add them to an existing family instead.",
+      );
+    }
+
+    const temporaryPassword = crypto.randomBytes(12).toString("base64url");
+    const passwordHash = await hashPassword(temporaryPassword);
+    const familyName = `${childName} Family`;
+    const subscriptionStatus =
+      plan === "trial" ? "trialing" : plan === "beta" ? "active" : "active";
+    const trialInterval = plan === "trial" ? "30 days" : null;
+
+    const created = await withTransaction(async (client) => {
+      const userResult = await client.query(
+        `
+          INSERT INTO users (
+            email,
+            password_hash,
+            full_name,
+            platform_admin_notes
+          )
+          VALUES ($1, $2, $3, $4)
+          RETURNING
+            id,
+            email,
+            full_name AS "fullName",
+            created_at AS "createdAt"
+        `,
+        [
+          email,
+          passwordHash,
+          parentName,
+          notes
+            ? `Owner-created test account. Notes: ${notes}`
+            : "Owner-created test account.",
+        ],
+      );
+
+      const user = userResult.rows[0];
+
+      const familyResult = await client.query(
+        `
+          INSERT INTO families (
+            name,
+            created_by_user_id,
+            platform_admin_notes
+          )
+          VALUES ($1, $2, $3)
+          RETURNING id, name, created_at AS "createdAt"
+        `,
+        [
+          familyName,
+          user.id,
+          notes
+            ? `Created from owner platform. Notes: ${notes}`
+            : "Created from owner platform.",
+        ],
+      );
+
+      const family = familyResult.rows[0];
+
+      await client.query(
+        `
+          INSERT INTO family_members (family_id, user_id, role, invited_by_user_id)
+          VALUES ($1, $2, 'owner', $3)
+        `,
+        [family.id, user.id, req.user.id],
+      );
+
+      const subscriptionResult = await client.query(
+        `
+          INSERT INTO subscriptions (
+            family_id,
+            status,
+            plan,
+            trial_started_at,
+            trial_ends_at
+          )
+          VALUES (
+            $1,
+            $2,
+            $3,
+            CASE WHEN $4::text IS NULL THEN NULL ELSE now() END,
+            CASE WHEN $4::text IS NULL THEN NULL ELSE now() + ($4::text)::interval END
+          )
+          RETURNING
+            family_id AS "familyId",
+            status,
+            plan,
+            trial_started_at AS "trialStartedAt",
+            trial_ends_at AS "trialEndsAt"
+        `,
+        [family.id, subscriptionStatus, plan, trialInterval],
+      );
+
+      const childResult = await client.query(
+        `
+          INSERT INTO children (family_id, first_name, created_by_user_id)
+          VALUES ($1, $2, $3)
+          RETURNING
+            id,
+            first_name AS "firstName",
+            created_at AS "createdAt"
+        `,
+        [family.id, childName, user.id],
+      );
+
+      await client.query(
+        `
+          INSERT INTO audit_logs (
+            family_id,
+            user_id,
+            action,
+            entity_type,
+            entity_id,
+            metadata
+          )
+          VALUES ($1, $2, 'platform_family_account_created', 'family', $1, $3)
+        `,
+        [
+          family.id,
+          req.user.id,
+          JSON.stringify({
+            parentName,
+            email,
+            childName,
+            plan,
+            notes,
+          }),
+        ],
+      );
+
+      return {
+        user,
+        family,
+        child: childResult.rows[0],
+        subscription: subscriptionResult.rows[0],
+      };
+    });
+
+    const emailResult = await sendAppEmail({
+      to: created.user.email,
+      subject: "Your FamilyTrack account is ready",
+      text: [
+        `Hi ${created.user.fullName || "there"},`,
+        "",
+        "A FamilyTrack test account has been created for you.",
+        "",
+        `Login: ${config.frontendUrl}`,
+        `Email: ${created.user.email}`,
+        `Temporary password: ${temporaryPassword}`,
+        "",
+        "Please change this password after logging in.",
+        notes ? "" : null,
+        notes ? `Notes from FamilyTrack: ${notes}` : null,
+        "",
+        `If you need help, contact ${config.supportEmail}.`,
+        "",
+        "FamilyTrack",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      metadata: {
+        type: "owner_created_family_account",
+        userId: created.user.id,
+        familyId: created.family.id,
+      },
+    });
+
+    res.status(201).json({
+      data: {
+        ...created,
+        emailSent: emailResult.sent,
+        emailSkipped: emailResult.skipped,
+        temporaryPassword: emailResult.sent ? null : temporaryPassword,
       },
       error: null,
     });

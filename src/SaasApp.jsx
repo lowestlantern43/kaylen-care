@@ -2280,6 +2280,13 @@ function WorkspaceGate({ session, onLogout }) {
     trialEndsAt: "",
     accessPaused: false,
   });
+  const [platformCreateAccountForm, setPlatformCreateAccountForm] = useState({
+    parentName: "",
+    email: "",
+    childName: "",
+    notes: "",
+    plan: "trial",
+  });
   const [dismissedUpgradeBanners, setDismissedUpgradeBanners] = useState({});
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
   const [toast, setToast] = useState(null);
@@ -3573,6 +3580,54 @@ function WorkspaceGate({ session, onLogout }) {
     } catch (caughtError) {
       setError(caughtError.message);
       throw caughtError;
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const createPlatformFamilyAccount = async (event) => {
+    event.preventDefault();
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const created = await api.adminCreateFamilyAccount(platformCreateAccountForm);
+      const [overview, families, users] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+        api.adminUsers(),
+      ]);
+      setPlatformData({ overview, families, users });
+      setPlatformCreateAccountForm({
+        parentName: "",
+        email: "",
+        childName: "",
+        notes: "",
+        plan: "trial",
+      });
+      setPlatformActionMessage(
+        created.emailSent
+          ? `Created ${created.family.name} and emailed ${created.user.email}.`
+          : `Created ${created.family.name}. Email is not configured, so give the tester this temporary password: ${created.temporaryPassword}`,
+      );
+      showToast({
+        message: created.emailSent
+          ? "Email sent - check your inbox"
+          : "Account created - email not sent",
+        type: created.emailSent ? "success" : "warning",
+      });
+      if (created.family?.id) {
+        await openPlatformFamily(created.family.id);
+        setPlatformAdminTab("families");
+      }
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({
+        message: "Family account could not be created",
+        type: "error",
+      });
     } finally {
       setIsPlatformSaving(false);
     }
@@ -6485,6 +6540,7 @@ function WorkspaceGate({ session, onLogout }) {
                   <div className="flex min-w-max gap-1.5">
                   {[
                     ["overview", "Overview"],
+                    ["create", "Create"],
                     ["revenue", "Revenue"],
                     ["accounts", "Accounts"],
                     ["families", "Families"],
@@ -6549,6 +6605,156 @@ function WorkspaceGate({ session, onLogout }) {
                         </p>
                       </button>
                     </div>
+                  </section>
+                ) : null}
+
+                {platformAdminTab === "create" ? (
+                  <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
+                          Create Family Account
+                        </p>
+                        <h3 className="mt-1 text-xl font-black text-slate-950">
+                          Add a tester family
+                        </h3>
+                        <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
+                          Creates the parent/carer login, family workspace and
+                          first child profile. Only platform admins can use this.
+                        </p>
+                      </div>
+                      <span className="w-fit rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
+                        Owner only
+                      </span>
+                    </div>
+
+                    <form
+                      className="mt-4 grid gap-3"
+                      onSubmit={createPlatformFamilyAccount}
+                    >
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <label className="min-w-0">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            Parent/carer name
+                          </span>
+                          <input
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={platformCreateAccountForm.parentName}
+                            onChange={(event) =>
+                              setPlatformCreateAccountForm((current) => ({
+                                ...current,
+                                parentName: event.target.value,
+                              }))
+                            }
+                            placeholder="e.g. Rachel Spry"
+                            required
+                          />
+                        </label>
+                        <label className="min-w-0">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            Email address
+                          </span>
+                          <input
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            type="email"
+                            value={platformCreateAccountForm.email}
+                            onChange={(event) =>
+                              setPlatformCreateAccountForm((current) => ({
+                                ...current,
+                                email: event.target.value,
+                              }))
+                            }
+                            placeholder="tester@example.com"
+                            required
+                          />
+                        </label>
+                        <label className="min-w-0">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            Child name
+                          </span>
+                          <input
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={platformCreateAccountForm.childName}
+                            onChange={(event) =>
+                              setPlatformCreateAccountForm((current) => ({
+                                ...current,
+                                childName: event.target.value,
+                              }))
+                            }
+                            placeholder="e.g. Kaylen"
+                            required
+                          />
+                        </label>
+                        <label className="min-w-0">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            Plan / trial type
+                          </span>
+                          <select
+                            className="mt-1 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                            value={platformCreateAccountForm.plan}
+                            onChange={(event) =>
+                              setPlatformCreateAccountForm((current) => ({
+                                ...current,
+                                plan: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="trial">Trial - 30 days</option>
+                            <option value="beta">Beta tester</option>
+                            <option value="family">Family plan</option>
+                            <option value="professional">Professional / future</option>
+                          </select>
+                        </label>
+                      </div>
+
+                      <label className="min-w-0">
+                        <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                          Optional notes
+                        </span>
+                        <textarea
+                          className="mt-1 min-h-[6rem] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
+                          value={platformCreateAccountForm.notes}
+                          onChange={(event) =>
+                            setPlatformCreateAccountForm((current) => ({
+                              ...current,
+                              notes: event.target.value,
+                            }))
+                          }
+                          placeholder="Internal tester notes, access context or family setup details."
+                        />
+                      </label>
+
+                      <div className="rounded-xl border border-sky-100 bg-sky-50 px-3 py-2 text-sm font-semibold text-sky-900">
+                        A temporary password is generated securely. If email is
+                        configured, the tester receives it by email; otherwise it
+                        will be shown here once so you can pass it on.
+                      </div>
+
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPlatformCreateAccountForm({
+                              parentName: "",
+                              email: "",
+                              childName: "",
+                              notes: "",
+                              plan: "trial",
+                            })
+                          }
+                          className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm font-bold text-slate-700"
+                        >
+                          Clear
+                        </button>
+                        <button
+                          type="submit"
+                          disabled={isPlatformSaving}
+                          className="rounded-full bg-indigo-600 px-5 py-2 text-sm font-black text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {isPlatformSaving ? "Creating..." : "Create account"}
+                        </button>
+                      </div>
+                    </form>
                   </section>
                 ) : null}
 

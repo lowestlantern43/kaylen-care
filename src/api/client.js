@@ -257,6 +257,11 @@ export const api = {
     }),
   adminOverview: () => request("/admin/overview"),
   adminFamilies: () => request("/admin/families"),
+  adminCreateFamilyAccount: (payload) =>
+    request("/admin/family-accounts", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   adminFamilyDetail: (familyId) => request(`/admin/families/${familyId}`),
   adminUpdateFamily: (familyId, payload) =>
     request(`/admin/families/${familyId}`, {

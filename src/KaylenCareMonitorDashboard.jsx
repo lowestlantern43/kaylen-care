@@ -5380,7 +5380,9 @@ export default function KaylenCareMonitorDashboard({
     } catch (error) {
       console.error("Report email failed", error);
       showToast?.({
-        message: "Report email failed - please try again",
+        message:
+          error?.message ||
+          "Email sending is not set up yet. You can still download the PDF.",
         type: "error",
       });
     } finally {
