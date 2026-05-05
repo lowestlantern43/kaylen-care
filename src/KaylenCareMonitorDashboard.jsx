@@ -46,6 +46,11 @@ const cleanFormText = (value) => {
   return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
 };
 
+const safeRandomId = () => {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  return randomUuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
+
 const parseMedicationProfile = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -1830,7 +1835,7 @@ export default function KaylenCareMonitorDashboard({
 
   const createCareLogWithOfflineQueue = async (payload) => {
     const queuedPayload = {
-      id: crypto?.randomUUID?.() || `${Date.now()}`,
+      id: safeRandomId(),
       familyId,
       payload,
       queuedAt: new Date().toISOString(),
@@ -6228,7 +6233,7 @@ export default function KaylenCareMonitorDashboard({
     saveMedicationSchedules([
       ...medicationSchedules,
       {
-        id: crypto?.randomUUID?.() || `${Date.now()}`,
+        id: safeRandomId(),
         ...medicationScheduleForm,
       },
     ]);
