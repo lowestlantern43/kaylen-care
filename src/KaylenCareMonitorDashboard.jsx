@@ -9685,6 +9685,277 @@ export default function KaylenCareMonitorDashboard({
       </div>
     );
 
+    const getEntrySearchText = (entry) =>
+      [
+        entry.type,
+        entry.category,
+        entry.event,
+        entry.toiletingType,
+        entry.result,
+        entry.medicationStatus,
+        entry.status,
+        entry.intakeStatus,
+        entry.summary,
+        ...(entry.details || []),
+        entry.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+    const makeEntryBadge = (label, className) => ({ label, className });
+
+    const getEntryBadges = (entry, sectionTitle) => {
+      const text = getEntrySearchText(entry);
+      const badges = [];
+
+      if (sectionTitle === "Medication") {
+        if (text.includes("rescue") || text.includes("prn")) {
+          badges.push(makeEntryBadge("PRN / rescue", "bg-violet-100 text-violet-700"));
+        }
+        if (text.includes("missed")) {
+          badges.push(makeEntryBadge("Missed", "bg-rose-100 text-rose-700"));
+        } else if (text.includes("skipped") || text.includes("refused")) {
+          badges.push(makeEntryBadge("Skipped/refused", "bg-amber-100 text-amber-700"));
+        } else {
+          badges.push(makeEntryBadge("Logged", "bg-emerald-100 text-emerald-700"));
+        }
+      }
+
+      if (sectionTitle === "Health") {
+        [
+          ["seizure", "Seizure"],
+          ["illness", "Illness"],
+          ["temperature", "Temperature"],
+          ["fever", "Temperature"],
+          ["pain", "Pain"],
+          ["concern", "Concern"],
+        ].forEach(([keyword, label]) => {
+          if (text.includes(keyword) && !badges.some((badge) => badge.label === label)) {
+            badges.push(makeEntryBadge(label, "bg-rose-100 text-rose-700"));
+          }
+        });
+      }
+
+      if (sectionTitle === "Toileting") {
+        const hasWet = /\b(wet|wee|urine)\b/.test(text);
+        const hasBowel = /\b(bowel|poo|stool|soiled|bm)\b/.test(text);
+        if (hasWet) badges.push(makeEntryBadge("Wet", "bg-cyan-100 text-cyan-700"));
+        if (hasBowel) badges.push(makeEntryBadge("Bowel", "bg-orange-100 text-orange-700"));
+        if (text.includes("accident") || text.includes("leak")) {
+          badges.push(makeEntryBadge("Accident", "bg-rose-100 text-rose-700"));
+        }
+        if (text.includes("dry")) {
+          badges.push(makeEntryBadge("Dry", "bg-emerald-100 text-emerald-700"));
+        }
+      }
+
+      if (sectionTitle === "Food & Drink") {
+        const fluidMl = getFluidMlFromEntry(entry);
+        if (fluidMl > 0) {
+          badges.push(makeEntryBadge(`${Math.round(fluidMl)}ml`, "bg-sky-100 text-sky-700"));
+        }
+        if (entry.intakeStatus) {
+          badges.push(
+            makeEntryBadge(
+              String(entry.intakeStatus),
+              "bg-emerald-100 text-emerald-700",
+            ),
+          );
+        }
+      }
+
+      if (sectionTitle === "Sleep") {
+        if (Number(entry.durationMinutes || 0) > 0) {
+          badges.push(
+            makeEntryBadge(
+              formatHoursMinutes(Number(entry.durationMinutes || 0)),
+              "bg-indigo-100 text-indigo-700",
+            ),
+          );
+        } else {
+          badges.push(makeEntryBadge("Incomplete", "bg-amber-100 text-amber-700"));
+        }
+        if (entry.quality) {
+          badges.push(makeEntryBadge(String(entry.quality), "bg-slate-100 text-slate-700"));
+        }
+      }
+
+      if (sectionTitle === "Measurements") {
+        if (entry.weightKg) {
+          badges.push(makeEntryBadge(`${entry.weightKg}kg`, "bg-blue-100 text-blue-700"));
+        }
+        if (entry.heightCm) {
+          badges.push(makeEntryBadge(`${entry.heightCm}cm`, "bg-cyan-100 text-cyan-700"));
+        }
+      }
+
+      return badges.slice(0, 4);
+    };
+
+    const groupEntriesForReport = (entries = []) => {
+      const groups = [];
+      sortEntriesByDate(entries).forEach((entry) => {
+        const date = entry.date || "Date not set";
+        let group = groups.find((item) => item.date === date);
+        if (!group) {
+          group = {
+            date,
+            label: date === "Date not set" ? date : formatReportDateLabel(date),
+            entries: [],
+          };
+          groups.push(group);
+        }
+        group.entries.push(entry);
+      });
+      return groups;
+    };
+
+    const renderDetailedEntry = (entry, sectionTitle) => {
+      const badges = getEntryBadges(entry, sectionTitle);
+
+      return (
+        <article
+          key={entry.id}
+          className="break-inside-avoid rounded-[1.2rem] border border-white/80 bg-white/90 px-3 py-3 shadow-sm"
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                  {entry.time || "Time not set"}
+                </span>
+                {badges.map((badge) => (
+                  <span
+                    key={`${entry.id}-${badge.label}`}
+                    className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                ))}
+              </div>
+              <p className="mt-2 break-words text-sm font-black leading-5 text-slate-950">
+                {entry.summary || sectionTitle}
+              </p>
+            </div>
+          </div>
+          {entry.details?.length ? (
+            <div className="mt-2 space-y-1 rounded-xl bg-slate-50/80 px-3 py-2 text-[13px] font-semibold leading-5 text-slate-600">
+              {entry.details.slice(0, 5).map((detail, detailIndex) => (
+                <p key={`${entry.id}-detail-${detailIndex}`} className="break-words">
+                  {detail}
+                </p>
+              ))}
+              {entry.details.length > 5 ? (
+                <p className="text-xs font-bold text-slate-400">
+                  + {entry.details.length - 5} more note{entry.details.length - 5 === 1 ? "" : "s"}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </article>
+      );
+    };
+
+    const renderDetailedReportSection = ({
+      title,
+      entries,
+      summary,
+      emptyText,
+      tone,
+    }) => {
+      const groups = groupEntriesForReport(entries);
+
+      return (
+        <section className={`break-inside-avoid rounded-[1.65rem] border p-4 shadow-sm ${tone}`}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                {title}
+              </p>
+              <h4 className="mt-1 text-lg font-black text-slate-950">
+                {entries.length} entr{entries.length === 1 ? "y" : "ies"}
+              </h4>
+            </div>
+            <p className="rounded-full bg-white/75 px-3 py-1.5 text-xs font-bold leading-5 text-slate-600">
+              {summary}
+            </p>
+          </div>
+
+          {groups.length ? (
+            <div className="mt-3 space-y-3">
+              {groups.map((group) => (
+                <div key={`${title}-${group.date}`} className="rounded-[1.35rem] border border-white/70 bg-white/45 p-3">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <h5 className="text-sm font-black text-slate-900">{group.label}</h5>
+                    <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                      {group.entries.length} item{group.entries.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+                  <div className="grid gap-2 lg:grid-cols-2">
+                    {group.entries.map((entry) => renderDetailedEntry(entry, title))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-[1.25rem] border border-dashed border-slate-200 bg-white/65 px-4 py-5 text-center text-sm font-semibold leading-6 text-slate-500">
+              {emptyText}
+            </div>
+          )}
+        </section>
+      );
+    };
+
+    const detailedReportSections = [
+      {
+        title: "Sleep",
+        entries: sleepEntries,
+        summary: sleepStat?.value || "No average yet",
+        emptyText: "No sleep entries found for this period.",
+        tone: "border-indigo-100 bg-indigo-50/70",
+      },
+      {
+        title: "Food & Drink",
+        entries: foodEntries,
+        summary: `${foodEntries.length} logged`,
+        emptyText: "No food or drink entries found for this period.",
+        tone: "border-emerald-100 bg-emerald-50/70",
+      },
+      {
+        title: "Medication",
+        entries: medicationEntries,
+        summary: medicationStat?.value || "No medication data",
+        emptyText: "No medication entries found for this period.",
+        tone: "border-rose-100 bg-rose-50/70",
+      },
+      {
+        title: "Toileting",
+        entries: toiletingEntries,
+        summary: `${toiletingEntries.length} logged`,
+        emptyText: "No toileting entries found for this period.",
+        tone: "border-cyan-100 bg-cyan-50/70",
+      },
+      {
+        title: "Health",
+        entries: healthEntries,
+        summary: `${healthEntries.length} logged`,
+        emptyText: "No health entries found for this period.",
+        tone: "border-amber-100 bg-amber-50/70",
+      },
+      ...(measurementEntries.length
+        ? [
+            {
+              title: "Measurements",
+              entries: measurementEntries,
+              summary: `${measurementEntries.length} logged`,
+              emptyText: "No measurements found for this period.",
+              tone: "border-blue-100 bg-blue-50/70",
+            },
+          ]
+        : []),
+    ];
+
     const rangeOptions = ["7", "14", "30", "custom"];
 
     return (
@@ -9956,6 +10227,28 @@ export default function KaylenCareMonitorDashboard({
                   : "Weight or height trends will appear here when measurements are logged.",
                 tone: "border-blue-100 bg-blue-50/70",
               })}
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/60 p-4 shadow-sm">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
+                Detailed Report
+              </p>
+              <h3 className="mt-1 text-xl font-black text-slate-950">
+                Entries by category
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Detailed logs grouped by date for the selected range, using the
+                same entries shown in the summary above.
+              </p>
+            </div>
+            <div className="mt-4 space-y-3">
+              {detailedReportSections.map((section) => (
+                <div key={section.title}>
+                  {renderDetailedReportSection(section)}
+                </div>
+              ))}
             </div>
           </section>
 
