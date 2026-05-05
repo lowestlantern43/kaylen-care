@@ -3143,8 +3143,10 @@ export default function KaylenCareMonitorDashboard({
     }
 
     const getDayKey = (entry) => {
-      if (entry.date) return entry.date;
-      const parsed = getEntryDateTime(entry);
+      const parsed =
+        parseDisplayDateTime(entry?.date, entry?.time) ||
+        parseDisplayDate(entry?.date) ||
+        getEntryDateTime(entry);
       return parsed ? makeDayKey(parsed) : "";
     };
 
