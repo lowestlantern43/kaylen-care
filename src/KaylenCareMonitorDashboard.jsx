@@ -36,6 +36,11 @@ const dedupeAppend = (items, value) => {
 const uniqueList = (items) =>
   Array.from(new Set(items.map((item) => (item || "").trim()).filter(Boolean)));
 
+const isLikelyDrinkLabel = (value) =>
+  /\b(drink|water|juice|milk|squash|tea|bottle|cup|smoothie)\b/i.test(
+    String(value || ""),
+  );
+
 const cleanFormText = (value) => {
   const text = String(value ?? "").trim();
   return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
@@ -352,6 +357,12 @@ const safeLocalStorageGet = (key) => {
   }
 };
 
+const isMeasurementEntry = (entry) =>
+  entry?.section === "Health" &&
+  (String(entry.event || "").toLowerCase() === "measurements" ||
+    Boolean(entry.weightKg) ||
+    Boolean(entry.heightCm));
+
 const safeLocalStorageSet = (key, value) => {
   try {
     localStorage.setItem(key, value);
@@ -433,6 +444,7 @@ export default function KaylenCareMonitorDashboard({
   onOpenChildSetup,
   onAddRegularMedication,
   customFoodOptions = [],
+  customDrinkOptions = [],
   customMedicationOptions = [],
   customGivenByOptions = [],
   customLocationOptions = [],
@@ -1226,6 +1238,7 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const customFoodLabels = customFoodOptions.map((option) => option.label);
+  const customDrinkLabels = customDrinkOptions.map((option) => option.label);
   const customGivenByLabels = customGivenByOptions.map((option) => option.label);
   const customLocationLabels = customLocationOptions.map((option) => option.label);
 
@@ -1291,7 +1304,9 @@ export default function KaylenCareMonitorDashboard({
         [],
     );
   const getFoodDefaultNote = (food) =>
-    customFoodOptions.find((option) => option.label === food)?.defaultValue || "";
+    [...customFoodOptions, ...customDrinkOptions].find(
+      (option) => option.label === food,
+    )?.defaultValue || "";
 
   useEffect(() => {
     if (useSaasApi) {
@@ -2499,80 +2514,107 @@ export default function KaylenCareMonitorDashboard({
       food: findLatestTwo("Food Diary"),
       medication: findLatestTwo("Medication"),
       toileting: findLatestTwo("Toileting"),
-      health: findLatestTwo("Health"),
+      health: sharedLog
+        .filter((entry) => entry.section === "Health" && !isMeasurementEntry(entry))
+        .slice(0, 2),
       measurements: sharedLog
-        .filter(
-          (entry) =>
-            entry.section === "Health" &&
-            String(entry.event || "").toLowerCase() === "measurements",
-        )
+        .filter(isMeasurementEntry)
         .slice(0, 2),
       sleep: findLatestTwo("Sleep"),
     };
   }, [sharedLog]);
 
-  const overviewItems = useMemo(
-    () => [
+  const overviewItems = useMemo(() => {
+    const sleepDurations = recentEntries
+      .filter((entry) => entry.section === "Sleep" && Number(entry.durationMinutes) > 0)
+      .map((entry) => Number(entry.durationMinutes));
+    const avgSleepMinutes = sleepDurations.length
+      ? Math.round(
+          sleepDurations.reduce((sum, minutes) => sum + minutes, 0) /
+            sleepDurations.length,
+        )
+      : 0;
+    const fluidMl = recentEntries.reduce(
+      (sum, entry) => sum + getFluidMlFromEntry(entry),
+      0,
+    );
+    const medicationLogs = recentEntries.filter(
+      (entry) => entry.section === "Medication",
+    ).length;
+    const medicationIssues = recentEntries.filter(
+      (entry) =>
+        entry.section === "Medication" &&
+        ["missed", "late", "refused"].includes(
+          String(entry.medicationStatus || "").toLowerCase(),
+        ),
+    ).length;
+    const toiletingDays = new Set(
+      recentEntries
+        .filter((entry) => entry.section === "Toileting")
+        .map((entry) => entry.date),
+    ).size;
+    const healthAlerts = recentEntries.filter(
+      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
+    ).length;
+
+    return [
       {
         key: "sleep",
-        title: "Sleep",
-        emoji: "🌙",
+        title: "Sleep signal",
+        emoji: "Moon",
         tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
-        summary: latestTwoBySection.sleep[0]?.summary || "No entries today",
+        summary: avgSleepMinutes
+          ? `Average ${formatHoursMinutes(avgSleepMinutes)} over this range`
+          : "Not enough completed sleep logs yet",
         meta:
-          latestTwoBySection.sleep[0]?.time ||
-          latestTwoBySection.sleep[0]?.date ||
-          "No recent entry",
+          sleepDurations.length >= 2
+            ? `${sleepDurations.length} completed sleeps`
+            : "Add wake times for clearer trends",
+      },
+      {
+        key: "fluids",
+        title: "Fluid signal",
+        emoji: "Water",
+        tone: "border-sky-200 bg-sky-50 text-sky-800",
+        summary: fluidMl
+          ? `${Math.round(fluidMl)}ml logged in this range`
+          : "No drink volume logged yet",
+        meta: fluidMl
+          ? "Useful for appointments and reviews"
+          : "Drink entries build this signal",
       },
       {
         key: "medication",
-        title: "Medication",
-        emoji: "💊",
+        title: "Medication signal",
+        emoji: "Meds",
         tone: "border-rose-200 bg-rose-50 text-rose-800",
-        summary:
-          latestTwoBySection.medication[0]?.summary || "No entries today",
-        meta:
-          latestTwoBySection.medication[0]?.time ||
-          latestTwoBySection.medication[0]?.date ||
-          "No recent entry",
-      },
-      {
-        key: "food",
-        title: "Food",
-        emoji: "🍽️",
-        tone: "border-amber-200 bg-amber-50 text-amber-800",
-        summary: latestTwoBySection.food[0]?.summary || "No entries today",
-        meta:
-          latestTwoBySection.food[0]?.time ||
-          latestTwoBySection.food[0]?.date ||
-          "No recent entry",
+        summary: medicationIssues
+          ? `${medicationIssues} missed, late or refused dose${medicationIssues === 1 ? "" : "s"}`
+          : "No medication concerns in this range",
+        meta: `${medicationLogs} medication log${medicationLogs === 1 ? "" : "s"}`,
       },
       {
         key: "toileting",
-        title: "Toileting",
-        emoji: "🚽",
-        tone: "border-sky-200 bg-sky-50 text-sky-800",
-        summary:
-          latestTwoBySection.toileting[0]?.summary || "No entries today",
-        meta:
-          latestTwoBySection.toileting[0]?.time ||
-          latestTwoBySection.toileting[0]?.date ||
-          "No recent entry",
+        title: "Toileting signal",
+        emoji: "WC",
+        tone: "border-cyan-200 bg-cyan-50 text-cyan-800",
+        summary: toiletingDays
+          ? `Toileting logged on ${toiletingDays} day${toiletingDays === 1 ? "" : "s"}`
+          : "No toileting pattern yet",
+        meta: "Shows frequency rather than latest entry",
       },
       {
         key: "health",
-        title: "Health",
-        emoji: "🩺",
+        title: "Health signal",
+        emoji: "Health",
         tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
-        summary: latestTwoBySection.health[0]?.summary || "No entries today",
-        meta:
-          latestTwoBySection.health[0]?.time ||
-          latestTwoBySection.health[0]?.date ||
-          "No recent entry",
+        summary: healthAlerts
+          ? `${healthAlerts} health note${healthAlerts === 1 ? "" : "s"} in this range`
+          : "No health alerts in this range",
+        meta: "Measurements are tracked separately",
       },
-    ],
-    [latestTwoBySection],
-  );
+    ];
+  }, [recentEntries]);
 
   useEffect(() => {
     if (!overviewItems.length) return;
@@ -2759,9 +2801,13 @@ export default function KaylenCareMonitorDashboard({
 
     const classifyToileting = (entry) => {
       const text = `${entry.summary || ""} ${(entry.details || []).join(" ")}`.toLowerCase();
+      const isDry = /\bdry\b/.test(text);
+      const both = /both|wet\s*&\s*soiled|wet and soiled/.test(text);
+      const wet = both || /\b(wet|wee|urine)\b/.test(text);
+      const soiled = both || /\b(bowel|poo|stool|soiled|bm)\b/.test(text);
       return {
-        wet: /wet|wee|urine|nappy|toilet/.test(text) ? 1 : 0,
-        soiled: /bowel|poo|stool|soiled|bm/.test(text) ? 1 : 0,
+        wet: !isDry && wet ? 1 : 0,
+        soiled: soiled ? 1 : 0,
       };
     };
 
@@ -2793,6 +2839,10 @@ export default function KaylenCareMonitorDashboard({
             toileting: 0,
             wet: 0,
             soiled: 0,
+            morning: 0,
+            afternoon: 0,
+            evening: 0,
+            night: 0,
           });
         }
         const day = dayMap.get(key);
@@ -2826,11 +2876,15 @@ export default function KaylenCareMonitorDashboard({
 
         if (entry.section === "Toileting") {
           const toileting = classifyToileting(entry);
+          const hour = Number(String(entry.time || "00:00").slice(0, 2));
+          const bucket =
+            hour < 6 ? "night" : hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
           toiletingCount += 1;
           soiledCount += toileting.soiled;
           day.toileting += 1;
           day.wet += toileting.wet;
           day.soiled += toileting.soiled;
+          day[bucket] += 1;
         }
 
         if (entry.section === "Health" && entry.weightKg) {
@@ -3076,12 +3130,16 @@ export default function KaylenCareMonitorDashboard({
         sleep: current.daily.map((day) => ({
           label: day.date.slice(0, 5),
           value: roundTo(day.sleepMinutes / 60),
-        })),
+        })).filter((day) => day.value > 0),
         toileting: current.daily.map((day) => ({
           label: day.date.slice(0, 5),
           wet: day.wet,
           soiled: day.soiled,
           value: day.toileting,
+          morning: day.morning,
+          afternoon: day.afternoon,
+          evening: day.evening,
+          night: day.night,
         })),
         medication: {
           percent: medicationPercent,
@@ -4980,11 +5038,15 @@ export default function KaylenCareMonitorDashboard({
       "Snack",
       "Other",
     ];
-    const savedFoodSuggestions = uniqueList([
-      ...customFoodLabels,
-      ...savedFoodOptions,
-      ...(useSaasApi ? [] : ["Cottage pie", "Weetabix", "Heinz Fruit Custard"]),
-    ]);
+    const savedFoodSuggestions = uniqueList(
+      isDrink
+        ? [...customDrinkLabels, ...savedFoodOptions.filter(isLikelyDrinkLabel)]
+        : [
+            ...customFoodLabels,
+            ...savedFoodOptions.filter((item) => !isLikelyDrinkLabel(item)),
+            ...(useSaasApi ? [] : ["Cottage pie", "Weetabix", "Heinz Fruit Custard"]),
+          ],
+    );
     const showOtherLocation = foodForm.location === "Other";
     const typedLocation = foodForm.otherLocation?.trim() || "";
     const selectedLocation = showOtherLocation
@@ -5323,7 +5385,7 @@ export default function KaylenCareMonitorDashboard({
                 if (saveFoodForFuture && canSaveTypedFood) {
                   if (onCreateCareOption) {
                     await onCreateCareOption({
-                      category: "food",
+                      category: isDrink ? "drink" : "food",
                       label: typedFood,
                       defaultValue: foodForm.description || foodForm.notes,
                     });
@@ -5650,6 +5712,13 @@ export default function KaylenCareMonitorDashboard({
                 }
 
                 if (showOtherGivenBy && saveGivenByForFuture) {
+                  if (onCreateCareOption) {
+                    await onCreateCareOption({
+                      category: "given_by",
+                      label: medicationForm.otherGivenBy,
+                      defaultValue: "",
+                    });
+                  }
                   setSavedGivenByOptions((current) =>
                     dedupeAppend(current, medicationForm.otherGivenBy),
                   );
@@ -6898,8 +6967,10 @@ export default function KaylenCareMonitorDashboard({
     stroke = "#0ea5e9",
     markerDrop = false,
     emptyText = "Not enough data yet",
+    minPoints = 1,
   }) => {
     const points = data.filter((item) => Number.isFinite(Number(item.value)));
+    const hasEnoughPoints = points.length >= minPoints;
     const values = points.map((item) => Number(item.value));
     const min = values.length ? Math.min(...values) : 0;
     const max = values.length ? Math.max(...values) : 1;
@@ -6919,10 +6990,10 @@ export default function KaylenCareMonitorDashboard({
               {title}
             </p>
             <p className="mt-0.5 text-xs font-semibold text-slate-500">
-              {points.length ? `${points.length} plotted point${points.length === 1 ? "" : "s"}` : emptyText}
+              {hasEnoughPoints ? `${points.length} plotted point${points.length === 1 ? "" : "s"}` : emptyText}
             </p>
           </div>
-          {points.length ? (
+          {hasEnoughPoints ? (
             <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
               {roundTo(values[values.length - 1])}
               {suffix}
@@ -6930,7 +7001,7 @@ export default function KaylenCareMonitorDashboard({
           ) : null}
         </div>
         <div className="mt-3 h-28">
-          {points.length ? (
+          {hasEnoughPoints ? (
             <svg viewBox="0 0 100 100" className="h-full w-full overflow-visible">
               <line x1="0" y1="92" x2="100" y2="92" stroke="#e2e8f0" strokeWidth="1" />
               <polyline
@@ -6959,7 +7030,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           )}
         </div>
-        {points.length ? (
+        {hasEnoughPoints ? (
           <div className="mt-2 flex justify-between text-[10px] font-bold text-slate-400">
             <span>{points[0]?.label}</span>
             <span>{points[points.length - 1]?.label}</span>
@@ -7050,6 +7121,12 @@ export default function KaylenCareMonitorDashboard({
   const renderToiletingPatternCard = () => {
     const data = reportTrendModel.graphs.toileting;
     const max = Math.max(...data.map((item) => item.value), 1);
+    const timeBuckets = [
+      ["Morning", data.reduce((sum, item) => sum + Number(item.morning || 0), 0)],
+      ["Afternoon", data.reduce((sum, item) => sum + Number(item.afternoon || 0), 0)],
+      ["Evening", data.reduce((sum, item) => sum + Number(item.evening || 0), 0)],
+      ["Night", data.reduce((sum, item) => sum + Number(item.night || 0), 0)],
+    ].filter(([, value]) => value > 0);
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
@@ -7087,6 +7164,18 @@ export default function KaylenCareMonitorDashboard({
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-cyan-500" /> Wet</span>
           <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Soiled</span>
         </div>
+        {timeBuckets.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {timeBuckets.map(([label, value]) => (
+              <span
+                key={label}
+                className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-600"
+              >
+                {label}: {value}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     );
   };
@@ -7137,7 +7226,8 @@ export default function KaylenCareMonitorDashboard({
           data: reportTrendModel.graphs.sleep,
           suffix: "h",
           stroke: "#6366f1",
-          emptyText: "No sleep durations in this range",
+          minPoints: 2,
+          emptyText: "Not enough completed sleep logs yet",
         })}
         {renderMedicationConsistencyCard()}
         {renderToiletingPatternCard()}
@@ -9180,7 +9270,7 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   ) : null}
 
-                  {!["Care Snapshot", "Calendar"].includes(section.title) ? (
+                  {!["Reports", "Care Snapshot", "Calendar"].includes(section.title) ? (
                   <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Latest

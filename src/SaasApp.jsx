@@ -5,6 +5,7 @@ import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 import dashboardScreenshot from "./assets/screenshots/dashboard.png";
 import foodScreenshot from "./assets/screenshots/logging-food.png";
 import medicationScreenshot from "./assets/screenshots/medication-log.png";
+import reportsScreenshot from "./assets/screenshots/reports-page.png";
 import sleepScreenshot from "./assets/screenshots/sleep-log.png";
 
 const SUPPORT_EMAIL = "hello@familytrack.care";
@@ -15,6 +16,7 @@ const screenshotAssets = {
   "/screenshots/dashboard.png": dashboardScreenshot,
   "/screenshots/logging-food.png": foodScreenshot,
   "/screenshots/medication-log.png": medicationScreenshot,
+  "/screenshots/reports-page.png": reportsScreenshot,
   "/screenshots/sleep-log.png": sleepScreenshot,
 };
 
@@ -2023,6 +2025,14 @@ function WorkspaceGate({ session, onLogout }) {
   });
   const childDisplayName = (child) =>
     child?.firstName || child?.first_name || "Child";
+  const dedupeChildren = (items = []) => {
+    const byId = new Map();
+    items.forEach((child) => {
+      if (!child?.id || byId.has(child.id)) return;
+      byId.set(child.id, child);
+    });
+    return Array.from(byId.values());
+  };
   const childInitials = (child) =>
     childDisplayName(child)
       .split(/\s+/)
@@ -2047,7 +2057,9 @@ function WorkspaceGate({ session, onLogout }) {
   const [selectedFamilyId, setSelectedFamilyId] = useState(
     initialFamily?.familyId || "",
   );
-  const [children, setChildren] = useState(session?.child ? [session.child] : []);
+  const [children, setChildren] = useState(
+    session?.child ? dedupeChildren([session.child]) : [],
+  );
   const [selectedChildId, setSelectedChildId] = useState(session?.child?.id || "");
   const [childName, setChildName] = useState("");
   const [familyName, setFamilyName] = useState("");
@@ -2249,14 +2261,37 @@ function WorkspaceGate({ session, onLogout }) {
     Date.now() >= dismissedUpgradeUntil;
 
   const groupedCareOptions = useMemo(
-    () => ({
-      food: childCareOptions.filter((option) => option.category === "food"),
-      medication: childCareOptions.filter(
-        (option) => option.category === "medication",
-      ),
-      givenBy: childCareOptions.filter((option) => option.category === "given_by"),
-      locations: childCareOptions.filter((option) => option.category === "location"),
-    }),
+    () => {
+      const drinkWords = [
+        "drink",
+        "water",
+        "juice",
+        "milk",
+        "squash",
+        "tea",
+        "bottle",
+        "cup",
+        "smoothie",
+      ];
+      const looksLikeDrink = (option) =>
+        option.category === "drink" ||
+        (option.category === "food" &&
+          drinkWords.some((word) =>
+            String(option.label || "").toLowerCase().includes(word),
+          ));
+
+      return {
+        food: childCareOptions.filter(
+          (option) => option.category === "food" && !looksLikeDrink(option),
+        ),
+        drink: childCareOptions.filter(looksLikeDrink),
+        medication: childCareOptions.filter(
+          (option) => option.category === "medication",
+        ),
+        givenBy: childCareOptions.filter((option) => option.category === "given_by"),
+        locations: childCareOptions.filter((option) => option.category === "location"),
+      };
+    },
     [childCareOptions],
   );
   const detectedTimeZone =
@@ -2483,7 +2518,7 @@ function WorkspaceGate({ session, onLogout }) {
         if (nextFamilyId) {
           const loadedChildren = await api.listChildren(nextFamilyId);
           if (ignore) return;
-          setChildren(loadedChildren);
+          setChildren(dedupeChildren(loadedChildren));
           const storedChildId = localStorage.getItem(
             selectedChildStorageKey(nextFamilyId),
           );
@@ -2552,6 +2587,7 @@ function WorkspaceGate({ session, onLogout }) {
 
   const addChild = async (event) => {
     event.preventDefault();
+    if (isSavingChild) return;
     if (!selectedFamilyId || !childName.trim()) return;
 
     setIsSavingChild(true);
@@ -2561,7 +2597,7 @@ function WorkspaceGate({ session, onLogout }) {
       const child = await api.createChild(selectedFamilyId, {
         firstName: childName,
       });
-      setChildren((current) => [...current, child]);
+      setChildren((current) => dedupeChildren([...current, child]));
       setSelectedChildId(child.id);
       localStorage.setItem(selectedChildStorageKey(selectedFamilyId), child.id);
       setChildName("");
@@ -2643,7 +2679,9 @@ function WorkspaceGate({ session, onLogout }) {
         notes: childEditForm.notes,
       });
       setChildren((current) =>
-        current.map((child) => (child.id === updated.id ? updated : child)),
+        dedupeChildren(
+          current.map((child) => (child.id === updated.id ? updated : child)),
+        ),
       );
       setAccountMessage("Child details updated.");
     } catch (caughtError) {
@@ -2766,7 +2804,9 @@ function WorkspaceGate({ session, onLogout }) {
         avatarObjectKey: upload.objectKey,
       }));
       setChildren((current) =>
-        current.map((child) => (child.id === updated.id ? updated : child)),
+        dedupeChildren(
+          current.map((child) => (child.id === updated.id ? updated : child)),
+        ),
       );
       setChildPhotoCrop(null);
       setAccountMessage("Child photo uploaded and saved.");
@@ -2913,6 +2953,7 @@ function WorkspaceGate({ session, onLogout }) {
 
   const addAdminChild = async (event) => {
     event.preventDefault();
+    if (isSavingChild) return;
     if (!selectedFamilyAccess.canAddChild) {
       setError("This plan cannot add another child right now.");
       return;
@@ -2926,7 +2967,7 @@ function WorkspaceGate({ session, onLogout }) {
       const child = await api.createChild(selectedFamilyId, {
         firstName: childName,
       });
-      setChildren((current) => [...current, child]);
+      setChildren((current) => dedupeChildren([...current, child]));
       setSelectedChildId((current) => current || child.id);
       if (!selectedChildId) {
         localStorage.setItem(selectedChildStorageKey(selectedFamilyId), child.id);
@@ -4041,6 +4082,13 @@ function WorkspaceGate({ session, onLogout }) {
       minute: "2-digit",
     });
   };
+
+  const formatMoney = (value, currency = "GBP") =>
+    new Intl.NumberFormat("en-GB", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: 2,
+    }).format(Number(value || 0));
 
   const accountHealthForUser = (user) => {
     const lastLoginAt = safeDate(user?.lastLoginAt);
@@ -6176,17 +6224,15 @@ function WorkspaceGate({ session, onLogout }) {
                         Revenue dashboard
                       </p>
                       <h3 className="mt-1 text-xl font-black text-slate-950">
-                        £
-                        {Number(
-                          platformData.overview?.revenue?.estimatedMrrGbp || 0,
-                        ).toLocaleString("en-GB")}{" "}
+                        {formatMoney(
+                          platformData.overview?.revenue?.netPaidGbp ||
+                            platformData.overview?.revenue?.estimatedMrrGbp ||
+                            0,
+                        )}{" "}
                         / month
                       </h3>
                       <p className="mt-1 text-sm font-semibold text-emerald-900">
-                        {platformData.overview?.revenue?.activePaidFamilies || 0}{" "}
-                        active paid families at £
-                        {platformData.overview?.revenue?.monthlyPriceGbp || 9}
-                        /month
+                        Real paid Stripe invoice totals from the latest 30 days.
                       </p>
                     </div>
                     <div className="grid grid-cols-2 gap-2 sm:min-w-[16rem]">
@@ -6288,20 +6334,21 @@ function WorkspaceGate({ session, onLogout }) {
                           Revenue dashboard
                         </p>
                         <h3 className="mt-1 text-2xl font-black text-slate-950">
-                          £
-                          {Number(
-                            platformData.overview?.revenue?.estimatedMrrGbp || 0,
-                          ).toLocaleString("en-GB")}{" "}
+                          {formatMoney(
+                            platformData.overview?.revenue?.netPaidGbp ||
+                              platformData.overview?.revenue?.estimatedMrrGbp ||
+                              0,
+                          )}{" "}
                           / month
                         </h3>
                         <p className="mt-1 text-sm font-semibold text-slate-600">
-                          Estimated from active paid families and the configured
-                          monthly plan price.
+                          Based on real paid Stripe invoices from the latest 30 days, so coupons and discounts are reflected.
                         </p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                        £{platformData.overview?.revenue?.monthlyPriceGbp || 9}
-                        /family
+                        {platformData.overview?.revenue?.source === "stripe_paid_invoices"
+                          ? "Stripe paid invoices"
+                          : "Stripe data unavailable"}
                       </span>
                     </div>
 
@@ -6329,6 +6376,55 @@ function WorkspaceGate({ session, onLogout }) {
                         <p className="mt-1 text-2xl font-black text-slate-950">
                           {platformData.overview?.inactiveSubscriptions || 0}
                         </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <h4 className="text-sm font-black text-slate-900">
+                        Recent paid invoices
+                      </h4>
+                      <div className="mt-2 space-y-2">
+                        {(platformData.overview?.revenue?.recentPayments || []).length ? (
+                          platformData.overview.revenue.recentPayments.map((payment) => (
+                            <a
+                              key={payment.id}
+                              href={payment.hostedInvoiceUrl || undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="block rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm transition hover:border-emerald-200 hover:bg-emerald-50"
+                            >
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="truncate font-black text-slate-900">
+                                    {payment.familyName || "Stripe customer"}
+                                  </p>
+                                  <p className="truncate text-xs font-semibold text-slate-500">
+                                    {payment.productName || "Subscription"} -{" "}
+                                    {payment.paidAt
+                                      ? formatPlatformDateTime(payment.paidAt)
+                                      : "No payment date"}
+                                  </p>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2 text-right text-xs font-bold sm:min-w-[15rem]">
+                                  <span>
+                                    Gross {formatMoney(payment.gross, payment.currency)}
+                                  </span>
+                                  <span>
+                                    Discount {formatMoney(payment.discount, payment.currency)}
+                                  </span>
+                                  <span>
+                                    Net {formatMoney(payment.net, payment.currency)}
+                                  </span>
+                                </div>
+                              </div>
+                            </a>
+                          ))
+                        ) : (
+                          <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-600">
+                            No paid Stripe invoices found yet. Revenue will appear
+                            here after real payments are recorded.
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -7756,6 +7852,7 @@ function WorkspaceGate({ session, onLogout }) {
         onOpenChildSetup={openChildSetupFromDashboard}
         onAddRegularMedication={addRegularMedicationFromDiary}
         customFoodOptions={groupedCareOptions.food}
+        customDrinkOptions={groupedCareOptions.drink}
         customMedicationOptions={groupedCareOptions.medication}
         customGivenByOptions={groupedCareOptions.givenBy}
         customLocationOptions={groupedCareOptions.locations}

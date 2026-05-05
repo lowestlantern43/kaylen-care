@@ -141,6 +141,17 @@ export async function listStripeCustomerSubscriptions(customerId) {
   );
 }
 
+export async function listStripePaidInvoices({ limit = 100 } = {}) {
+  const params = new URLSearchParams();
+  params.set("status", "paid");
+  params.set("limit", String(Math.min(Math.max(Number(limit) || 100, 1), 100)));
+  params.set("expand[]", "data.customer");
+  params.append("expand[]", "data.subscription");
+  params.append("expand[]", "data.lines.data.price.product");
+
+  return stripeRequest(`/invoices?${params.toString()}`, { method: "GET" });
+}
+
 export async function retrieveStripeSubscription(subscriptionId) {
   return stripeRequest(`/subscriptions/${subscriptionId}`, { method: "GET" });
 }

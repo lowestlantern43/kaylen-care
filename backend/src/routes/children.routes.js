@@ -112,6 +112,24 @@ childrenRouter.post(
     const avatarUrl = optionalString(req.body, "avatarUrl");
     const notes = optionalString(req.body, "notes");
 
+    const duplicate = await query(
+      `
+        SELECT id
+        FROM children
+        WHERE family_id = $1
+          AND deleted_at IS NULL
+          AND lower(trim(first_name)) = lower(trim($2))
+          AND lower(trim(COALESCE(last_name, ''))) = lower(trim(COALESCE($3, '')))
+          AND date_of_birth IS NOT DISTINCT FROM $4::date
+        LIMIT 1
+      `,
+      [req.familyMember.family_id, firstName, lastName, dateOfBirth],
+    );
+
+    if (duplicate.rows[0]) {
+      throw badRequest("That child already exists in this family.");
+    }
+
     const { rows } = await query(
       `
         INSERT INTO children (
@@ -463,6 +481,7 @@ childrenRouter.post(
     const childId = requireUuid(req.params.childId, "Child ID");
     const category = requireEnum(req.body, "category", [
       "food",
+      "drink",
       "medication",
       "given_by",
       "location",

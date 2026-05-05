@@ -18,6 +18,7 @@ import {
 } from "../services/planAccess.js";
 import {
   extractStripeDiscountInfo,
+  listStripePaidInvoices,
   listStripeCustomerSubscriptions,
   normalisePromotionCode,
 } from "../services/stripe.js";
@@ -191,6 +192,156 @@ async function syncFamilySubscriptionFromStripe(familyId) {
   return updated.rows[0];
 }
 
+function amountToMajorUnits(amount, currency = "gbp") {
+  const zeroDecimalCurrencies = new Set(["bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf"]);
+  const divisor = zeroDecimalCurrencies.has(String(currency).toLowerCase()) ? 1 : 100;
+  return Number(amount || 0) / divisor;
+}
+
+function getInvoiceDiscountTotal(invoice) {
+  if (Array.isArray(invoice.total_discount_amounts) && invoice.total_discount_amounts.length) {
+    return invoice.total_discount_amounts.reduce(
+      (sum, item) => sum + Number(item.amount || 0),
+      0,
+    );
+  }
+  return Math.max(0, Number(invoice.subtotal || 0) - Number(invoice.total || 0));
+}
+
+async function buildRevenueSummaryFromStripe() {
+  const fallback = {
+    currency: "GBP",
+    source: config.stripeSecretKey ? "stripe_unavailable" : "not_configured",
+    activePaidFamilies: 0,
+    estimatedMrrGbp: 0,
+    grossPaidGbp: 0,
+    discountGbp: 0,
+    netPaidGbp: 0,
+    recentPayments: [],
+  };
+
+  if (!config.stripeSecretKey) return fallback;
+
+  try {
+    const [{ data: invoices = [] }, { rows: subscriptions }] = await Promise.all([
+      listStripePaidInvoices({ limit: 100 }),
+      query(
+        `
+          SELECT
+            s.family_id AS "familyId",
+            s.stripe_customer_id AS "stripeCustomerId",
+            s.stripe_subscription_id AS "stripeSubscriptionId",
+            f.name AS "familyName"
+          FROM subscriptions s
+          INNER JOIN families f ON f.id = s.family_id
+          WHERE f.deleted_at IS NULL
+        `,
+      ),
+    ]);
+
+    const familyByCustomer = new Map();
+    const familyBySubscription = new Map();
+    subscriptions.forEach((subscription) => {
+      if (subscription.stripeCustomerId) {
+        familyByCustomer.set(subscription.stripeCustomerId, subscription);
+      }
+      if (subscription.stripeSubscriptionId) {
+        familyBySubscription.set(subscription.stripeSubscriptionId, subscription);
+      }
+    });
+
+    const now = Date.now();
+    const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+    const paidInLast30Days = invoices.filter((invoice) => {
+      const paidAt = Number(invoice.status_transitions?.paid_at || invoice.created || 0) * 1000;
+      return paidAt >= thirtyDaysAgo;
+    });
+
+    const totals = paidInLast30Days.reduce(
+      (sum, invoice) => {
+        const currency = invoice.currency || "gbp";
+        sum.gross += amountToMajorUnits(invoice.subtotal || invoice.amount_due, currency);
+        sum.discount += amountToMajorUnits(getInvoiceDiscountTotal(invoice), currency);
+        sum.net += amountToMajorUnits(invoice.amount_paid || invoice.total, currency);
+        return sum;
+      },
+      { gross: 0, discount: 0, net: 0 },
+    );
+
+    const activePaidFamilies = new Set(
+      paidInLast30Days
+        .map((invoice) => {
+          const customerId =
+            typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+          const subscriptionId =
+            typeof invoice.subscription === "string"
+              ? invoice.subscription
+              : invoice.subscription?.id;
+          return (
+            familyByCustomer.get(customerId)?.familyId ||
+            familyBySubscription.get(subscriptionId)?.familyId ||
+            invoice.metadata?.family_id ||
+            null
+          );
+        })
+        .filter(Boolean),
+    ).size;
+
+    const recentPayments = invoices.slice(0, 10).map((invoice) => {
+      const currency = (invoice.currency || "gbp").toUpperCase();
+      const customerId =
+        typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
+      const subscriptionId =
+        typeof invoice.subscription === "string"
+          ? invoice.subscription
+          : invoice.subscription?.id;
+      const matchedFamily =
+        familyByCustomer.get(customerId) || familyBySubscription.get(subscriptionId);
+      const firstLine = invoice.lines?.data?.[0];
+      const product = firstLine?.price?.product;
+      const productName =
+        typeof product === "object"
+          ? product.name
+          : firstLine?.description || firstLine?.price?.nickname || "Subscription";
+
+      return {
+        id: invoice.id,
+        familyId: matchedFamily?.familyId || invoice.metadata?.family_id || null,
+        familyName:
+          matchedFamily?.familyName ||
+          invoice.customer_name ||
+          invoice.customer_email ||
+          "Stripe customer",
+        customerId,
+        subscriptionId,
+        productName,
+        currency,
+        gross: amountToMajorUnits(invoice.subtotal || invoice.amount_due, invoice.currency),
+        discount: amountToMajorUnits(getInvoiceDiscountTotal(invoice), invoice.currency),
+        net: amountToMajorUnits(invoice.amount_paid || invoice.total, invoice.currency),
+        paidAt: new Date(
+          Number(invoice.status_transitions?.paid_at || invoice.created || 0) * 1000,
+        ).toISOString(),
+        hostedInvoiceUrl: invoice.hosted_invoice_url || null,
+      };
+    });
+
+    return {
+      currency: "GBP",
+      source: "stripe_paid_invoices",
+      activePaidFamilies,
+      estimatedMrrGbp: totals.net,
+      grossPaidGbp: totals.gross,
+      discountGbp: totals.discount,
+      netPaidGbp: totals.net,
+      recentPayments,
+    };
+  } catch (error) {
+    console.error("Stripe revenue summary failed:", error.message);
+    return fallback;
+  }
+}
+
 adminRouter.get(
   "/overview",
   asyncHandler(async (req, res) => {
@@ -220,15 +371,7 @@ adminRouter.get(
           WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
         `,
       ),
-      query(
-        `
-          SELECT count(DISTINCT family_id)::int AS active_paid
-          FROM subscriptions
-          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
-            AND plan = 'family'
-            AND status IN ('active', 'trialing', 'past_due')
-        `,
-      ),
+      buildRevenueSummaryFromStripe(),
       query(
         `
           SELECT
@@ -275,9 +418,6 @@ adminRouter.get(
       ),
     ]);
 
-    const activePaidFamilies = revenue.rows[0]?.active_paid || 0;
-    const monthlyPriceGbp = Number(config.familyPlanMonthlyPriceGbp || 9);
-
     res.json({
       data: {
         families: families.rows[0].count,
@@ -287,10 +427,7 @@ adminRouter.get(
         activeSubscriptions: subscriptions.rows[0].active,
         inactiveSubscriptions: subscriptions.rows[0].inactive,
         revenue: {
-          currency: "GBP",
-          monthlyPriceGbp,
-          activePaidFamilies,
-          estimatedMrrGbp: activePaidFamilies * monthlyPriceGbp,
+          ...revenue,
           planBreakdown: planBreakdown.rows,
         },
         logsToday: logsToday.rows[0].count,
@@ -1043,6 +1180,17 @@ adminRouter.delete(
         SET deleted_at = now()
         WHERE family_id = $1
           AND deleted_at IS NULL
+      `,
+      [familyId],
+    );
+
+    await query(
+      `
+        UPDATE subscriptions
+        SET status = 'canceled',
+            access_paused_at = COALESCE(access_paused_at, now()),
+            access_pause_reason = 'Family soft deleted by owner platform'
+        WHERE family_id = $1
       `,
       [familyId],
     );
