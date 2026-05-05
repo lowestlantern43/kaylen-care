@@ -575,7 +575,7 @@ adminRouter.patch(
   asyncHandler(async (req, res) => {
     const issueId = requireUuid(req.params.issueId, "Issue ID");
     const status = requireEnum(req.body, "status", issueStatuses, "Status");
-    const internalNote = optionalString(req.body, "internalNote");
+    const internalNote = optionalString(req.body, "internalNote") || "";
 
     let rows = [];
 
