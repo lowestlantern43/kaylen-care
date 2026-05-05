@@ -4510,10 +4510,17 @@ export default function KaylenCareMonitorDashboard({
     });
   };
 
-  const defaultReportPdfFilename = (variant = "full") =>
-    `familytrack-${variant === "trends" ? "trends-summary" : "full-care-report"}-${childName
+  const defaultReportPdfFilename = (variant = "full") => {
+    const safeChildName = String(childName || "child")
       .toLowerCase()
-      .replace(/\s+/g, "-")}-${effectiveReportDays}-days.pdf`;
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    const safeRange = String(reportRangeLabel || `${effectiveReportDays}-days`)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+    return `familytrack-${variant === "trends" ? "trends-report" : "care-report"}-${safeChildName}-${safeRange}.pdf`;
+  };
 
   const createReportPdf = async ({ variant = "full" } = {}) => {
     const isTrendsPdf = variant === "trends";
@@ -5009,13 +5016,88 @@ export default function KaylenCareMonitorDashboard({
       )}${details}`;
     };
 
+    const sortPdfEntriesByDate = (entries = []) =>
+      [...entries].sort((entryA, entryB) => {
+        const dateA = getEntryDateTime(entryA)?.getTime() || 0;
+        const dateB = getEntryDateTime(entryB)?.getTime() || 0;
+        return dateA - dateB;
+      });
+
+    const groupPdfEntriesByDate = (entries = []) => {
+      const groups = [];
+      sortPdfEntriesByDate(entries).forEach((entry) => {
+        const date = entry.date || "Date not set";
+        let group = groups.find((item) => item.date === date);
+        if (!group) {
+          group = {
+            date,
+            label: date === "Date not set" ? date : formatReportDateLabel(date),
+            entries: [],
+          };
+          groups.push(group);
+        }
+        group.entries.push(entry);
+      });
+      return groups;
+    };
+
+    const pdfFoodEntries = sortPdfEntriesByDate(groupedReportEntries["Food Diary"] || []);
+    const pdfMedicationEntries = sortPdfEntriesByDate(groupedReportEntries.Medication || []);
+    const pdfSleepEntries = sortPdfEntriesByDate(groupedReportEntries.Sleep || []);
+    const pdfToiletingEntries = sortPdfEntriesByDate(groupedReportEntries.Toileting || []);
+    const pdfHealthEntries = sortPdfEntriesByDate(
+      (groupedReportEntries.Health || []).filter((entry) => !isMeasurementEntry(entry)),
+    );
+    const pdfMeasurementEntries = sortPdfEntriesByDate(recentEntries.filter(isMeasurementEntry));
+    const pdfNotesEntries = sortPdfEntriesByDate(groupedReportEntries["General Notes"] || []);
+
+    const drawDetailedPdfSection = ({
+      title,
+      entries,
+      emptyText,
+      fill = tones.slate.fill,
+      stroke = tones.slate.stroke,
+      titleColor = tones.slate.accent,
+    }) => {
+      addSectionTitle(title);
+      const groups = groupPdfEntriesByDate(entries);
+      if (!groups.length) {
+        drawCard({
+          title,
+          lines: [emptyText],
+          fill,
+          stroke,
+          titleColor,
+        });
+        return;
+      }
+
+      groups.forEach((group) => {
+        const lines = group.entries.map((entry) => `- ${formatEntryLine(entry)}`);
+        const chunkSize = 12;
+        for (let index = 0; index < lines.length; index += chunkSize) {
+          const chunk = lines.slice(index, index + chunkSize);
+          drawCard({
+            title:
+              index === 0
+                ? `${group.label} - ${group.entries.length} item${group.entries.length === 1 ? "" : "s"}`
+                : `${group.label} continued`,
+            lines: chunk,
+            fill,
+            stroke,
+            titleColor,
+          });
+        }
+      });
+    };
+
     pdf.setFillColor(...tones.sky.fill);
     pdf.setDrawColor(...tones.sky.stroke);
     pdf.roundedRect(margin, cursorY, usableWidth, 28, 4, 4, "FD");
     pdf.setFillColor(...tones.sky.accent);
     pdf.roundedRect(margin, cursorY, 3, 28, 1.5, 1.5, "F");
     setText(8, tones.sky.accent, "bold");
-    pdf.text(isTrendsPdf ? "TRENDS SUMMARY" : "FULL DETAILED REPORT", margin + 5, cursorY + 7);
+    pdf.text(isTrendsPdf ? "TRENDS SUMMARY" : "FULL CARE REPORT", margin + 5, cursorY + 7);
     setText(18, [15, 23, 42], "bold");
     pdf.text(childName || "Child", margin + 5, cursorY + 16);
     setText(8, [51, 65, 85], "normal");
@@ -5095,40 +5177,97 @@ export default function KaylenCareMonitorDashboard({
     }
 
     if (!isTrendsPdf) {
-      addSectionTitle("Category breakdown");
+      addSectionTitle("Report summary");
       drawMetricGrid([
-        { label: "Food", value: quickReportSummary.food, tone: tones.amber },
-        { label: "Medication", value: quickReportSummary.medication, tone: tones.rose },
+        { label: "Total entries", value: recentEntries.length || "None", tone: tones.slate },
         { label: "Sleep", value: quickReportSummary.sleep, tone: tones.indigo },
+        { label: "Food & Drink", value: quickReportSummary.food, tone: tones.emerald },
+        { label: "Medication", value: quickReportSummary.medication, tone: tones.rose },
         { label: "Toileting", value: quickReportSummary.toileting, tone: tones.sky },
-        { label: "Health", value: quickReportSummary.health, tone: tones.emerald },
+        { label: "Health", value: pdfHealthEntries.length, tone: tones.amber },
+        { label: "Measurements", value: pdfMeasurementEntries.length, tone: tones.violet },
+        {
+          label: "Days with entries",
+          value: dailyReportGroups.length || "None",
+          tone: tones.slate,
+        },
       ]);
 
-      addSectionTitle("Daily grouped timeline");
-      if (!dailyReportGroups.length) {
-        drawCard({
-          title: "No logs found",
-          lines: ["No logs were found for this date range."],
+      addSectionTitle("Key insights");
+      drawCard({
+        title: "Key Insights",
+        lines: reportTrendModel.insights.length
+          ? reportTrendModel.insights.map((item) => `- ${item}`)
+          : ["Not enough data yet to identify reliable trends."],
+        fill: tones.sky.fill,
+        stroke: tones.sky.stroke,
+        titleColor: tones.sky.accent,
+      });
+
+      if (showReportCharts) {
+        addSectionTitle("Key trends");
+        drawTrendVisuals();
+      }
+
+      addSectionTitle("Detailed report");
+      drawDetailedPdfSection({
+        title: "Sleep",
+        entries: pdfSleepEntries,
+        emptyText: "No sleep entries found for this period.",
+        fill: tones.indigo.fill,
+        stroke: tones.indigo.stroke,
+        titleColor: tones.indigo.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Food & Drink",
+        entries: pdfFoodEntries,
+        emptyText: "No food or drink entries found for this period.",
+        fill: tones.emerald.fill,
+        stroke: tones.emerald.stroke,
+        titleColor: tones.emerald.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Medication",
+        entries: pdfMedicationEntries,
+        emptyText: "No medication entries found for this period.",
+        fill: tones.rose.fill,
+        stroke: tones.rose.stroke,
+        titleColor: tones.rose.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Toileting",
+        entries: pdfToiletingEntries,
+        emptyText: "No toileting entries found for this period.",
+        fill: tones.sky.fill,
+        stroke: tones.sky.stroke,
+        titleColor: tones.sky.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Health",
+        entries: pdfHealthEntries,
+        emptyText: "No health entries found for this period.",
+        fill: tones.amber.fill,
+        stroke: tones.amber.stroke,
+        titleColor: tones.amber.accent,
+      });
+      if (pdfMeasurementEntries.length) {
+        drawDetailedPdfSection({
+          title: "Measurements",
+          entries: pdfMeasurementEntries,
+          emptyText: "No measurements found for this period.",
+          fill: tones.violet.fill,
+          stroke: tones.violet.stroke,
+          titleColor: tones.violet.accent,
+        });
+      }
+      if (pdfNotesEntries.length) {
+        drawDetailedPdfSection({
+          title: "Notes",
+          entries: pdfNotesEntries,
+          emptyText: "No general notes found for this period.",
           fill: tones.slate.fill,
           stroke: tones.slate.stroke,
           titleColor: tones.slate.accent,
-        });
-      } else {
-        dailyReportGroups.forEach((group) => {
-          drawCard({
-            title: group.label,
-            lines: reportCategoryOrder.flatMap((section) => {
-              const entries = group.categories[section] || [];
-              if (!entries.length) return [];
-              return [
-                reportCategoryLabel(section),
-                ...entries.map((entry) => `- ${formatEntryLine(entry)}`),
-              ];
-            }),
-            fill: [255, 255, 255],
-            stroke: tones.slate.stroke,
-            titleColor: tones.slate.accent,
-          });
         });
       }
     }
