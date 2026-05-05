@@ -491,6 +491,9 @@ export default function KaylenCareMonitorDashboard({
   useSaasApi = false,
 } = {}) {
   const childProfile = childProfileProp || {};
+  const isReadOnly = Boolean(
+    accountAccess?.viewOnly || accountAccess?.canAddLogs === false,
+  );
   const APP_PASSWORD = "030920";
 
   const [passwordInput, setPasswordInput] = useState("");
