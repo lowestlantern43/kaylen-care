@@ -5606,6 +5606,9 @@ export default function KaylenCareMonitorDashboard({
     const selectedGivenBy = showOtherGivenBy
       ? medicationForm.otherGivenBy || "Other"
       : medicationForm.givenBy || "";
+    const hasGivenBy = showOtherGivenBy
+      ? !!medicationForm.otherGivenBy.trim()
+      : !!medicationForm.givenBy.trim();
     const medicationSuggestedTimes =
       !showOtherMedication && medicationForm.medicine
         ? getMedicationSuggestedTimes(medicationForm.medicine)
@@ -5618,6 +5621,7 @@ export default function KaylenCareMonitorDashboard({
       !!medicationForm.dose.trim() &&
       !!medicationForm.time.trim() &&
       !!medicationForm.date.trim() &&
+      hasGivenBy &&
       !activeSaveAction;
 
     return (
@@ -6273,39 +6277,34 @@ export default function KaylenCareMonitorDashboard({
     }));
   };
 
-  const markRequiredMedicationAsTaken = async (medicine) => {
-    if (!medicine?.name || medicine.status === "taken" || activeSaveAction) return;
-    if (!familyId || !childId) {
-      alert("Choose a family and child before saving.");
-      return;
-    }
+  const openRequiredMedicationLog = (medicine) => {
+    if (!medicine?.name || medicine.status === "taken") return;
 
-    const actionKey = `required-medication-${medicine.id || medicine.name}`;
-    try {
-      setActiveSaveAction(actionKey);
-      const saved = await createCareLogWithOfflineQueue({
-        childId,
-        category: "medication",
-        logDate: todayIsoValue(),
-        logTime: nowTimeValue(),
-        data: {
-          medicine: medicine.name,
-          dose: medicine.dose || "",
-          status: "given",
-          given_by: "Quick checklist",
-          time_window: medicine.timeWindow || "",
-        },
-        notes: medicine.timeWindow
-          ? `Marked from daily checklist (${formatTimeWindowLabel(medicine.timeWindow)})`
-          : "Marked from daily checklist",
-      });
-      await loadEntriesFromSupabase();
-      toastSavedForChild(saved);
-    } catch (error) {
-      console.error("Daily medication checklist save failed:", error);
-      alert(error.message || "Medication save failed");
-    } finally {
-      setActiveSaveAction("");
+    const medicationSection = sections.find(
+      (section) => section.title === "Medication",
+    );
+    const knownMedicine = medicationOptions.includes(medicine.name);
+    const doseSlot = medicine.timeWindow
+      ? `${formatTimeWindowLabel(medicine.timeWindow)} dose`
+      : "";
+
+    setSelectedMedicationShortcut(medicine.name);
+    setMedicationValue(knownMedicine ? medicine.name : "Other");
+    setMedicationForm((current) => ({
+      ...current,
+      medicine: knownMedicine ? medicine.name : "",
+      otherMedicine: knownMedicine ? "" : medicine.name,
+      dose: medicine.dose || getMedicationDefaultDose(medicine.name) || current.dose,
+      status: "given",
+      date: todayValue(),
+      time: nowTimeValue(),
+      givenBy: "",
+      otherGivenBy: "",
+      notes: [doseSlot, medicine.notes || ""].filter(Boolean).join(" - "),
+    }));
+
+    if (medicationSection) {
+      openSection(medicationSection);
     }
   };
 
@@ -9430,9 +9429,9 @@ export default function KaylenCareMonitorDashboard({
                       type="button"
                       key={medicine.id}
                       onClick={() =>
-                        !isReadOnly && markRequiredMedicationAsTaken(medicine)
+                        !isReadOnly && openRequiredMedicationLog(medicine)
                       }
-                      disabled={isReadOnly || activeSaveAction === `required-medication-${medicine.id}`}
+                      disabled={isReadOnly}
                       className="flex w-full min-w-0 items-center justify-between gap-2 rounded-xl bg-white px-3 py-2 text-left disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <div className="min-w-0">
@@ -9460,9 +9459,7 @@ export default function KaylenCareMonitorDashboard({
                         </span>
                         {medicine.status !== "taken" && !isReadOnly ? (
                           <span className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white">
-                            {activeSaveAction === `required-medication-${medicine.id}`
-                              ? "Saving"
-                              : "Mark"}
+                            Log
                           </span>
                         ) : null}
                       </div>
