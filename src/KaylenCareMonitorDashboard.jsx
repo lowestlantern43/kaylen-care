@@ -484,12 +484,13 @@ export default function KaylenCareMonitorDashboard({
   customGivenByOptions = [],
   customLocationOptions = [],
   onCreateCareOption,
-  childProfile = {},
+  childProfile: childProfileProp = {},
   importantEvents = [],
   accountAccess = null,
   showToast,
   useSaasApi = false,
 } = {}) {
+  const childProfile = childProfileProp || {};
   const APP_PASSWORD = "030920";
 
   const [passwordInput, setPasswordInput] = useState("");

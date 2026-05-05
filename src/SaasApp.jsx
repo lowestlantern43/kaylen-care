@@ -1,5 +1,5 @@
 import html2canvas from "html2canvas";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
 import dashboardScreenshot from "./assets/screenshots/dashboard.png";
@@ -943,6 +943,58 @@ function Toast({ toast, onClose }) {
       </div>
     </div>
   );
+}
+
+class DashboardErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("FamilyTrack dashboard crashed:", error, errorInfo);
+  }
+
+  componentDidUpdate(previousProps) {
+    if (previousProps.resetKey !== this.props.resetKey && this.state.error) {
+      this.setState({ error: null });
+    }
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children;
+
+    return (
+      <main className="min-h-screen bg-slate-50 px-4 py-8">
+        <div className="mx-auto max-w-lg rounded-[1.75rem] border border-rose-100 bg-white p-5 shadow-xl">
+          <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-600">
+            FamilyTrack
+          </p>
+          <h1 className="mt-2 text-2xl font-black text-slate-950">
+            Something went wrong loading the diary
+          </h1>
+          <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+            Your data is safe. Please reload the app. If it happens again,
+            report the issue so the exact error can be checked.
+          </p>
+          <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+            {this.state.error?.message || "Unknown dashboard error"}
+          </p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white"
+          >
+            Reload FamilyTrack
+          </button>
+        </div>
+      </main>
+    );
+  }
 }
 
 const emptyChildProfile = {
@@ -8013,31 +8065,33 @@ function WorkspaceGate({ session, onLogout }) {
       ) : null}
 
       {!showAdmin && !showPlatformAdmin ? (
-      <>
-      <KaylenCareMonitorDashboard
-        familyId={selectedFamily.familyId}
-        childId={selectedChild.id}
-        childName={selectedChild.firstName || selectedChild.first_name}
-        childDetails={selectedChild}
-        familyDetails={selectedFamily}
-        children={children}
-        selectedChildId={selectedChildId}
-        onSelectChild={selectChild}
-        onOpenChildSetup={openChildSetupFromDashboard}
-        onAddRegularMedication={addRegularMedicationFromDiary}
-        customFoodOptions={groupedCareOptions.food}
-        customDrinkOptions={groupedCareOptions.drink}
-        customMedicationOptions={groupedCareOptions.medication}
-        customGivenByOptions={groupedCareOptions.givenBy}
-        customLocationOptions={groupedCareOptions.locations}
-        onCreateCareOption={addCareOptionFromDiary}
-        childProfile={childProfile}
-        importantEvents={importantEvents}
-        accountAccess={selectedFamilyAccess}
-        showToast={showToast}
-        useSaasApi
-      />
-      </>
+      <DashboardErrorBoundary
+        resetKey={`${selectedFamily.familyId || ""}:${selectedChild.id || ""}`}
+      >
+        <KaylenCareMonitorDashboard
+          familyId={selectedFamily.familyId}
+          childId={selectedChild.id}
+          childName={selectedChild.firstName || selectedChild.first_name}
+          childDetails={selectedChild}
+          familyDetails={selectedFamily}
+          children={children}
+          selectedChildId={selectedChildId}
+          onSelectChild={selectChild}
+          onOpenChildSetup={openChildSetupFromDashboard}
+          onAddRegularMedication={addRegularMedicationFromDiary}
+          customFoodOptions={groupedCareOptions.food}
+          customDrinkOptions={groupedCareOptions.drink}
+          customMedicationOptions={groupedCareOptions.medication}
+          customGivenByOptions={groupedCareOptions.givenBy}
+          customLocationOptions={groupedCareOptions.locations}
+          onCreateCareOption={addCareOptionFromDiary}
+          childProfile={childProfile || emptyChildProfile}
+          importantEvents={importantEvents}
+          accountAccess={selectedFamilyAccess}
+          showToast={showToast}
+          useSaasApi
+        />
+      </DashboardErrorBoundary>
       ) : null}
       {platformSnapshot ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/45 px-3 py-5">
