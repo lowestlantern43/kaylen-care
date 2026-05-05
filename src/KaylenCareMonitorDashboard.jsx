@@ -10714,27 +10714,6 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
-        <section className="mb-5 grid grid-cols-3 gap-2 rounded-[1.5rem] border border-slate-200 bg-white/90 p-2 shadow-sm">
-          {[
-            ["Log data", "Food Diary"],
-            ["Snapshot", "Care Snapshot"],
-            ["Reports", "Reports"],
-          ].map(([label, title]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={() =>
-                title === "Care Snapshot"
-                  ? openCareSnapshot()
-                  : openSection(sections.find((section) => section.title === title))
-              }
-              className="rounded-2xl border border-slate-100 bg-slate-50 px-2 py-3 text-xs font-black text-slate-800 shadow-sm transition hover:bg-sky-50 sm:text-sm"
-            >
-              {label}
-            </button>
-          ))}
-        </section>
-
         <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
