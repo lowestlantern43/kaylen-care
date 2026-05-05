@@ -9785,7 +9785,7 @@ export default function KaylenCareMonitorDashboard({
         label: "Total entries",
         value: recentEntries.length || "No entries",
         meta: reportCategoryFilter === "All" ? "All categories" : reportCategoryLabel(reportCategoryFilter),
-        tone: "border-white/80 bg-white/80 text-slate-800",
+        tone: "border-slate-100 bg-white/90 text-slate-800",
       },
       {
         label: "Date range covered",
@@ -10311,8 +10311,8 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </section>
 
-          <section className="rounded-[1.75rem] border border-sky-100 bg-sky-50/60 p-4 shadow-sm">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+          <section className="rounded-[1.75rem] border border-sky-100 bg-gradient-to-br from-sky-50/80 via-white to-indigo-50/70 p-4 shadow-sm sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
                   Report Summary
@@ -10321,23 +10321,25 @@ export default function KaylenCareMonitorDashboard({
                   Period overview
                 </h3>
               </div>
-              <p className="text-sm font-semibold text-slate-500">
+              <p className="text-xs font-bold text-slate-500 sm:text-sm">
                 Generated {new Date().toLocaleDateString("en-GB")}
               </p>
             </div>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {summaryCards.map((card) => (
                 <div
                   key={card.label}
-                  className={`rounded-[1.35rem] border px-3 py-3 shadow-sm ${card.tone}`}
+                  className={`flex min-h-[8.25rem] min-w-0 flex-col justify-between rounded-[1.35rem] border px-4 py-4 shadow-sm ${card.tone}`}
                 >
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    {card.label}
-                  </p>
-                  <p className="mt-2 break-words text-lg font-black text-slate-950">
-                    {card.value}
-                  </p>
-                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                      {card.label}
+                    </p>
+                    <p className="mt-2 break-words text-2xl font-black leading-tight text-slate-950">
+                      {card.value}
+                    </p>
+                  </div>
+                  <p className="mt-3 text-xs font-semibold leading-5 text-slate-600">
                     {card.meta}
                   </p>
                 </div>
