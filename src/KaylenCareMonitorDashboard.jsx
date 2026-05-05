@@ -9296,136 +9296,540 @@ export default function KaylenCareMonitorDashboard({
       reportRangeEnd &&
       reportRangeStart > reportRangeEnd;
 
-    if (reportView === "trends") {
+    const sortEntriesByDate = (entries = []) =>
+      [...entries].sort((entryA, entryB) => {
+        const dateA = getEntryDateTime(entryA)?.getTime() || 0;
+        const dateB = getEntryDateTime(entryB)?.getTime() || 0;
+        return dateA - dateB;
+      });
+
+    const foodEntries = sortEntriesByDate(groupedReportEntries["Food Diary"] || []);
+    const medicationEntries = sortEntriesByDate(groupedReportEntries.Medication || []);
+    const sleepEntries = sortEntriesByDate(groupedReportEntries.Sleep || []);
+    const toiletingEntries = sortEntriesByDate(groupedReportEntries.Toileting || []);
+    const healthEntries = sortEntriesByDate(
+      (groupedReportEntries.Health || []).filter((entry) => !isMeasurementEntry(entry)),
+    );
+    const measurementEntries = sortEntriesByDate(recentEntries.filter(isMeasurementEntry));
+    const notesEntries = sortEntriesByDate(groupedReportEntries["General Notes"] || []);
+    const dataCompleteness = dailyReportGroups.length
+      ? `${dailyReportGroups.length} day${dailyReportGroups.length === 1 ? "" : "s"} with entries`
+      : "No entries in this period";
+    const sleepStat = reportTrendModel.summaryStats.find((item) => item.key === "sleep");
+    const medicationStat = reportTrendModel.summaryStats.find((item) => item.key === "medication");
+
+    const summaryCards = [
+      {
+        label: "Total entries",
+        value: recentEntries.length || "No entries",
+        meta: reportCategoryFilter === "All" ? "All categories" : reportCategoryLabel(reportCategoryFilter),
+        tone: "border-slate-200 bg-white text-slate-800",
+      },
+      {
+        label: "Date range covered",
+        value: reportRangeLabel,
+        meta: dataCompleteness,
+        tone: "border-sky-200 bg-sky-50 text-sky-900",
+      },
+      {
+        label: "Data completeness",
+        value: dataCompleteness,
+        meta: "Based on days with logged entries",
+        tone: "border-indigo-200 bg-indigo-50 text-indigo-900",
+      },
+      {
+        label: "Sleep average",
+        value: sleepStat?.value || "No sleep data",
+        meta: sleepStat?.meta || "No completed sleep entries",
+        tone: "border-violet-200 bg-violet-50 text-violet-900",
+      },
+      {
+        label: "Medication consistency",
+        value: medicationStat?.value || "No medication data",
+        meta: medicationStat?.meta || "No medication schedule set",
+        tone: "border-rose-200 bg-rose-50 text-rose-900",
+      },
+      {
+        label: "Food and fluid",
+        value: foodEntries.length || "No entries",
+        meta: `${foodEntries.length} food/drink entr${foodEntries.length === 1 ? "y" : "ies"}`,
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-900",
+      },
+      {
+        label: "Toileting",
+        value: toiletingEntries.length || "No entries",
+        meta: `${toiletingEntries.length} toileting entr${toiletingEntries.length === 1 ? "y" : "ies"}`,
+        tone: "border-cyan-200 bg-cyan-50 text-cyan-900",
+      },
+      {
+        label: "Health",
+        value: healthEntries.length || "No entries",
+        meta: `${healthEntries.length} health entr${healthEntries.length === 1 ? "y" : "ies"}`,
+        tone: "border-amber-200 bg-amber-50 text-amber-900",
+      },
+    ];
+
+    const insightLines = uniqueList([
+      sleepEntries.length
+        ? `Sleep was logged on ${
+            new Set(sleepEntries.map((entry) => entry.date)).size
+          } day${new Set(sleepEntries.map((entry) => entry.date)).size === 1 ? "" : "s"}.`
+        : "",
+      medicationEntries.length
+        ? medicationStat?.value?.includes("of")
+          ? `Medication records show ${medicationStat.value} expected doses logged.`
+          : "Medication entries were logged for this period."
+        : "",
+      foodEntries.length
+        ? `${foodEntries.length} food or fluid entr${foodEntries.length === 1 ? "y was" : "ies were"} logged.`
+        : "",
+      healthEntries.length
+        ? `${healthEntries.length} health entr${healthEntries.length === 1 ? "y was" : "ies were"} logged in this period.`
+        : "No health concerns were logged in this period.",
+      ...reportTrendModel.insights.filter(
+        (insight) => insight && !insight.toLowerCase().startsWith("not enough"),
+      ),
+    ])
+      .filter(Boolean)
+      .slice(0, 5);
+
+    const displayInsights = insightLines.length
+      ? insightLines
+      : ["Not enough data yet to identify reliable trends."];
+
+    const renderTrendInfoCard = ({
+      title,
+      description,
+      value,
+      meta,
+      tone = "border-slate-200 bg-white",
+    }) => (
+      <div className={`rounded-2xl border p-4 shadow-sm ${tone}`}>
+        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+          {title}
+        </p>
+        <p className="mt-2 text-lg font-black text-slate-950">
+          {value}
+        </p>
+        <p className="mt-1 text-sm leading-6 text-slate-600">
+          {description}
+        </p>
+        {meta ? (
+          <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs font-bold text-slate-600">
+            {meta}
+          </p>
+        ) : null}
+      </div>
+    );
+
+    const renderEntryCard = (entry) => {
+      const theme = sectionTheme[entry.section] || {
+        report: "border-slate-200 bg-slate-50",
+      };
+
       return (
-        <>
-          {renderPdfExportArea()}
-          {renderTrendsDashboard({ reportInputClassName, invalidCustomRange })}
-          {renderReportEmailModal(reportInputClassName)}
-        </>
+        <div
+          key={entry.id}
+          className={`break-inside-avoid rounded-2xl border px-3 py-3 text-sm text-slate-700 shadow-sm ${theme.report}`}
+        >
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-600">
+                  {entry.date || "Date not set"}
+                </span>
+                <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  {entry.time || "Time not set"}
+                </span>
+              </div>
+              <p className="mt-2 break-words font-bold leading-5 text-slate-900">
+                {entry.summary || reportCategoryLabel(entry.section)}
+              </p>
+            </div>
+          </div>
+
+          {entry.details?.length ? (
+            <div className="mt-2.5 rounded-xl bg-white/70 px-3 py-2.5">
+              <div className="space-y-1 break-words text-[13px] leading-5 text-slate-600">
+                {entry.details.map((detail, detailIndex) => (
+                  <p key={detailIndex}>{detail}</p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       );
-    }
+    };
+
+    const renderDetailedSection = ({ title, entries, summary, emptyText, tone }) => (
+      <section className={`rounded-[1.5rem] border bg-white p-4 shadow-sm ${tone}`}>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+              {title}
+            </p>
+            <h4 className="mt-1 text-lg font-black text-slate-950">
+              {entries.length} entr{entries.length === 1 ? "y" : "ies"}
+            </h4>
+          </div>
+          <p className="rounded-full bg-white/80 px-3 py-1.5 text-xs font-bold text-slate-600">
+            {summary}
+          </p>
+        </div>
+        {entries.length ? (
+          <div className="mt-3 grid gap-2 lg:grid-cols-2">
+            {entries.map(renderEntryCard)}
+          </div>
+        ) : (
+          <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-sm font-semibold text-slate-500">
+            {emptyText}
+          </div>
+        )}
+      </section>
+    );
+
+    const detailedSections = [
+      {
+        title: "Sleep",
+        entries: sleepEntries,
+        summary: sleepStat?.value || "No average yet",
+        emptyText: "No completed sleep entries are available for this period.",
+        tone: "border-violet-100 bg-violet-50/40",
+      },
+      {
+        title: "Food and Drink",
+        entries: foodEntries,
+        summary: `${foodEntries.length} logged`,
+        emptyText: "No food or drink entries are available for this period.",
+        tone: "border-emerald-100 bg-emerald-50/40",
+      },
+      {
+        title: "Medication",
+        entries: medicationEntries,
+        summary: medicationStat?.value || "No medication data",
+        emptyText: "No medication entries are available for this period.",
+        tone: "border-rose-100 bg-rose-50/40",
+      },
+      {
+        title: "Toileting",
+        entries: toiletingEntries,
+        summary: `${toiletingEntries.length} logged`,
+        emptyText: "No toileting entries are available for this period.",
+        tone: "border-cyan-100 bg-cyan-50/40",
+      },
+      {
+        title: "Health",
+        entries: healthEntries,
+        summary: `${healthEntries.length} logged`,
+        emptyText: "No health entries are available for this period.",
+        tone: "border-amber-100 bg-amber-50/40",
+      },
+      ...(measurementEntries.length
+        ? [
+            {
+              title: "Measurements",
+              entries: measurementEntries,
+              summary: `${measurementEntries.length} logged`,
+              emptyText: "No measurements are available for this period.",
+              tone: "border-blue-100 bg-blue-50/40",
+            },
+          ]
+        : []),
+      ...(notesEntries.length
+        ? [
+            {
+              title: "Notes",
+              entries: notesEntries,
+              summary: `${notesEntries.length} logged`,
+              emptyText: "No general notes are available for this period.",
+              tone: "border-slate-100 bg-slate-50/80",
+            },
+          ]
+        : []),
+    ];
+
+    const rangeOptions = ["7", "14", "30", "custom"];
 
     return (
       <>
         {renderPdfExportArea()}
 
         <div className="mt-6 space-y-4">
-          <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                  Reports
-                </p>
-                <h3 className="mt-1 text-xl font-black text-slate-950">
-                  Full detailed report
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  Full timeline, category breakdown, notes and all logged data
-                  for the selected date range.
-                </p>
+          <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
+            <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-900 p-4 text-white sm:p-5">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-200">
+                    Reports
+                  </p>
+                  <h3 className="mt-2 text-2xl font-black tracking-tight">
+                    Full Care Report
+                  </h3>
+                  <p className="mt-2 max-w-3xl text-sm leading-6 text-sky-50/90">
+                    A clear summary of care logs, trends, and detailed records
+                    for the selected period.
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-100">
+                    <span className="rounded-full bg-white/15 px-3 py-1.5">
+                      Child: {childName}
+                    </span>
+                    <span className="rounded-full bg-white/15 px-3 py-1.5">
+                      {reportRangeLabel}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[22rem]">
+                  <button
+                    type="button"
+                    onClick={() => handleExportPdf("full")}
+                    disabled={isExportingPdf || invalidCustomRange}
+                    className="rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-900 shadow-sm transition hover:bg-sky-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {isExportingPdf ? "Exporting..." : "Export PDF"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!useSaasApi) {
+                        showToast?.({
+                          message: "Email sending is not set up yet. You can still download the PDF.",
+                          type: "info",
+                        });
+                        return;
+                      }
+                      setReportEmailForm((current) => ({
+                        ...current,
+                        attachmentType: "full",
+                      }));
+                      setIsReportEmailOpen(true);
+                    }}
+                    disabled={invalidCustomRange}
+                    className="rounded-2xl border border-white/30 bg-white/10 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-white/15 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Email Report
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={() => setReportView("trends")}
-                className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
-              >
-                Back to Report Trends
-              </button>
             </div>
 
-            <div className="mt-4">
-              {renderReportFilterControls({
-                reportInputClassName,
-                showDetailedOptions: true,
-              })}
+            <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Child
+                </label>
+                <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-700">
+                  {childName}
+                </div>
+              </div>
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Date range
+                </label>
+                <select
+                  className={reportInputClassName}
+                  value={reportDays}
+                  onChange={(event) => setReportDays(event.target.value)}
+                >
+                  {!rangeOptions.includes(reportDays) ? (
+                    <option value={reportDays}>{reportRangeLabel}</option>
+                  ) : null}
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="custom">Custom range</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Category
+                </label>
+                <select
+                  className={reportInputClassName}
+                  value={reportCategoryFilter}
+                  onChange={(event) => setReportCategoryFilter(event.target.value)}
+                >
+                  <option value="All">All categories</option>
+                  <option value="Food Diary">Food and drink</option>
+                  <option value="Medication">Medication</option>
+                  <option value="Sleep">Sleep</option>
+                  <option value="Toileting">Toileting</option>
+                  <option value="Health">Health</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-bold text-slate-700">
+                  Notes for report
+                </label>
+                <input
+                  className={reportInputClassName}
+                  value={reportNotes}
+                  onChange={(event) => setReportNotes(event.target.value)}
+                  placeholder="Optional note"
+                />
+              </div>
             </div>
 
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <label className="text-sm font-semibold text-slate-700">
-                Optional parent/carer notes
-              </label>
-              <textarea
-                rows={4}
-                className={`${reportInputClassName} resize-none`}
-                value={reportNotes}
-                onChange={(event) => setReportNotes(event.target.value)}
-                placeholder="Anything you want the reader to know before they read the report."
-              />
-            </div>
+            {reportDays === "custom" ? (
+              <div className="grid gap-3 border-t border-slate-100 p-4 sm:grid-cols-2">
+                <div>
+                  <label className="text-sm font-bold text-slate-700">
+                    Start date
+                  </label>
+                  <input
+                    type="date"
+                    className={reportInputClassName}
+                    value={reportStartDate}
+                    onChange={(event) => setReportStartDate(event.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-slate-700">
+                    End date
+                  </label>
+                  <input
+                    type="date"
+                    className={reportInputClassName}
+                    value={reportEndDate}
+                    onChange={(event) => setReportEndDate(event.target.value)}
+                  />
+                </div>
+              </div>
+            ) : null}
 
             {invalidCustomRange ? (
-              <div className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
+              <div className="mx-4 mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                 End date must be on or after the start date.
               </div>
             ) : null}
           </section>
 
-          {renderShareableCareReport({ forceFull: true, detailedOnly: true })}
-
           <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h3 className="font-bold text-slate-900">Export or copy</h3>
-                <p className="mt-1 text-sm text-slate-600">
-                  PDF exports as A4 portrait for sharing with school, hospital
-                  or EHCP professionals.
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                  Report Summary
                 </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">
+                  Period overview
+                </h3>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (invalidCustomRange) return;
-                    try {
-                      if (
-                        typeof navigator !== "undefined" &&
-                        navigator.clipboard?.writeText
-                      ) {
-                        await navigator.clipboard.writeText(reportText);
-                        setShareCopied(true);
-                        setTimeout(() => setShareCopied(false), 2000);
-                      }
-                    } catch (error) {
-                      console.error("Copy failed", error);
-                    }
-                  }}
-                  disabled={invalidCustomRange}
-                  className={`rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
-                >
-                  {shareCopied ? "Copied" : "Copy report"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleExportPdf("full")}
-                  disabled={isExportingPdf || invalidCustomRange}
-                  className="rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isExportingPdf ? "Exporting..." : "Export Report PDF"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!useSaasApi) {
-                      showToast?.({
-                        message: "Email sending is not set up yet. You can still download the PDF.",
-                        type: "info",
-                      });
-                      return;
-                    }
-                    setReportEmailForm((current) => ({
-                      ...current,
-                      attachmentType: "full",
-                    }));
-                    setIsReportEmailOpen(true);
-                  }}
-                  disabled={invalidCustomRange}
-                  className="rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Email Report
-                </button>
-              </div>
+              <p className="text-sm font-semibold text-slate-500">
+                Generated {new Date().toLocaleDateString("en-GB")}
+              </p>
             </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {summaryCards.map((card) => (
+                <div
+                  key={card.label}
+                  className={`rounded-2xl border px-3 py-3 shadow-sm ${card.tone}`}
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    {card.label}
+                  </p>
+                  <p className="mt-2 break-words text-lg font-black text-slate-950">
+                    {card.value}
+                  </p>
+                  <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                    {card.meta}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-sky-100 bg-sky-50/70 p-4 shadow-sm">
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
+              Key Insights
+            </p>
+            <div className="mt-3 grid gap-2 lg:grid-cols-2">
+              {displayInsights.map((insight) => (
+                <div
+                  key={insight}
+                  className="rounded-2xl border border-white/80 bg-white px-3 py-3 text-sm font-semibold leading-6 text-slate-700 shadow-sm"
+                >
+                  {insight}
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section className="rounded-[1.75rem] border border-slate-200 bg-slate-50/80 p-4 shadow-sm">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                Key Trends
+              </p>
+              <h3 className="mt-1 text-xl font-black text-slate-950">
+                Patterns in the selected period
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Simple charts where enough data exists, with clear empty states
+                where more logs are needed.
+              </p>
+            </div>
+            <div className="mt-4 grid gap-3 xl:grid-cols-2">
+              {showReportCharts ? (
+                <>
+                  {renderLineGraphCard({
+                    title: "Sleep trend",
+                    data: reportTrendModel.graphs.sleep,
+                    suffix: "h",
+                    stroke: "#6366f1",
+                    minPoints: 1,
+                    emptyText: "No completed sleep logs available yet",
+                    axisTitle: "Hours slept",
+                    yAxisLabels: [0, 2, 4, 6, 8],
+                    yMin: 0,
+                    yMax: 8,
+                  })}
+                  {renderFluidBarGraph()}
+                  {renderMedicationConsistencyCard()}
+                  {renderToiletingPatternCard()}
+                </>
+              ) : (
+                renderTrendInfoCard({
+                  title: "Charts hidden",
+                  value: "Graphs are turned off",
+                  description: "Turn charts back on from report options if you want visual trend cards.",
+                })
+              )}
+              {renderTrendInfoCard({
+                title: "Health notes pattern",
+                value: healthEntries.length ? `${healthEntries.length} logged` : "No health notes",
+                description: healthEntries.length
+                  ? "Health entries are included in the detailed report below."
+                  : "No health concerns were logged in this report range.",
+                tone: "border-amber-100 bg-amber-50/70",
+              })}
+              {renderTrendInfoCard({
+                title: "Measurements / weight trend",
+                value: measurementEntries.length ? `${measurementEntries.length} logged` : "No measurements",
+                description: measurementEntries.length
+                  ? "Measurement entries are shown as their own detailed section."
+                  : "Weight or height trends will appear here when measurements are logged.",
+                tone: "border-blue-100 bg-blue-50/70",
+              })}
+            </div>
+          </section>
+
+          <section className="space-y-3 rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+                Detailed Report
+              </p>
+              <h3 className="mt-1 text-xl font-black text-slate-950">
+                Logs by category
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Detailed entries for the selected child and date range, grouped
+                for professional review.
+              </p>
+            </div>
+            {detailedSections.map((section) => (
+              <div key={section.title}>
+                {renderDetailedSection(section)}
+              </div>
+            ))}
           </section>
         </div>
         {renderReportEmailModal(reportInputClassName)}
