@@ -3132,6 +3132,13 @@ export default function KaylenCareMonitorDashboard({
         hasFluid: false,
         hasSleep: false,
         hasToileting: false,
+        accident: 0,
+        dry: 0,
+        otherToileting: 0,
+        morning: 0,
+        afternoon: 0,
+        evening: 0,
+        night: 0,
       });
     }
 
@@ -3142,15 +3149,47 @@ export default function KaylenCareMonitorDashboard({
     };
 
     const classifyToileting = (entry) => {
-      const text = `${entry.summary || ""} ${(entry.details || []).join(" ")}`.toLowerCase();
+      const text = [
+        entry.type,
+        entry.category,
+        entry.event,
+        entry.toiletingType,
+        entry.result,
+        entry.summary,
+        ...(entry.details || []),
+        entry.notes,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
       const isDry = /\bdry\b/.test(text);
       const both = /both|wet\s*&\s*soiled|wet and soiled/.test(text);
       const wet = both || /\b(wet|wee|urine)\b/.test(text);
       const soiled = both || /\b(bowel|poo|stool|soiled|bm)\b/.test(text);
+      const accident = /\b(accident|leak|leaked|soiling accident)\b/.test(text);
+      const knownType = wet || soiled || accident || isDry;
       return {
         wet: !isDry && wet ? 1 : 0,
         soiled: soiled ? 1 : 0,
+        accident: accident ? 1 : 0,
+        dry: isDry ? 1 : 0,
+        other: knownType ? 0 : 1,
       };
+    };
+
+    const getToiletingTimeBucket = (entry) => {
+      const parsedHour = Number.parseInt(String(entry.time || "").split(":")[0], 10);
+      const date = getEntryDateTime(entry);
+      const hour = Number.isFinite(parsedHour)
+        ? parsedHour
+        : date
+          ? date.getHours()
+          : null;
+      if (!Number.isFinite(hour)) return "";
+      if (hour >= 6 && hour < 12) return "morning";
+      if (hour >= 12 && hour < 18) return "afternoon";
+      if (hour >= 18 && hour < 24) return "evening";
+      return "night";
     };
 
     let totalFluidMl = 0;
@@ -3206,6 +3245,11 @@ export default function KaylenCareMonitorDashboard({
         day.hasToileting = true;
         day.wet += toileting.wet;
         day.soiled += toileting.soiled;
+        day.accident += toileting.accident;
+        day.dry += toileting.dry;
+        day.otherToileting += toileting.other;
+        const timeBucket = getToiletingTimeBucket(entry);
+        if (timeBucket) day[timeBucket] += 1;
         totalToileting += 1;
       }
     });
@@ -3375,6 +3419,13 @@ export default function KaylenCareMonitorDashboard({
           label: day.label,
           wet: day.wet,
           soiled: day.soiled,
+          accident: day.accident,
+          dry: day.dry,
+          other: day.otherToileting,
+          morning: day.morning,
+          afternoon: day.afternoon,
+          evening: day.evening,
+          night: day.night,
           value: day.hasToileting ? day.toiletingCount || 0 : null,
           hasData: day.hasToileting,
         })),
@@ -7576,10 +7627,31 @@ export default function KaylenCareMonitorDashboard({
 
   const renderToiletingPatternCard = () => {
     const data = reportTrendModel.graphs.toileting;
-    const values = data
+    const daysWithData = data.filter((item) => item.hasData && item.value !== null);
+    const values = daysWithData
       .filter((item) => item.hasData && item.value !== null)
       .map((item) => Number(item.value || 0));
-    const max = Math.max(...values, 1);
+    const typeTotals = daysWithData.reduce(
+      (totals, item) => ({
+        wet: totals.wet + Number(item.wet || 0),
+        bowel: totals.bowel + Number(item.soiled || 0),
+        accident: totals.accident + Number(item.accident || 0),
+        dry: totals.dry + Number(item.dry || 0),
+        other: totals.other + Number(item.other || 0),
+      }),
+      { wet: 0, bowel: 0, accident: 0, dry: 0, other: 0 },
+    );
+    const stackedMax = daysWithData.reduce((maxValue, item) => {
+      const stackedTotal =
+        Number(item.wet || 0) +
+        Number(item.soiled || 0) +
+        Number(item.accident || 0) +
+        Number(item.dry || 0) +
+        Number(item.other || 0);
+      return Math.max(maxValue, stackedTotal, Number(item.value || 0));
+    }, 1);
+    const totalEvents = values.reduce((sum, value) => sum + value, 0);
+    const max = Math.max(stackedMax, 1);
     const scaleTop = Math.max(1, Math.ceil(max));
     const scaleMid = Math.round(scaleTop / 2);
     const timeBuckets = [
@@ -7588,57 +7660,79 @@ export default function KaylenCareMonitorDashboard({
       ["Evening", data.reduce((sum, item) => sum + Number(item.evening || 0), 0)],
       ["Night", data.reduce((sum, item) => sum + Number(item.night || 0), 0)],
     ].filter(([, value]) => value > 0);
+    const typeBadges = [
+      ["Wet", typeTotals.wet, "bg-cyan-500"],
+      ["Bowel", typeTotals.bowel, "bg-amber-500"],
+      ["Accident", typeTotals.accident, "bg-rose-500"],
+      ["Dry", typeTotals.dry, "bg-emerald-500"],
+      ["Other", typeTotals.other, "bg-slate-400"],
+    ].filter(([, value]) => value > 0);
+
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="rounded-[1.35rem] border border-cyan-100 bg-white/90 p-3 shadow-sm">
         <p className="text-[11px] font-black uppercase tracking-[0.12em] text-slate-500">
           Toileting pattern
         </p>
         <p className="mt-0.5 text-xs font-semibold text-slate-500">
-          Number of toileting entries recorded per day.
+          {daysWithData.length
+            ? `${totalEvents} toileting event${totalEvents === 1 ? "" : "s"} logged over ${daysWithData.length} day${daysWithData.length === 1 ? "" : "s"}.`
+            : "No toileting data recorded for this period"}
         </p>
-        <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
-          <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
-            <span>{scaleTop}</span>
-            <span>{scaleMid}</span>
-            <span>0</span>
-          </div>
-          <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
-            <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
-            <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
-          {data.some((item) => item.hasData) ? (
-            data.map((item) => (
-              <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-                <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
-                  {item.hasData ? (
-                    <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
-                      <div
-                        className="bg-cyan-500"
-                        style={{ height: `${Math.max(0, (item.wet / scaleTop) * 100)}%` }}
-                      />
-                      <div
-                        className="bg-amber-500"
-                        style={{ height: `${Math.max(0, (item.soiled / scaleTop) * 100)}%` }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-                <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
+        {daysWithData.length ? (
+          <>
+            <div className="mt-3 grid h-36 grid-cols-[34px_minmax(0,1fr)] gap-2">
+              <div className="flex flex-col justify-between pb-5 text-right text-[10px] font-bold text-slate-400">
+                <span>{scaleTop}</span>
+                <span>{scaleMid}</span>
+                <span>0</span>
               </div>
-            ))
-          ) : (
-            <div className="flex h-full flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 text-center text-xs font-semibold text-slate-500">
-              No data available for this period
+              <div className="relative flex min-w-0 items-end gap-1.5 border-b border-slate-200 pb-5">
+                <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-slate-200" />
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 border-t border-dashed border-slate-200" />
+                {data.map((item) => (
+                  <div key={`toileting-${item.label}`} className="flex min-w-0 flex-1 flex-col items-center gap-1">
+                    <div className="flex h-24 w-full items-end rounded-t-xl bg-slate-50 px-1">
+                      {item.hasData ? (
+                        <div className="flex w-full flex-col justify-end overflow-hidden rounded-t-lg">
+                          {[
+                            ["bg-cyan-500", item.wet],
+                            ["bg-amber-500", item.soiled],
+                            ["bg-rose-500", item.accident],
+                            ["bg-emerald-500", item.dry],
+                            ["bg-slate-400", item.other],
+                          ].map(([className, value], index) =>
+                            Number(value || 0) > 0 ? (
+                              <div
+                                key={`${item.label}-${className}-${index}`}
+                                className={className}
+                                style={{ height: `${Math.max(8, (Number(value || 0) / scaleTop) * 100)}%` }}
+                              />
+                            ) : null,
+                          )}
+                        </div>
+                      ) : null}
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{item.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
+              Scale: entries per day
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-600">
+              {typeBadges.map(([label, value, className]) => (
+                <span key={label} className="inline-flex items-center gap-1">
+                  <span className={`h-2 w-2 rounded-full ${className}`} /> {label}: {value}
+                </span>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="mt-3 flex h-32 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/70 px-3 text-center text-xs font-semibold text-slate-500">
+            No toileting data recorded for this period
           </div>
-        </div>
-        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">
-          Scale: entries per day
-        </p>
-        <div className="mt-3 flex gap-2 text-xs font-bold text-slate-600">
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-cyan-500" /> Wet</span>
-          <span className="inline-flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" /> Soiled</span>
-        </div>
+        )}
         {timeBuckets.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {timeBuckets.map(([label, value]) => (
