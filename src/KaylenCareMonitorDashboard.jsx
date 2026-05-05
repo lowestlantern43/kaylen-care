@@ -736,100 +736,6 @@ export default function KaylenCareMonitorDashboard({
   );
   const profileMedicationLabels = profileMedicationOptions.map((item) => item.name);
 
-  const todayDashboard = useMemo(() => {
-    const today = todayValue();
-    const now = new Date();
-    const todayEntries = sharedLog.filter((entry) => entry.date === today);
-    const todayDrinkEntries = todayEntries.filter(
-      (entry) => entry.section === "Food Diary" && entry.isMilk,
-    );
-    const todayMedicationEntries = todayEntries.filter(
-      (entry) => entry.section === "Medication",
-    );
-    const todayToiletingEntries = todayEntries.filter(
-      (entry) => entry.section === "Toileting",
-    );
-    const todayHealthEntries = todayEntries.filter(
-      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
-    );
-    const fluidMl = todayDrinkEntries.reduce(
-      (sum, entry) => sum + getFluidMlFromEntry(entry),
-      0,
-    );
-    const lastSleep = latestTwoBySection.sleep?.[0] || null;
-
-    const isWindowPast = (windowName) => {
-      const hour = now.getHours();
-      if (windowName === "morning") return hour >= 12;
-      if (windowName === "afternoon") return hour >= 17;
-      if (windowName === "evening") return hour >= 23;
-      return false;
-    };
-
-    const requiredMedication = profileMedicationOptions
-      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
-      .map((medicine) => {
-        const matchingLogs = todayMedicationEntries.filter((entry) =>
-          String(entry.summary || "")
-            .toLowerCase()
-            .includes(String(medicine.name || "").toLowerCase()),
-        );
-        const givenLog = matchingLogs.find(
-          (entry) =>
-            !["missed", "refused"].includes(
-              String(entry.medicationStatus || "").toLowerCase(),
-            ),
-        );
-        const missedLog = matchingLogs.find((entry) =>
-          ["missed", "refused"].includes(
-            String(entry.medicationStatus || "").toLowerCase(),
-          ),
-        );
-        const scheduledTimes = medicine.times || [];
-        const hasPastTime = scheduledTimes.some((time) => {
-          if (!time || !time.includes(":")) return false;
-          const [hours, minutes] = time.split(":").map(Number);
-          const due = new Date();
-          due.setHours(hours || 0, minutes || 0, 0, 0);
-          return now.getTime() > due.getTime() + 60 * 60 * 1000;
-        });
-        const status = givenLog
-          ? "taken"
-          : missedLog || hasPastTime || isWindowPast(medicine.timeWindow)
-            ? "missed"
-            : "due";
-        return {
-          ...medicine,
-          status,
-          statusLabel:
-            status === "taken" ? "Taken" : status === "missed" ? "Missed" : "Due",
-        };
-      });
-
-    const alerts = [];
-    if (!fluidMl) alerts.push("No fluids logged today");
-    if (requiredMedication.some((item) => item.status !== "taken")) {
-      alerts.push("Medication due but not fully logged");
-    }
-    if (!lastSleep) alerts.push("No sleep logged last night");
-    if (!todayToiletingEntries.length) alerts.push("No toileting logged today");
-
-    return {
-      today,
-      entriesToday: todayEntries.length,
-      healthToday: todayHealthEntries.length,
-      fluidMl,
-      drinkCount: todayDrinkEntries.length,
-      toiletingCount: todayToiletingEntries.length,
-      medicationTaken: requiredMedication.filter((item) => item.status === "taken")
-        .length,
-      medicationRequired: requiredMedication.length,
-      requiredMedication,
-      lastSleep,
-      alerts,
-    };
-  }, [latestTwoBySection.sleep, profileMedicationOptions, sharedLog]);
-
   const orderedSections = useMemo(() => {
     const byTitle = new Map(sections.map((section) => [section.title, section]));
     const ordered = dashboardOrder
@@ -2712,6 +2618,100 @@ export default function KaylenCareMonitorDashboard({
       sleep: findLatestTwo("Sleep"),
     };
   }, [sharedLog]);
+
+  const todayDashboard = useMemo(() => {
+    const today = todayValue();
+    const now = new Date();
+    const todayEntries = sharedLog.filter((entry) => entry.date === today);
+    const todayDrinkEntries = todayEntries.filter(
+      (entry) => entry.section === "Food Diary" && entry.isMilk,
+    );
+    const todayMedicationEntries = todayEntries.filter(
+      (entry) => entry.section === "Medication",
+    );
+    const todayToiletingEntries = todayEntries.filter(
+      (entry) => entry.section === "Toileting",
+    );
+    const todayHealthEntries = todayEntries.filter(
+      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
+    );
+    const fluidMl = todayDrinkEntries.reduce(
+      (sum, entry) => sum + getFluidMlFromEntry(entry),
+      0,
+    );
+    const lastSleep = latestTwoBySection.sleep?.[0] || null;
+
+    const isWindowPast = (windowName) => {
+      const hour = now.getHours();
+      if (windowName === "morning") return hour >= 12;
+      if (windowName === "afternoon") return hour >= 17;
+      if (windowName === "evening") return hour >= 23;
+      return false;
+    };
+
+    const requiredMedication = profileMedicationOptions
+      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
+      .map((medicine) => {
+        const matchingLogs = todayMedicationEntries.filter((entry) =>
+          String(entry.summary || "")
+            .toLowerCase()
+            .includes(String(medicine.name || "").toLowerCase()),
+        );
+        const givenLog = matchingLogs.find(
+          (entry) =>
+            !["missed", "refused"].includes(
+              String(entry.medicationStatus || "").toLowerCase(),
+            ),
+        );
+        const missedLog = matchingLogs.find((entry) =>
+          ["missed", "refused"].includes(
+            String(entry.medicationStatus || "").toLowerCase(),
+          ),
+        );
+        const scheduledTimes = medicine.times || [];
+        const hasPastTime = scheduledTimes.some((time) => {
+          if (!time || !time.includes(":")) return false;
+          const [hours, minutes] = time.split(":").map(Number);
+          const due = new Date();
+          due.setHours(hours || 0, minutes || 0, 0, 0);
+          return now.getTime() > due.getTime() + 60 * 60 * 1000;
+        });
+        const status = givenLog
+          ? "taken"
+          : missedLog || hasPastTime || isWindowPast(medicine.timeWindow)
+            ? "missed"
+            : "due";
+        return {
+          ...medicine,
+          status,
+          statusLabel:
+            status === "taken" ? "Taken" : status === "missed" ? "Missed" : "Due",
+        };
+      });
+
+    const alerts = [];
+    if (!fluidMl) alerts.push("No fluids logged today");
+    if (requiredMedication.some((item) => item.status !== "taken")) {
+      alerts.push("Medication due but not fully logged");
+    }
+    if (!lastSleep) alerts.push("No sleep logged last night");
+    if (!todayToiletingEntries.length) alerts.push("No toileting logged today");
+
+    return {
+      today,
+      entriesToday: todayEntries.length,
+      healthToday: todayHealthEntries.length,
+      fluidMl,
+      drinkCount: todayDrinkEntries.length,
+      toiletingCount: todayToiletingEntries.length,
+      medicationTaken: requiredMedication.filter((item) => item.status === "taken")
+        .length,
+      medicationRequired: requiredMedication.length,
+      requiredMedication,
+      lastSleep,
+      alerts,
+    };
+  }, [latestTwoBySection.sleep, profileMedicationOptions, sharedLog]);
 
   const overviewItems = useMemo(() => {
     const lastMedication = latestTwoBySection.medication?.[0];
