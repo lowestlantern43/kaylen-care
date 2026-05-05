@@ -366,8 +366,7 @@ adminRouter.get(
           SELECT DISTINCT
             family_id,
             lower(trim(first_name)) AS first_name_key,
-            lower(trim(COALESCE(last_name, ''))) AS last_name_key,
-            date_of_birth
+            lower(trim(COALESCE(last_name, ''))) AS last_name_key
           FROM children
           WHERE deleted_at IS NULL
         ) canonical_children
@@ -696,8 +695,7 @@ adminRouter.get(
             DISTINCT concat_ws(
               '|',
               lower(trim(c.first_name)),
-              lower(trim(COALESCE(c.last_name, ''))),
-              COALESCE(c.date_of_birth::text, '')
+              lower(trim(COALESCE(c.last_name, '')))
             )
           )::int AS "childCount",
           count(DISTINCT cl.id)::int AS "logCount",
@@ -799,8 +797,7 @@ adminRouter.get(
           WITH canonical_children AS (
             SELECT DISTINCT ON (
               lower(trim(first_name)),
-              lower(trim(COALESCE(last_name, ''))),
-              date_of_birth
+              lower(trim(COALESCE(last_name, '')))
             )
               id,
               first_name,
@@ -810,8 +807,7 @@ adminRouter.get(
               count(*) OVER (
                 PARTITION BY
                   lower(trim(first_name)),
-                  lower(trim(COALESCE(last_name, ''))),
-                  date_of_birth
+                  lower(trim(COALESCE(last_name, '')))
               ) AS duplicate_count
             FROM children
             WHERE family_id = $1
@@ -819,7 +815,6 @@ adminRouter.get(
             ORDER BY
               lower(trim(first_name)),
               lower(trim(COALESCE(last_name, ''))),
-              date_of_birth,
               created_at ASC,
               id ASC
           )

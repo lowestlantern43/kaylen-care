@@ -82,8 +82,7 @@ childrenRouter.get(
         WITH canonical_children AS (
           SELECT DISTINCT ON (
             lower(trim(first_name)),
-            lower(trim(COALESCE(last_name, ''))),
-            date_of_birth
+            lower(trim(COALESCE(last_name, '')))
           )
             id,
             first_name,
@@ -97,15 +96,13 @@ childrenRouter.get(
             count(*) OVER (
               PARTITION BY
                 lower(trim(first_name)),
-                lower(trim(COALESCE(last_name, ''))),
-                date_of_birth
+                lower(trim(COALESCE(last_name, '')))
             ) AS duplicate_count
           FROM children
           WHERE family_id = $1 AND deleted_at IS NULL
           ORDER BY
             lower(trim(first_name)),
             lower(trim(COALESCE(last_name, ''))),
-            date_of_birth,
             created_at ASC,
             id ASC
         )
@@ -150,10 +147,9 @@ childrenRouter.post(
           AND deleted_at IS NULL
           AND lower(trim(first_name)) = lower(trim($2))
           AND lower(trim(COALESCE(last_name, ''))) = lower(trim(COALESCE($3, '')))
-          AND date_of_birth IS NOT DISTINCT FROM $4::date
         LIMIT 1
       `,
-      [req.familyMember.family_id, firstName, lastName, dateOfBirth],
+      [req.familyMember.family_id, firstName, lastName],
     );
 
     if (duplicate.rows[0]) {

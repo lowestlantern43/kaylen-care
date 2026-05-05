@@ -586,6 +586,8 @@ const parseCareMedicationRows = (value = "") => {
           times = "",
           active = "active",
           notes = "",
+          requiredDaily = "",
+          timeWindow = "",
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
@@ -599,6 +601,8 @@ const parseCareMedicationRows = (value = "") => {
             .filter(Boolean),
           active: active !== "inactive",
           notes,
+          requiredDaily: requiredDaily === "required",
+          timeWindow,
         };
       }
 
@@ -613,6 +617,8 @@ const parseCareMedicationRows = (value = "") => {
           times: [""],
           active: true,
           notes: "",
+          requiredDaily: false,
+          timeWindow: "",
         };
       }
 
@@ -624,6 +630,8 @@ const parseCareMedicationRows = (value = "") => {
         times: [""],
         active: true,
         notes: "",
+        requiredDaily: false,
+        timeWindow: "",
       };
     })
     .filter((item) => item.name || item.doseAmount || item.notes);
@@ -640,6 +648,8 @@ const serializeCareMedicationRows = (rows) =>
         .filter(Boolean),
       active: row.active === false ? "inactive" : "active",
       notes: cleanFormText(row.notes),
+      requiredDaily: row.requiredDaily ? "required" : "",
+      timeWindow: cleanFormText(row.timeWindow),
     }))
     .filter((row) => row.name || row.doseAmount || row.notes)
     .map((row) =>
@@ -650,6 +660,8 @@ const serializeCareMedicationRows = (rows) =>
         row.times.join(", "),
         row.active,
         row.notes,
+        row.requiredDaily,
+        row.timeWindow,
       ].join(" | "),
     )
     .join("\n");
@@ -661,6 +673,8 @@ const emptyCareMedicationRow = () => ({
   times: [""],
   active: true,
   notes: "",
+  requiredDaily: false,
+  timeWindow: "",
 });
 
 const careMedicationRowsFromProfile = (value = "") => {
@@ -2033,20 +2047,12 @@ function WorkspaceGate({ session, onLogout }) {
   const childDisplayName = (child) =>
     child?.firstName || child?.first_name || "Child";
   const dedupeChildren = (items = []) => {
-    const byId = new Set();
-    const byIdentity = new Map();
+    const byId = new Map();
     items.forEach((child) => {
       if (!child?.id || byId.has(child.id)) return;
-      byId.add(child.id);
-      const identityKey = [
-        String(child.firstName || child.first_name || "").trim().toLowerCase(),
-        String(child.lastName || child.last_name || "").trim().toLowerCase(),
-        String(child.dateOfBirth || child.date_of_birth || "").trim(),
-      ].join("|");
-      if (byIdentity.has(identityKey)) return;
-      byIdentity.set(identityKey, child);
+      byId.set(child.id, child);
     });
-    return Array.from(byIdentity.values());
+    return Array.from(byId.values());
   };
   const childInitials = (child) =>
     childDisplayName(child)
@@ -3153,6 +3159,8 @@ function WorkspaceGate({ session, onLogout }) {
         times: [""],
         active: true,
         notes: "",
+        requiredDaily: false,
+        timeWindow: "",
       },
     ];
     const nextProfile = {
@@ -5405,6 +5413,34 @@ function WorkspaceGate({ session, onLogout }) {
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
                         </select>
+                        <label className="flex min-h-[48px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(regularMedicationDraft.requiredDaily)}
+                            onChange={(event) =>
+                              updateRegularMedicationDraft(
+                                "requiredDaily",
+                                event.target.checked,
+                              )
+                            }
+                          />
+                          Required daily
+                        </label>
+                        <select
+                          className={`${inputClass} mt-0`}
+                          value={regularMedicationDraft.timeWindow || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "timeWindow",
+                              event.target.value,
+                            )
+                          }
+                        >
+                          <option value="">Any time</option>
+                          <option value="morning">Morning</option>
+                          <option value="afternoon">Afternoon</option>
+                          <option value="evening">Evening</option>
+                        </select>
                         <div className="min-w-0 md:col-span-3">
                           <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                             Rough scheduled times
@@ -5522,6 +5558,18 @@ function WorkspaceGate({ session, onLogout }) {
                                         ? row.times.join(", ")
                                         : "No times set"}
                                     </p>
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                      {row.requiredDaily ? (
+                                        <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
+                                          Required daily
+                                        </span>
+                                      ) : null}
+                                      {row.timeWindow ? (
+                                        <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-700">
+                                          {row.timeWindow}
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </div>
                                   <div className="grid grid-cols-3 gap-2 sm:flex sm:shrink-0">
                                     <button
