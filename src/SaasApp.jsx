@@ -530,6 +530,70 @@ function PlanBadge({ record, className = "" }) {
   );
 }
 
+function PlatformStatusBadge({ status, className = "" }) {
+  const value = status || "active";
+  const labels = {
+    active: "Active",
+    watch: "Needs review",
+    suspended: "Inactive",
+    archived: "Archived",
+    trialing: "Trial",
+    inactive: "Inactive",
+    past_due: "Expired",
+    canceled: "Cancelled",
+    cancelled: "Cancelled",
+  };
+  const tone =
+    value === "active" || value === "trialing"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : value === "watch" || value === "past_due"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : value === "archived" || value === "suspended"
+          ? "border-slate-200 bg-slate-50 text-slate-700"
+          : "border-rose-200 bg-rose-50 text-rose-700";
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-black ${tone} ${className}`}
+    >
+      {labels[value] || value}
+    </span>
+  );
+}
+
+function AdminEmptyState({
+  title,
+  message,
+  actionLabel,
+  onAction,
+  tone = "slate",
+}) {
+  const tones = {
+    slate: "border-slate-300 bg-slate-50 text-slate-700",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    indigo: "border-indigo-200 bg-indigo-50 text-indigo-800",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+  };
+  return (
+    <div
+      className={`rounded-2xl border border-dashed px-4 py-5 text-center ${tones[tone] || tones.slate}`}
+    >
+      <p className="text-sm font-black text-slate-900">{title}</p>
+      <p className="mx-auto mt-1 max-w-md text-sm font-semibold leading-6">
+        {message}
+      </p>
+      {actionLabel && onAction ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className="mt-3 rounded-full bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm"
+        >
+          {actionLabel}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function AccountAccessPreview({ record }) {
   const access = record?.access || planAccessFor(record);
   return (
@@ -1861,11 +1925,13 @@ function IssueAdminPanel({
   onRefresh,
   onToggleEnabled,
   onStatusChange,
+  onBulkStatusChange,
   showToast,
 }) {
   const [expanded, setExpanded] = useState({});
   const [notes, setNotes] = useState({});
   const [filter, setFilter] = useState("active");
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const noteForIssue = (issue) =>
     notes[issue.id] ?? issue.internalNote ?? "";
@@ -1912,6 +1978,43 @@ function IssueAdminPanel({
       ? issue.status === "resolved" || issue.resolved
       : issue.status !== "resolved" && !issue.resolved,
   );
+  const visibleIssueIds = visibleIssues.map((issue) => issue.id);
+  const selectedVisibleIds = selectedIds.filter((id) =>
+    visibleIssueIds.includes(id),
+  );
+  const toggleIssueSelected = (issueId) => {
+    setSelectedIds((current) =>
+      current.includes(issueId)
+        ? current.filter((id) => id !== issueId)
+        : [...current, issueId],
+    );
+  };
+  const toggleAllVisibleIssues = () => {
+    setSelectedIds((current) =>
+      selectedVisibleIds.length === visibleIssueIds.length
+        ? current.filter((id) => !visibleIssueIds.includes(id))
+        : Array.from(new Set([...current, ...visibleIssueIds])),
+    );
+  };
+  const bulkUpdate = async (status) => {
+    if (!selectedVisibleIds.length) return;
+    try {
+      await onBulkStatusChange(selectedVisibleIds, status);
+      setSelectedIds((current) =>
+        current.filter((id) => !selectedVisibleIds.includes(id)),
+      );
+      showToast?.({
+        message:
+          status === "resolved" ? "Issues archived" : "Issues updated",
+        type: "success",
+      });
+    } catch (error) {
+      showToast?.({
+        message: error.message || "Bulk issue update failed.",
+        type: "error",
+      });
+    }
+  };
 
   return (
     <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
@@ -1963,7 +2066,44 @@ function IssueAdminPanel({
           ))}
         </div>
         {visibleIssues.length ? (
-          visibleIssues.map((issue) => (
+          <>
+          <div className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+            <label className="flex items-center gap-2 text-xs font-bold text-slate-700">
+              <input
+                type="checkbox"
+                checked={
+                  visibleIssueIds.length > 0 &&
+                  selectedVisibleIds.length === visibleIssueIds.length
+                }
+                onChange={toggleAllVisibleIssues}
+              />
+              Select visible issues
+            </label>
+            {selectedVisibleIds.length ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-500">
+                  {selectedVisibleIds.length} selected
+                </span>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => bulkUpdate("resolved")}
+                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 disabled:opacity-50"
+                >
+                  Mark resolved
+                </button>
+                <button
+                  type="button"
+                  disabled={isSaving}
+                  onClick={() => bulkUpdate("in_progress")}
+                  className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700 disabled:opacity-50"
+                >
+                  In progress
+                </button>
+              </div>
+            ) : null}
+          </div>
+          {visibleIssues.map((issue) => (
             <article
               key={issue.id}
               className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
@@ -1971,6 +2111,13 @@ function IssueAdminPanel({
               <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(issue.id)}
+                      onChange={() => toggleIssueSelected(issue.id)}
+                      aria-label={`Select issue ${issue.id}`}
+                      className="h-4 w-4"
+                    />
                     <span className="rounded-full bg-white px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
                       {issueSeverityLabels[issue.severity] || issue.severity}
                     </span>
@@ -2095,13 +2242,24 @@ function IssueAdminPanel({
                 </div>
               </div>
             </article>
-          ))
+          ))}
+          </>
         ) : (
-          <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-600">
-            {filter === "archived"
-              ? "No archived issue reports yet."
-              : "No active issue reports yet."}
-          </div>
+          <AdminEmptyState
+            title={
+              filter === "archived"
+                ? "No archived issue reports yet"
+                : "Everything looks good"
+            }
+            message={
+              filter === "archived"
+                ? "Resolved tester reports will stay here for history and audit."
+                : "No active issue reports need attention right now."
+            }
+            actionLabel="Refresh issues"
+            onAction={onRefresh}
+            tone={filter === "archived" ? "slate" : "emerald"}
+          />
         )}
       </div>
     </section>
@@ -2245,6 +2403,7 @@ function WorkspaceGate({ session, onLogout }) {
     overview: null,
     families: [],
     users: [],
+    archivedFamilies: [],
   });
   const [platformIssues, setPlatformIssues] = useState([]);
   const [feedbackSettings, setFeedbackSettings] = useState({ enabled: true });
@@ -2267,6 +2426,8 @@ function WorkspaceGate({ session, onLogout }) {
   const [resolvedIssueNotice, setResolvedIssueNotice] = useState("");
   const [showSystemStatus, setShowSystemStatus] = useState(false);
   const [isPlatformQuickJumpOpen, setIsPlatformQuickJumpOpen] = useState(false);
+  const [selectedPlatformFamilyIds, setSelectedPlatformFamilyIds] = useState([]);
+  const [platformChildEdits, setPlatformChildEdits] = useState({});
   const [platformMemberForm, setPlatformMemberForm] = useState({
     email: "",
     role: "parent",
@@ -2294,6 +2455,10 @@ function WorkspaceGate({ session, onLogout }) {
   const [isFloatingChildSwitcherOpen, setIsFloatingChildSwitcherOpen] =
     useState(false);
   const [adminIssueFilter, setAdminIssueFilter] = useState("active");
+  const [platformFamilyDetailTab, setPlatformFamilyDetailTab] =
+    useState("overview");
+  const [platformUserDetailTab, setPlatformUserDetailTab] =
+    useState("overview");
   const [deleteUserConfirm, setDeleteUserConfirm] = useState({
     isOpen: false,
     user: null,
@@ -2475,6 +2640,26 @@ function WorkspaceGate({ session, onLogout }) {
     if (!showPlatformAdmin || platformAdminTab !== "issues") return;
     refreshPlatformIssues();
   }, [showPlatformAdmin, platformAdminTab]);
+
+  useEffect(() => {
+    if (!selectedPlatformFamily?.children?.length) {
+      setPlatformChildEdits({});
+      return;
+    }
+
+    setPlatformChildEdits(
+      Object.fromEntries(
+        selectedPlatformFamily.children.map((child) => [
+          child.id,
+          {
+            firstName: child.firstName || "",
+            lastName: child.lastName || "",
+            dailyFluidTargetMl: child.dailyFluidTargetMl || "",
+          },
+        ]),
+      ),
+    );
+  }, [selectedPlatformFamily?.family?.id, selectedPlatformFamily?.children]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -3490,12 +3675,13 @@ function WorkspaceGate({ session, onLogout }) {
     setPlatformActionMessage("");
 
     try {
-      const [overview, families, users] = await Promise.all([
+      const [overview, families, users, archivedFamilies] = await Promise.all([
         api.adminOverview(),
         api.adminFamilies(),
         api.adminUsers(),
+        api.adminArchivedFamilies(),
       ]);
-      setPlatformData({ overview, families, users });
+      setPlatformData({ overview, families, users, archivedFamilies });
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
       api
@@ -3585,6 +3771,50 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const bulkUpdateIssueStatus = async (issueIds, status) => {
+    if (!issueIds?.length) return;
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updatedIssues = await Promise.all(
+        issueIds.map((issueId) =>
+          api.adminUpdateIssueStatus(issueId, {
+            status,
+            internalNote: "",
+          }),
+        ),
+      );
+      setPlatformIssues((current) =>
+        current.map((issue) => {
+          const updated = updatedIssues.find((item) => item.id === issue.id);
+          return updated
+            ? {
+                ...issue,
+                status: updated.status,
+                internalNote: updated.internalNote,
+                resolved: updated.resolved,
+                resolvedAt: updated.resolvedAt,
+                notified: updated.notified,
+                updatedAt: updated.updatedAt,
+              }
+            : issue;
+        }),
+      );
+      setPlatformActionMessage(
+        status === "resolved"
+          ? `${updatedIssues.length} issue reports archived.`
+          : `${updatedIssues.length} issue reports updated.`,
+      );
+    } catch (caughtError) {
+      setError(caughtError.message);
+      throw caughtError;
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
   const createPlatformFamilyAccount = async (event) => {
     event.preventDefault();
 
@@ -3594,12 +3824,13 @@ function WorkspaceGate({ session, onLogout }) {
 
     try {
       const created = await api.adminCreateFamilyAccount(platformCreateAccountForm);
-      const [overview, families, users] = await Promise.all([
+      const [overview, families, users, archivedFamilies] = await Promise.all([
         api.adminOverview(),
         api.adminFamilies(),
         api.adminUsers(),
+        api.adminArchivedFamilies(),
       ]);
-      setPlatformData({ overview, families, users });
+      setPlatformData({ overview, families, users, archivedFamilies });
       setPlatformCreateAccountForm({
         parentName: "",
         email: "",
@@ -3642,6 +3873,7 @@ function WorkspaceGate({ session, onLogout }) {
     try {
       const detail = await api.adminFamilyDetail(familyId);
       setSelectedPlatformFamily(detail);
+      setPlatformFamilyDetailTab((current) => current || "overview");
       setPlatformPlanForm({
         plan: detail.family?.plan || "trial",
         status: detail.family?.subscriptionStatus || "trialing",
@@ -3666,6 +3898,7 @@ function WorkspaceGate({ session, onLogout }) {
 
     try {
       setSelectedPlatformUser(await api.adminUserDetail(userId));
+      setPlatformUserDetailTab((current) => current || "overview");
       setPlatformAdminTab("accounts");
     } catch (caughtError) {
       setError(caughtError.message);
@@ -4113,22 +4346,99 @@ function WorkspaceGate({ session, onLogout }) {
         setSelectedPlatformFamily(null);
       }
       setDeleteFamilyConfirm({ isOpen: false, family: null, confirmText: "" });
-      setPlatformActionMessage("Family access removed and data preserved.");
+      setPlatformActionMessage("Family archived and data preserved.");
       showToast({
-        message: "Family access removed",
+        message: "Family archived",
         type: "warning",
       });
-      const [overview, families] = await Promise.all([
+      const [overview, families, archivedFamilies] = await Promise.all([
         api.adminOverview(),
         api.adminFamilies(),
+        api.adminArchivedFamilies(),
       ]);
-      setPlatformData((current) => ({ ...current, overview, families }));
+      setPlatformData((current) => ({
+        ...current,
+        overview,
+        families,
+        archivedFamilies,
+      }));
     } catch (caughtError) {
       setError(caughtError.message);
       showToast({
-        message: "Family could not be deleted",
+        message: "Family could not be archived",
         type: "error",
       });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const bulkArchivePlatformFamilies = async () => {
+    if (!selectedPlatformFamilyIds.length) return;
+    const confirmed = window.confirm(
+      `Archive ${selectedPlatformFamilyIds.length} selected families? Their data will be preserved.`,
+    );
+    if (!confirmed) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await Promise.all(
+        selectedPlatformFamilyIds.map((familyId) =>
+          api.adminDeleteFamily(familyId, { confirmText: "DELETE" }),
+        ),
+      );
+      const [overview, families, archivedFamilies] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+        api.adminArchivedFamilies(),
+      ]);
+      setPlatformData((current) => ({
+        ...current,
+        overview,
+        families,
+        archivedFamilies,
+      }));
+      if (selectedPlatformFamilyIds.includes(selectedPlatformFamily?.family?.id)) {
+        setSelectedPlatformFamily(null);
+      }
+      setSelectedPlatformFamilyIds([]);
+      setPlatformActionMessage("Selected families archived.");
+      showToast({ message: "Families archived", type: "warning" });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({ message: "Families could not be archived", type: "error" });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const restorePlatformFamily = async (familyId) => {
+    if (!familyId) return;
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await api.adminRestoreFamily(familyId);
+      const [overview, families, archivedFamilies] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+        api.adminArchivedFamilies(),
+      ]);
+      setPlatformData((current) => ({
+        ...current,
+        overview,
+        families,
+        archivedFamilies,
+      }));
+      setPlatformActionMessage("Family restored.");
+      showToast({ message: "Family restored", type: "success" });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({ message: "Family could not be restored", type: "error" });
     } finally {
       setIsPlatformSaving(false);
     }
@@ -4193,6 +4503,65 @@ function WorkspaceGate({ session, onLogout }) {
       setPlatformActionMessage(
         status === "active" ? "Family activated." : "Family deactivated.",
       );
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const savePlatformFamilyName = async () => {
+    if (!selectedPlatformFamily?.family?.id) return;
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updated = await api.adminUpdateFamilyProfile(
+        selectedPlatformFamily.family.id,
+        { name: selectedPlatformFamily.family.name || "" },
+      );
+      setPlatformData((current) => ({
+        ...current,
+        families: current.families.map((family) =>
+          family.id === updated.id ? { ...family, name: updated.name } : family,
+        ),
+      }));
+      setSelectedPlatformFamily((current) =>
+        current
+          ? {
+              ...current,
+              family: { ...current.family, name: updated.name },
+            }
+          : current,
+      );
+      setPlatformActionMessage("Family name saved.");
+      showToast({ message: "Family saved", type: "success" });
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const savePlatformChildEdit = async (childId) => {
+    if (!selectedPlatformFamily?.family?.id || !childId) return;
+    const draft = platformChildEdits[childId];
+    if (!draft) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const updated = await api.adminUpdateFamilyChild(
+        selectedPlatformFamily.family.id,
+        childId,
+        draft,
+      );
+      await openPlatformFamily(selectedPlatformFamily.family.id);
+      setPlatformActionMessage(`${updated.firstName} saved.`);
+      showToast({ message: "Child settings saved", type: "success" });
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -4332,6 +4701,119 @@ function WorkspaceGate({ session, onLogout }) {
     (issue) => issue.status !== "resolved" && !issue.resolved,
   ).length;
 
+  const formatRelativePlatformTime = (value) => {
+    const date = safeDate(value);
+    if (!date) return "No activity yet";
+    const ageMs = now.getTime() - date.getTime();
+    const minutes = Math.max(1, Math.round(ageMs / 60000));
+    if (minutes < 60) return `${minutes} min ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} hr${hours === 1 ? "" : "s"} ago`;
+    const days = Math.round(hours / 24);
+    if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+    return formatPlatformDateTime(value);
+  };
+
+  const attentionData = platformData.overview?.needsAttention || {};
+  const countAttentionRows = (rows = []) =>
+    rows.reduce((total, row) => total + (Number(row.count) || 1), 0);
+  const openFirstAttentionFamily = (rows = []) => {
+    setPlatformAdminTab("families");
+    const firstFamilyId = rows.find((row) => row.familyId)?.familyId;
+    if (firstFamilyId) {
+      openPlatformFamily(firstFamilyId);
+    }
+  };
+  const needsAttentionItems = [
+    {
+      id: "inactive-families",
+      label: "No recent activity",
+      count: countAttentionRows(attentionData.inactiveFamilies || []),
+      detail:
+        attentionData.inactiveFamilies?.[0]?.familyName ||
+        "Families with no diary activity for 14+ days",
+      tone: "border-amber-200 bg-amber-50 text-amber-800",
+      onClick: () => openFirstAttentionFamily(attentionData.inactiveFamilies),
+    },
+    {
+      id: "fluid-targets",
+      label: "Fluid targets missing",
+      count: countAttentionRows(attentionData.childrenMissingFluidTargets || []),
+      detail:
+        attentionData.childrenMissingFluidTargets?.[0]?.familyName ||
+        "Children without daily fluid targets",
+      tone: "border-sky-200 bg-sky-50 text-sky-800",
+      onClick: () =>
+        openFirstAttentionFamily(attentionData.childrenMissingFluidTargets),
+    },
+    {
+      id: "med-schedules",
+      label: "Medication schedules",
+      count: countAttentionRows(
+        attentionData.requiredMedicationsMissingSchedules || [],
+      ),
+      detail:
+        attentionData.requiredMedicationsMissingSchedules?.[0]?.familyName ||
+        "Required medication missing a schedule",
+      tone: "border-rose-200 bg-rose-50 text-rose-800",
+      onClick: () =>
+        openFirstAttentionFamily(
+          attentionData.requiredMedicationsMissingSchedules,
+        ),
+    },
+    {
+      id: "unresolved-issues",
+      label: "Unresolved issues",
+      count: attentionData.unresolvedIssues?.length ?? openIssueCount,
+      detail:
+        attentionData.unresolvedIssues?.[0]?.familyName ||
+        "Tester reports waiting for review",
+      tone: "border-purple-200 bg-purple-50 text-purple-800",
+      onClick: () => setPlatformAdminTab("issues"),
+    },
+    {
+      id: "trials-ending",
+      label: "Trials ending soon",
+      count: countAttentionRows(attentionData.trialsEndingSoon || []),
+      detail:
+        attentionData.trialsEndingSoon?.[0]?.familyName ||
+        "Trial accounts ending within 7 days",
+      tone: "border-orange-200 bg-orange-50 text-orange-800",
+      onClick: () => openFirstAttentionFamily(attentionData.trialsEndingSoon),
+    },
+    {
+      id: "never-logged-in",
+      label: "Never logged in",
+      count: countAttentionRows(attentionData.accountsNeverLoggedIn || []),
+      detail:
+        attentionData.accountsNeverLoggedIn?.[0]?.email ||
+        "Accounts created but not used yet",
+      tone: "border-slate-200 bg-slate-50 text-slate-800",
+      onClick: () => {
+        setPlatformAccountFilter("never");
+        setPlatformAdminTab("accounts");
+      },
+    },
+  ].filter((item) => item.count > 0);
+
+  const unresolvedIssuesForFamily = (familyId) =>
+    platformIssues.filter(
+      (issue) =>
+        issue.familyId === familyId &&
+        issue.status !== "resolved" &&
+        !issue.resolved,
+    );
+  const selectedPlatformFamilyIssues = selectedPlatformFamily?.family?.id
+    ? selectedPlatformFamily.issues?.length
+      ? selectedPlatformFamily.issues
+      : platformIssues.filter(
+          (issue) => issue.familyId === selectedPlatformFamily.family.id,
+        )
+    : [];
+  const selectedPlatformFamilyOpenIssues = selectedPlatformFamilyIssues.filter(
+    (issue) => issue.status !== "resolved" && !issue.resolved,
+  );
+
   const filteredPlatformFamilies = platformData.families.filter((family) => {
     const haystack = [
       family.name,
@@ -4346,6 +4828,26 @@ function WorkspaceGate({ session, onLogout }) {
       .toLowerCase();
     return haystack.includes(platformSearchTerm);
   });
+  const filteredPlatformFamilyIds = filteredPlatformFamilies.map(
+    (family) => family.id,
+  );
+  const selectedVisiblePlatformFamilyIds = selectedPlatformFamilyIds.filter((id) =>
+    filteredPlatformFamilyIds.includes(id),
+  );
+  const togglePlatformFamilySelected = (familyId) => {
+    setSelectedPlatformFamilyIds((current) =>
+      current.includes(familyId)
+        ? current.filter((id) => id !== familyId)
+        : [...current, familyId],
+    );
+  };
+  const toggleAllVisiblePlatformFamilies = () => {
+    setSelectedPlatformFamilyIds((current) =>
+      selectedVisiblePlatformFamilyIds.length === filteredPlatformFamilyIds.length
+        ? current.filter((id) => !filteredPlatformFamilyIds.includes(id))
+        : Array.from(new Set([...current, ...filteredPlatformFamilyIds])),
+    );
+  };
 
   const filteredPlatformUsers = platformData.users.filter((user) => {
     const haystack = [user.fullName, user.email, user.platformStatus]
@@ -6388,6 +6890,86 @@ function WorkspaceGate({ session, onLogout }) {
                   ) : null}
                 </div>
 
+                <section className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm sm:p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
+                        Needs Attention
+                      </p>
+                      <h3 className="text-lg font-black text-slate-950">
+                        Actionable admin checks
+                      </h3>
+                    </div>
+                    <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">
+                      {needsAttentionItems.length
+                        ? `${needsAttentionItems.length} areas`
+                        : "All clear"}
+                    </span>
+                  </div>
+                  {needsAttentionItems.length ? (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {needsAttentionItems.map((item) => (
+                        <button
+                          type="button"
+                          key={item.id}
+                          onClick={item.onClick}
+                          className={`rounded-2xl border px-3 py-2.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.tone}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="min-w-0">
+                              <span className="block text-[10px] font-black uppercase tracking-[0.14em] opacity-80">
+                                {item.label}
+                              </span>
+                              <span className="mt-1 block truncate text-xs font-bold opacity-90">
+                                {item.detail}
+                              </span>
+                            </span>
+                            <span className="shrink-0 rounded-full bg-white/80 px-2.5 py-1 text-sm font-black shadow-sm">
+                              {item.count}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm font-bold text-emerald-800">
+                      Everything looks up to date. No urgent admin checks need
+                      attention right now.
+                    </div>
+                  )}
+                </section>
+
+                <section className="mt-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+                  <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                        Quick Actions
+                      </p>
+                      <h3 className="text-lg font-black text-slate-950">
+                        Common owner tasks
+                      </h3>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                    {[
+                      ["Create family", "create", "bg-indigo-50 text-indigo-800"],
+                      ["Invite user", "families", "bg-sky-50 text-sky-800"],
+                      ["View issues", "issues", "bg-purple-50 text-purple-800"],
+                      ["Revenue", "revenue", "bg-emerald-50 text-emerald-800"],
+                      ["Subscriptions", "billing", "bg-amber-50 text-amber-800"],
+                    ].map(([label, tabId, className]) => (
+                      <button
+                        type="button"
+                        key={label}
+                        onClick={() => setPlatformAdminTab(tabId)}
+                        className={`rounded-2xl border border-slate-200 px-3 py-2 text-left text-xs font-black uppercase tracking-[0.12em] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${className}`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
                 <div className="mt-3 grid grid-cols-3 gap-2">
                   {[
                     [
@@ -6604,6 +7186,53 @@ function WorkspaceGate({ session, onLogout }) {
                           support status.
                         </p>
                       </button>
+                    </div>
+                    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="font-black text-slate-900">
+                          Recent admin activity
+                        </h4>
+                        <span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                          latest
+                        </span>
+                      </div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {(platformData.overview?.recentActivity || []).length ? (
+                          platformData.overview.recentActivity.map((activity) => (
+                            <div
+                              key={activity.id}
+                              className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                            >
+                              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                <p className="font-bold text-slate-900">
+                                  {activity.action}
+                                </p>
+                                <p className="text-xs font-semibold text-slate-500">
+                                  {formatRelativePlatformTime(activity.createdAt)}
+                                </p>
+                              </div>
+                              <p className="mt-1 text-slate-600">
+                                Target:{" "}
+                                {activity.familyName ||
+                                  activity.entityType ||
+                                  "Platform"}
+                              </p>
+                              <p className="text-xs font-semibold text-slate-500">
+                                Admin:{" "}
+                                {activity.adminName ||
+                                  activity.adminEmail ||
+                                  "System"}
+                              </p>
+                            </div>
+                          ))
+                        ) : (
+                          <AdminEmptyState
+                            title="No owner activity yet"
+                            message="Admin actions such as resolving issues, archiving families and changing plans will appear here."
+                            tone="slate"
+                          />
+                        )}
+                      </div>
                     </div>
                   </section>
                 ) : null}
@@ -6852,10 +7481,13 @@ function WorkspaceGate({ session, onLogout }) {
                             </a>
                           ))
                         ) : (
-                          <p className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-3 text-sm font-semibold text-slate-600">
-                            No paid Stripe invoices found yet. Revenue will appear
-                            here after real payments are recorded.
-                          </p>
+                          <AdminEmptyState
+                            title="No paid invoices yet"
+                            message="Revenue will appear here after Stripe records a successful payment."
+                            actionLabel="Check billing setup"
+                            onAction={() => setPlatformAdminTab("billing")}
+                            tone="amber"
+                          />
                         )}
                       </div>
                     </div>
@@ -6880,9 +7512,13 @@ function WorkspaceGate({ session, onLogout }) {
                             </div>
                           ))
                         ) : (
-                          <p className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-600">
-                            No subscription records yet.
-                          </p>
+                          <AdminEmptyState
+                            title="No subscription records yet"
+                            message="Plan breakdown will appear after families have subscription rows."
+                            actionLabel="Create family"
+                            onAction={() => setPlatformAdminTab("create")}
+                            tone="slate"
+                          />
                         )}
                       </div>
                     </div>
@@ -6897,6 +7533,7 @@ function WorkspaceGate({ session, onLogout }) {
                     onRefresh={refreshPlatformIssues}
                     onToggleEnabled={updateFeedbackEnabled}
                     onStatusChange={updateIssueStatus}
+                    onBulkStatusChange={bulkUpdateIssueStatus}
                     showToast={showToast}
                   />
                 ) : null}
@@ -6987,9 +7624,47 @@ function WorkspaceGate({ session, onLogout }) {
                 <div className="mt-4 grid gap-4">
                   {platformAdminTab === "families" ? (
                   <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
-                    <h3 className="font-bold text-slate-900">Families</h3>
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <h3 className="font-bold text-slate-900">Families</h3>
+                        <p className="text-sm text-slate-600">
+                          Select families for safe bulk archive actions.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={
+                            filteredPlatformFamilyIds.length > 0 &&
+                            selectedVisiblePlatformFamilyIds.length ===
+                              filteredPlatformFamilyIds.length
+                          }
+                          onChange={toggleAllVisiblePlatformFamilies}
+                        />
+                        Select visible
+                      </label>
+                    </div>
+                    {selectedVisiblePlatformFamilyIds.length ? (
+                      <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-sm font-bold text-amber-900">
+                          {selectedVisiblePlatformFamilyIds.length} families
+                          selected
+                        </p>
+                        <button
+                          type="button"
+                          disabled={isPlatformSaving}
+                          onClick={bulkArchivePlatformFamilies}
+                          className="rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 disabled:opacity-50"
+                        >
+                          Archive selected
+                        </button>
+                      </div>
+                    ) : null}
                     <div className="mt-3 space-y-2">
-                      {filteredPlatformFamilies.map((family) => (
+                      {filteredPlatformFamilies.map((family) => {
+                        const familyIssueCount =
+                          unresolvedIssuesForFamily(family.id).length;
+                        return (
                         <div
                           key={family.id}
                           className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
@@ -7000,10 +7675,37 @@ function WorkspaceGate({ session, onLogout }) {
                             className="w-full text-left"
                           >
                           <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="font-semibold text-slate-900">
-                              {family.name}
-                            </p>
-                            <PlanBadge record={family} />
+                            <div className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="checkbox"
+                                checked={selectedPlatformFamilyIds.includes(
+                                  family.id,
+                                )}
+                                onChange={(event) => {
+                                  event.stopPropagation();
+                                  togglePlatformFamilySelected(family.id);
+                                }}
+                                onClick={(event) => event.stopPropagation()}
+                                aria-label={`Select ${family.name}`}
+                                className="h-4 w-4 shrink-0"
+                              />
+                              <p className="truncate font-semibold text-slate-900">
+                                {family.name}
+                              </p>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {familyIssueCount ? (
+                                <span className="rounded-full bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-rose-700">
+                                  {familyIssueCount} issue
+                                  {familyIssueCount === 1 ? "" : "s"}
+                                </span>
+                              ) : null}
+                              <PlatformStatusBadge
+                                status={family.platformStatus}
+                                className="text-[10px]"
+                              />
+                              <PlanBadge record={family} />
+                            </div>
                           </div>
                           <p className="mt-1 text-sm text-slate-600">
                             Owner: {family.ownerName || "Unknown"} ·{" "}
@@ -7014,8 +7716,14 @@ function WorkspaceGate({ session, onLogout }) {
                             {family.logCount} logs - Platform:{" "}
                             {family.platformStatus || "active"}
                           </p>
+                          <p className="mt-1 text-xs font-bold text-indigo-700">
+                            Last activity:{" "}
+                            {formatRelativePlatformTime(
+                              family.lastActivityAt || family.lastLoginAt,
+                            )}
+                          </p>
                           </button>
-                          <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+                          <div className="hidden">
                             {[
                               ["View", () => openPlatformFamily(family.id)],
                               ["Edit", () => openPlatformFamily(family.id)],
@@ -7036,7 +7744,7 @@ function WorkspaceGate({ session, onLogout }) {
                                 () => openPlatformSnapshotForFamily(family.id),
                               ],
                               [
-                                "Delete",
+                                "Archive",
                                 () =>
                                   setDeleteFamilyConfirm({
                                     isOpen: true,
@@ -7051,7 +7759,7 @@ function WorkspaceGate({ session, onLogout }) {
                                 onClick={onClick}
                                 disabled={isPlatformSaving}
                                 className={`rounded-full border px-2.5 py-1 text-[11px] font-bold shadow-sm disabled:opacity-50 ${
-                                  label === "Delete"
+                                  label === "Archive"
                                     ? "border-rose-200 bg-rose-50 text-rose-800"
                                     : "border-slate-200 bg-white text-slate-700"
                                 }`}
@@ -7061,13 +7769,88 @@ function WorkspaceGate({ session, onLogout }) {
                             ))}
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
+                      {!filteredPlatformFamilies.length ? (
+                        <AdminEmptyState
+                          title={
+                            platformSearchTerm
+                              ? "No matching families"
+                              : "No families yet"
+                          }
+                          message={
+                            platformSearchTerm
+                              ? "Try searching by family name, child name or parent email."
+                              : "Create your first tester family to start managing accounts."
+                          }
+                          actionLabel={
+                            platformSearchTerm ? "Clear search" : "Create family"
+                          }
+                          onAction={() => {
+                            if (platformSearchTerm) {
+                              setPlatformSearch("");
+                            } else {
+                              setPlatformAdminTab("create");
+                            }
+                          }}
+                          tone="indigo"
+                        />
+                      ) : null}
                     </div>
+                    <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                      <summary className="cursor-pointer text-sm font-black text-slate-900">
+                        Archived families ({platformData.archivedFamilies?.length || 0})
+                      </summary>
+                      <div className="mt-3 space-y-2">
+                        {platformData.archivedFamilies?.length ? (
+                          platformData.archivedFamilies.map((family) => (
+                            <div
+                              key={family.id}
+                              className="rounded-xl border border-slate-200 bg-white p-3"
+                            >
+                              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-bold text-slate-900">
+                                      {family.name}
+                                    </p>
+                                    <PlatformStatusBadge status="archived" />
+                                    <PlanBadge record={family} />
+                                  </div>
+                                  <p className="mt-1 text-sm text-slate-600">
+                                    Owner: {family.ownerName || "Unknown"} -{" "}
+                                    {family.ownerEmail || "No email"}
+                                  </p>
+                                  <p className="mt-1 text-xs font-semibold text-slate-500">
+                                    Archived:{" "}
+                                    {formatPlatformDateTime(family.archivedAt)}
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled={isPlatformSaving}
+                                  onClick={() => restorePlatformFamily(family.id)}
+                                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 disabled:opacity-50"
+                                >
+                                  Restore
+                                </button>
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <AdminEmptyState
+                            title="No archived families yet"
+                            message="Families you archive will appear here, with a restore option if you need to recover access."
+                            tone="slate"
+                          />
+                        )}
+                      </div>
+                    </details>
                   </section>
                   ) : null}
 
                   {platformAdminTab === "accounts" ? (
-                  <section className="grid gap-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm lg:grid-cols-[minmax(260px,360px)_1fr]">
+                  <section className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
                     <div>
                     <div className="flex items-center justify-between gap-3">
                       <h3 className="font-bold text-slate-900">Accounts</h3>
@@ -7127,9 +7910,10 @@ function WorkspaceGate({ session, onLogout }) {
                                 />
                                 {health.label}
                               </span>
-                              <span className="rounded-full bg-white px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-slate-600">
-                                {user.platformStatus || "active"}
-                              </span>
+                              <PlatformStatusBadge
+                                status={user.platformStatus}
+                                className="text-[10px]"
+                              />
                               {user.isPlatformAdmin ? (
                                 <span className="rounded-full bg-indigo-100 px-2 py-1 text-xs font-bold uppercase tracking-[0.12em] text-indigo-700">
                                   Admin
@@ -7144,7 +7928,7 @@ function WorkspaceGate({ session, onLogout }) {
                             {" - "}Last seen: {lastSeenLabel(user.lastLoginAt)}
                           </p>
                           </button>
-                          <div className="mt-2 flex flex-wrap gap-1.5 sm:justify-end">
+                          <div className="hidden">
                             {[
                               ["View", () => openPlatformUser(user.id)],
                               ["Edit", () => openPlatformUser(user.id)],
@@ -7187,11 +7971,35 @@ function WorkspaceGate({ session, onLogout }) {
                         </div>
                         );
                       })}
+                      {!filteredPlatformUsers.length ? (
+                        <AdminEmptyState
+                          title={
+                            platformSearchTerm
+                              ? "No matching accounts"
+                              : "No accounts in this view"
+                          }
+                          message={
+                            platformSearchTerm
+                              ? "Try a different parent/carer name or email address."
+                              : "Change the filter chips above or create a tester family."
+                          }
+                          actionLabel={
+                            platformSearchTerm ? "Clear search" : "Show all"
+                          }
+                          onAction={() => {
+                            if (platformSearchTerm) {
+                              setPlatformSearch("");
+                            }
+                            setPlatformAccountFilter("all");
+                          }}
+                          tone="indigo"
+                        />
+                      ) : null}
                     </div>
-                    </div>
+                  </div>
 
                     {selectedPlatformUser ? (
-                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <div className="hidden">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                           <div>
                             <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
@@ -7440,7 +8248,7 @@ function WorkspaceGate({ session, onLogout }) {
                         </form>
                       </div>
                     ) : (
-                      <div className="rounded-2xl border border-dashed border-indigo-200 bg-indigo-50 p-6 text-sm font-semibold text-indigo-700">
+                      <div className="hidden">
                         Select an account to edit details, reset a password, or
                         change admin access.
                       </div>
@@ -7450,7 +8258,7 @@ function WorkspaceGate({ session, onLogout }) {
                 </div>
                 ) : null}
 
-                {platformAdminTab === "families" ? (
+                {false ? (
                 <section className="mt-4 rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
                     <h3 className="font-bold text-slate-900">Family detail</h3>
@@ -7462,9 +8270,15 @@ function WorkspaceGate({ session, onLogout }) {
                   </div>
 
                   {!selectedPlatformFamily ? (
-                    <p className="mt-3 text-sm text-slate-600">
-                      Select a family above to inspect support details.
-                    </p>
+                    <div className="mt-3">
+                      <AdminEmptyState
+                        title="Select a family"
+                        message="Choose a family above to view members, children, billing status, issues and recent activity."
+                        actionLabel="Create family"
+                        onAction={() => setPlatformAdminTab("create")}
+                        tone="indigo"
+                      />
+                    </div>
                   ) : (
                     <div className="mt-4 space-y-4">
                       <div className="flex flex-wrap gap-2">
@@ -7501,6 +8315,24 @@ function WorkspaceGate({ session, onLogout }) {
                         </button>
                         <button
                           type="button"
+                          onClick={() => setPlatformAdminTab("issues")}
+                          className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-800 shadow-sm"
+                        >
+                          View issues
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            document
+                              .getElementById("platform-family-billing")
+                              ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                          }
+                          className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800 shadow-sm"
+                        >
+                          Manage subscription
+                        </button>
+                        <button
+                          type="button"
                           onClick={() =>
                             setDeleteFamilyConfirm({
                               isOpen: true,
@@ -7511,7 +8343,7 @@ function WorkspaceGate({ session, onLogout }) {
                           disabled={isPlatformSaving}
                           className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 shadow-sm disabled:opacity-50"
                         >
-                          Delete family
+                          Archive family
                         </button>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
@@ -7519,9 +8351,26 @@ function WorkspaceGate({ session, onLogout }) {
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
                             Family
                           </p>
-                          <p className="mt-1 font-bold text-slate-900">
-                            {selectedPlatformFamily.family.name}
-                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <input
+                              className={`${inputClass} mt-0 px-3 py-2 text-sm`}
+                              value={selectedPlatformFamily.family.name || ""}
+                              onChange={(event) =>
+                                updatePlatformFamilyField(
+                                  "name",
+                                  event.target.value,
+                                )
+                              }
+                            />
+                            <button
+                              type="button"
+                              onClick={savePlatformFamilyName}
+                              disabled={isPlatformSaving}
+                              className="rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+                            >
+                              Save
+                            </button>
+                          </div>
                         </div>
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
@@ -7590,6 +8439,47 @@ function WorkspaceGate({ session, onLogout }) {
                               {formatStripeDiscount(selectedPlatformFamily.family)}
                             </p>
                           ) : null}
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Last login
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">
+                            {formatRelativePlatformTime(
+                              selectedPlatformFamily.family.lastLoginAt,
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {formatPlatformDateTime(
+                              selectedPlatformFamily.family.lastLoginAt,
+                            )}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Last activity
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">
+                            {formatRelativePlatformTime(
+                              selectedPlatformFamily.family.lastActivityAt,
+                            )}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {formatPlatformDateTime(
+                              selectedPlatformFamily.family.lastActivityAt,
+                            )}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                            Reported issues
+                          </p>
+                          <p className="mt-1 text-sm font-semibold text-slate-700">
+                            {selectedPlatformFamilyOpenIssues.length} open
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            {selectedPlatformFamilyIssues.length} total reports
+                          </p>
                         </div>
                       </div>
 
@@ -7705,20 +8595,99 @@ function WorkspaceGate({ session, onLogout }) {
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                           <h4 className="font-bold text-slate-900">Children</h4>
                           <div className="mt-2 space-y-2">
-                            {selectedPlatformFamily.children.map((child) => (
-                              <div key={child.id} className="text-sm">
-                                <p className="font-semibold text-slate-800">
-                                  {child.firstName} {child.lastName || ""}
-                                </p>
+                            {selectedPlatformFamily.children.map((child) => {
+                              const childDraft = platformChildEdits[child.id] || {
+                                firstName: child.firstName || "",
+                                lastName: child.lastName || "",
+                                dailyFluidTargetMl:
+                                  child.dailyFluidTargetMl || "",
+                              };
+                              return (
+                              <div
+                                key={child.id}
+                                className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                              >
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                                    First name
+                                    <input
+                                      className={`${inputClass} mt-1 px-3 py-2 text-sm`}
+                                      value={childDraft.firstName}
+                                      onChange={(event) =>
+                                        setPlatformChildEdits((current) => ({
+                                          ...current,
+                                          [child.id]: {
+                                            ...childDraft,
+                                            firstName: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
+                                    Last name
+                                    <input
+                                      className={`${inputClass} mt-1 px-3 py-2 text-sm`}
+                                      value={childDraft.lastName}
+                                      onChange={(event) =>
+                                        setPlatformChildEdits((current) => ({
+                                          ...current,
+                                          [child.id]: {
+                                            ...childDraft,
+                                            lastName: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                    />
+                                  </label>
+                                  <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
+                                    Fluid target ml/day
+                                    <input
+                                      className={`${inputClass} mt-1 px-3 py-2 text-sm`}
+                                      type="number"
+                                      min="0"
+                                      inputMode="numeric"
+                                      value={childDraft.dailyFluidTargetMl}
+                                      onChange={(event) =>
+                                        setPlatformChildEdits((current) => ({
+                                          ...current,
+                                          [child.id]: {
+                                            ...childDraft,
+                                            dailyFluidTargetMl: event.target.value,
+                                          },
+                                        }))
+                                      }
+                                      placeholder="e.g. 1000"
+                                    />
+                                  </label>
+                                </div>
                                 <p className="text-slate-600">
                                   DOB: {child.dateOfBirth || "Not set"}
                                 </p>
+                                {child.duplicateCount > 1 ? (
+                                  <p className="mt-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                                    Possible duplicate records:{" "}
+                                    {child.duplicateCount}
+                                  </p>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => savePlatformChildEdit(child.id)}
+                                  disabled={isPlatformSaving}
+                                  className="mt-3 w-full rounded-xl bg-slate-900 px-3 py-2 text-xs font-bold text-white disabled:opacity-60"
+                                >
+                                  Save child
+                                </button>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         </div>
 
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div
+                          id="platform-family-billing"
+                          className="rounded-xl border border-slate-200 bg-slate-50 p-3"
+                        >
                           <h4 className="font-bold text-slate-900">
                             Platform controls
                           </h4>
@@ -7925,6 +8894,64 @@ function WorkspaceGate({ session, onLogout }) {
                       </div>
 
                       <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <h4 className="font-bold text-slate-900">
+                            Reported issues
+                          </h4>
+                          <button
+                            type="button"
+                            onClick={() => setPlatformAdminTab("issues")}
+                            className="rounded-full border border-purple-200 bg-white px-3 py-1 text-xs font-bold text-purple-700"
+                          >
+                            Open issues tab
+                          </button>
+                        </div>
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          {selectedPlatformFamilyIssues.length ? (
+                            selectedPlatformFamilyIssues.slice(0, 6).map((issue) => (
+                              <div
+                                key={issue.id}
+                                className="rounded-xl border border-slate-200 bg-white p-3 text-sm"
+                              >
+                                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                                  <p className="font-bold text-slate-900">
+                                    {issue.status || "new"} -{" "}
+                                    {issue.severity || "issue"}
+                                  </p>
+                                  <span
+                                    className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] ${
+                                      issue.status === "resolved" || issue.resolved
+                                        ? "bg-emerald-50 text-emerald-700"
+                                        : "bg-rose-50 text-rose-700"
+                                    }`}
+                                  >
+                                    {issue.status === "resolved" || issue.resolved
+                                      ? "Resolved"
+                                      : "Open"}
+                                  </span>
+                                </div>
+                                <p className="mt-1 line-clamp-2 text-slate-700">
+                                  {issue.message || "No message supplied"}
+                                </p>
+                                <p className="mt-1 text-xs font-semibold text-slate-500">
+                                  {issue.route || "Unknown page"} -{" "}
+                                  {formatPlatformDateTime(issue.createdAt)}
+                                </p>
+                              </div>
+                            ))
+                          ) : (
+                            <AdminEmptyState
+                              title="No reported issues"
+                              message="There are no tester reports linked to this family."
+                              actionLabel="Open issues inbox"
+                              onAction={() => setPlatformAdminTab("issues")}
+                              tone="emerald"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                         <h4 className="font-bold text-slate-900">
                           Platform audit history
                         </h4>
@@ -7951,9 +8978,11 @@ function WorkspaceGate({ session, onLogout }) {
                               </div>
                             ))
                           ) : (
-                            <p className="text-sm text-slate-600">
-                              No platform audit entries for this family yet.
-                            </p>
+                            <AdminEmptyState
+                              title="No family activity yet"
+                              message="Owner actions for this family will appear here once changes are made."
+                              tone="slate"
+                            />
                           )}
                         </div>
                       </div>
@@ -8217,9 +9246,17 @@ function WorkspaceGate({ session, onLogout }) {
                                 </div>
                               ))
                             ) : (
-                              <p className="text-sm text-slate-600">
-                                No care logs have been created by this account yet.
-                              </p>
+                              <AdminEmptyState
+                                title="No care logs yet"
+                                message="This account has not created diary entries. Check whether they have logged in or need help getting started."
+                                actionLabel="Send password reset"
+                                onAction={() =>
+                                  createPlatformPasswordReset(
+                                    selectedPlatformUser.user.id,
+                                  )
+                                }
+                                tone="amber"
+                              />
                             )}
                           </div>
                         </div>
@@ -8253,9 +9290,11 @@ function WorkspaceGate({ session, onLogout }) {
                                 </div>
                               ))
                             ) : (
-                              <p className="text-sm text-slate-600">
-                                No account admin changes recorded yet.
-                              </p>
+                              <AdminEmptyState
+                                title="No account admin changes"
+                                message="Owner changes for this account will be recorded here."
+                                tone="slate"
+                              />
                             )}
                           </div>
                         </div>
@@ -8450,6 +9489,972 @@ function WorkspaceGate({ session, onLogout }) {
           </div>
         </div>
       ) : null}
+      {selectedPlatformFamily ? (
+        <div
+          className="fixed inset-0 z-[65] bg-slate-950/45 p-2 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedPlatformFamily(null);
+            }
+          }}
+        >
+          <section className="ml-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-lg font-black text-slate-950">
+                      {selectedPlatformFamily.family?.name || "Family account"}
+                    </h3>
+                    <PlatformStatusBadge
+                      status={selectedPlatformFamily.family?.platformStatus}
+                    />
+                    <PlanBadge record={selectedPlatformFamily.family} />
+                  </div>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-500">
+                    {selectedPlatformFamily.family?.ownerEmail || "No owner email"} - Last activity:{" "}
+                    {formatRelativePlatformTime(
+                      selectedPlatformFamily.family?.lastActivityAt ||
+                        selectedPlatformFamily.family?.lastLoginAt,
+                    )}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlatformFamilyDetailTab("overview")}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteFamilyConfirm({
+                        isOpen: true,
+                        family: selectedPlatformFamily.family,
+                        confirmText: "",
+                      })
+                    }
+                    disabled={isPlatformSaving}
+                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 disabled:opacity-50"
+                  >
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlatformFamily(null)}
+                    className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {[
+                  ["overview", "Overview"],
+                  ["children", "Children"],
+                  ["subscription", "Subscription"],
+                  ["activity", "Activity"],
+                  ["issues", "Issues"],
+                  ["notes", "Notes"],
+                ].map(([tabId, label]) => (
+                  <button
+                    key={tabId}
+                    type="button"
+                    onClick={() => setPlatformFamilyDetailTab(tabId)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black transition ${
+                      platformFamilyDetailTab === tabId
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {isFamilyDetailLoading ? (
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm font-bold text-indigo-700">
+                  Loading family details...
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "overview" ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      [
+                        "Owner",
+                        selectedPlatformFamily.family?.ownerName || "Unknown",
+                        selectedPlatformFamily.family?.ownerEmail || "No email",
+                      ],
+                      [
+                        "Children",
+                        selectedPlatformFamily.children?.length || 0,
+                        "profiles",
+                      ],
+                      [
+                        "Members",
+                        selectedPlatformFamily.members?.length || 0,
+                        "users",
+                      ],
+                      [
+                        "Issues",
+                        `${selectedPlatformFamilyOpenIssues.length} open`,
+                        `${selectedPlatformFamilyIssues.length} total`,
+                      ],
+                    ].map(([label, value, subtext]) => (
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          {label}
+                        </p>
+                        <p className="mt-1 text-lg font-black text-slate-950">
+                          {value}
+                        </p>
+                        <p className="text-xs font-semibold text-slate-500">
+                          {subtext}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <AccountAccessPreview record={selectedPlatformFamily.family} />
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <label className="min-w-0 flex-1 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Family name
+                        <input
+                          className={`${inputClass} mt-2`}
+                          value={selectedPlatformFamily.family?.name || ""}
+                          onChange={(event) =>
+                            updatePlatformFamilyField("name", event.target.value)
+                          }
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={savePlatformFamilyName}
+                        disabled={isPlatformSaving}
+                        className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                      >
+                        Save name
+                      </button>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openPlatformSnapshotForFamily(
+                            selectedPlatformFamily.family?.id,
+                          )
+                        }
+                        disabled={isPlatformSnapshotLoading}
+                        className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 disabled:opacity-50"
+                      >
+                        View Snapshot
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlatformFamilyDetailTab("subscription")}
+                        className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-800"
+                      >
+                        Manage subscription
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlatformFamilyDetailTab("issues")}
+                        className="rounded-full border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-800"
+                      >
+                        View issues
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "children" ? (
+                <div className="space-y-3">
+                  {selectedPlatformFamily.children?.length ? (
+                    selectedPlatformFamily.children.map((child) => {
+                      const childDraft = platformChildEdits[child.id] || {
+                        firstName: child.firstName || "",
+                        fluidTargetMl: child.fluidTargetMl || "",
+                      };
+                      return (
+                        <div
+                          key={child.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                        >
+                          <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto] sm:items-end">
+                            <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                              Child name
+                              <input
+                                className={`${inputClass} mt-2`}
+                                value={childDraft.firstName}
+                                onChange={(event) =>
+                                  setPlatformChildEdits((current) => ({
+                                    ...current,
+                                    [child.id]: {
+                                      ...childDraft,
+                                      firstName: event.target.value,
+                                    },
+                                  }))
+                                }
+                              />
+                            </label>
+                            <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                              Fluid target
+                              <input
+                                className={`${inputClass} mt-2`}
+                                type="number"
+                                min="0"
+                                value={childDraft.fluidTargetMl}
+                                onChange={(event) =>
+                                  setPlatformChildEdits((current) => ({
+                                    ...current,
+                                    [child.id]: {
+                                      ...childDraft,
+                                      fluidTargetMl: event.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder="ml"
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => savePlatformChildEdit(child.id)}
+                              disabled={isPlatformSaving}
+                              className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <AdminEmptyState
+                      title="No children linked"
+                      message="Children added by this family will appear here for quick admin checks."
+                      tone="slate"
+                    />
+                  )}
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "subscription" ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      ["Plan", selectedPlatformFamily.family?.plan || "trial"],
+                      [
+                        "Subscription",
+                        selectedPlatformFamily.family?.subscriptionStatus ||
+                          "trialing",
+                      ],
+                      [
+                        "Renewal",
+                        selectedPlatformFamily.family?.currentPeriodEnd
+                          ? new Date(
+                              selectedPlatformFamily.family.currentPeriodEnd,
+                            ).toLocaleDateString()
+                          : "Not set",
+                      ],
+                      [
+                        "Stripe customer",
+                        selectedPlatformFamily.family?.stripeCustomerId ||
+                          "Not connected",
+                      ],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          {label}
+                        </p>
+                        <p className="mt-1 break-all text-sm font-bold text-slate-900">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Plan
+                        <select
+                          className={inputClass}
+                          value={platformPlanForm.plan}
+                          onChange={(event) =>
+                            setPlatformPlanForm((form) => ({
+                              ...form,
+                              plan: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="trial">Trial</option>
+                          <option value="family">Family</option>
+                          <option value="beta">Beta</option>
+                          <option value="professional">Professional</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Status
+                        <select
+                          className={inputClass}
+                          value={platformPlanForm.status}
+                          onChange={(event) =>
+                            setPlatformPlanForm((form) => ({
+                              ...form,
+                              status: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="trialing">Trialing</option>
+                          <option value="active">Active</option>
+                          <option value="past_due">Past due</option>
+                          <option value="cancelled">Cancelled</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
+                        Trial end date
+                        <input
+                          className={inputClass}
+                          type="date"
+                          value={platformPlanForm.trialEndsAt}
+                          onChange={(event) =>
+                            setPlatformPlanForm((form) => ({
+                              ...form,
+                              trialEndsAt: event.target.value,
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[7, 14, 30].map((days) => (
+                        <button
+                          key={days}
+                          type="button"
+                          onClick={() => extendPlatformTrial(days)}
+                          disabled={isPlatformSaving}
+                          className="rounded-full border border-sky-200 bg-white px-3 py-1.5 text-xs font-bold text-sky-800 disabled:opacity-60"
+                        >
+                          +{days} days
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => updatePlatformFamilyPlan()}
+                        disabled={isPlatformSaving}
+                        className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                      >
+                        Save plan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updatePlatformFamilyPlan({
+                            accessPaused: !platformPlanForm.accessPaused,
+                          })
+                        }
+                        disabled={isPlatformSaving}
+                        className="rounded-full border border-amber-200 bg-white px-3 py-1.5 text-xs font-bold text-amber-800 disabled:opacity-60"
+                      >
+                        {platformPlanForm.accessPaused
+                          ? "Reactivate access"
+                          : "Pause access"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={syncPlatformFamilyStripe}
+                        disabled={isPlatformSaving}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-60"
+                      >
+                        Sync Stripe
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "activity" ? (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-black text-slate-900">Recent logs</h4>
+                    <div className="mt-2 grid gap-2 md:grid-cols-2">
+                      {selectedPlatformFamily.recentLogs?.length ? (
+                        selectedPlatformFamily.recentLogs.map((log) => (
+                          <div
+                            key={log.id}
+                            className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="font-bold capitalize text-slate-900">
+                                {log.category}
+                              </p>
+                              <span className="text-xs font-semibold text-slate-500">
+                                {log.logDate} {log.logTime || ""}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-slate-600">
+                              {log.childFirstName} - {log.createdByName}
+                            </p>
+                            {log.notes ? (
+                              <p className="mt-1 line-clamp-3 text-slate-700">
+                                {log.notes}
+                              </p>
+                            ) : null}
+                          </div>
+                        ))
+                      ) : (
+                        <AdminEmptyState
+                          title="No recent logs"
+                          message="Activity will appear here once this family starts logging."
+                          tone="slate"
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <summary className="cursor-pointer font-black text-slate-900">
+                      Show audit history
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {selectedPlatformFamily.auditLogs?.length ? (
+                        selectedPlatformFamily.auditLogs.map((auditLog) => (
+                          <div
+                            key={auditLog.id}
+                            className="rounded-xl bg-slate-50 p-3 text-sm"
+                          >
+                            <p className="font-bold text-slate-900">
+                              {auditLog.action}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-500">
+                              {formatPlatformDateTime(auditLog.createdAt)} -{" "}
+                              {auditLog.adminName ||
+                                auditLog.adminEmail ||
+                                "System"}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-500">
+                          No audit activity recorded yet.
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "issues" ? (
+                <div className="space-y-3">
+                  {selectedPlatformFamilyIssues.length ? (
+                    selectedPlatformFamilyIssues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                          <div className="min-w-0">
+                            <p className="font-black text-slate-900">
+                              {issue.severity || "Issue"} -{" "}
+                              {issue.route || "Unknown page"}
+                            </p>
+                            <p className="mt-1 line-clamp-3 text-sm text-slate-700">
+                              {issue.message || "No message supplied"}
+                            </p>
+                          </div>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                              issue.status === "resolved" || issue.resolved
+                                ? "bg-emerald-100 text-emerald-700"
+                                : "bg-rose-100 text-rose-700"
+                            }`}
+                          >
+                            {issue.status === "resolved" || issue.resolved
+                              ? "Resolved"
+                              : "Open"}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-xs font-semibold text-slate-500">
+                          {formatPlatformDateTime(issue.createdAt)}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <AdminEmptyState
+                      title="No reported issues"
+                      message="There are no tester reports linked to this family."
+                      actionLabel="Open issues inbox"
+                      onAction={() => setPlatformAdminTab("issues")}
+                      tone="emerald"
+                    />
+                  )}
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "notes" ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <label className="block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    Workspace status
+                    <select
+                      className={inputClass}
+                      value={
+                        selectedPlatformFamily.family?.platformStatus || "active"
+                      }
+                      onChange={(event) =>
+                        updatePlatformFamilyField(
+                          "platformStatus",
+                          event.target.value,
+                        )
+                      }
+                    >
+                      <option value="active">Active</option>
+                      <option value="watch">Watch</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </label>
+                  <label className="mt-3 block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    Internal notes
+                    <textarea
+                      className={inputClass}
+                      rows={5}
+                      value={
+                        selectedPlatformFamily.family?.platformAdminNotes || ""
+                      }
+                      onChange={(event) =>
+                        updatePlatformFamilyField(
+                          "platformAdminNotes",
+                          event.target.value,
+                        )
+                      }
+                      placeholder="Private platform notes"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={savePlatformFamilyControls}
+                    disabled={isPlatformSaving}
+                    className="mt-3 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                  >
+                    {isPlatformSaving ? "Saving..." : "Save controls"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {selectedPlatformUser ? (
+        <div
+          className="fixed inset-0 z-[65] bg-slate-950/45 p-2 sm:p-4"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setSelectedPlatformUser(null);
+            }
+          }}
+        >
+          <section className="ml-auto flex h-full w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-white shadow-2xl">
+            <div className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="truncate text-lg font-black text-slate-950">
+                      {selectedPlatformUser.user?.fullName || "Account"}
+                    </h3>
+                    <PlatformStatusBadge
+                      status={selectedPlatformUser.user?.platformStatus}
+                    />
+                    {selectedPlatformUser.user?.isPlatformAdmin ? (
+                      <span className="rounded-full bg-indigo-100 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-indigo-700">
+                        Admin
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 truncate text-sm font-semibold text-slate-500">
+                    {selectedPlatformUser.user?.email || "No email"} - Last seen:{" "}
+                    {lastSeenLabel(selectedPlatformUser.user?.lastLoginAt)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPlatformUserDetailTab("notes")}
+                    className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteUserConfirm({
+                        isOpen: true,
+                        user: selectedPlatformUser.user,
+                        confirmText: "",
+                      })
+                    }
+                    disabled={
+                      isPlatformSaving ||
+                      selectedPlatformUser.user?.id === session.user.id
+                    }
+                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 disabled:opacity-50"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPlatformUser(null)}
+                    className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                {[
+                  ["overview", "Overview"],
+                  ["families", "Families"],
+                  ["activity", "Activity"],
+                  ["notes", "Notes"],
+                ].map(([tabId, label]) => (
+                  <button
+                    key={tabId}
+                    type="button"
+                    onClick={() => setPlatformUserDetailTab(tabId)}
+                    className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-black transition ${
+                      platformUserDetailTab === tabId
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-4 py-4">
+              {isUserDetailLoading ? (
+                <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4 text-sm font-bold text-indigo-700">
+                  Loading account details...
+                </div>
+              ) : null}
+
+              {platformUserDetailTab === "overview" ? (
+                <div className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      [
+                        "Created",
+                        formatPlatformDateTime(
+                          selectedPlatformUser.user?.createdAt,
+                        ),
+                      ],
+                      [
+                        "Last login",
+                        formatPlatformDateTime(
+                          selectedPlatformUser.user?.lastLoginAt,
+                        ),
+                      ],
+                      [
+                        "Families",
+                        selectedPlatformUser.activity?.familyCount || 0,
+                      ],
+                      ["Logs", selectedPlatformUser.activity?.logCount || 0],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          {label}
+                        </p>
+                        <p className="mt-1 break-words text-sm font-bold text-slate-900">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-4">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setPlatformUserStatus(
+                          selectedPlatformUser.user,
+                          selectedPlatformUser.user?.platformStatus ===
+                            "suspended"
+                            ? "active"
+                            : "suspended",
+                        )
+                      }
+                      disabled={isPlatformSaving}
+                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 disabled:opacity-50"
+                    >
+                      {selectedPlatformUser.user?.platformStatus === "suspended"
+                        ? "Activate"
+                        : "Deactivate"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        createPlatformPasswordReset(
+                          selectedPlatformUser.user?.id,
+                        )
+                      }
+                      disabled={isPlatformSaving}
+                      className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 disabled:opacity-50"
+                    >
+                      Send password reset
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        openPlatformSnapshotForUser(
+                          selectedPlatformUser.user?.id,
+                        )
+                      }
+                      disabled={isPlatformSnapshotLoading}
+                      className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-800 disabled:opacity-50"
+                    >
+                      View Snapshot
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        startPlatformViewAsUser(selectedPlatformUser.user?.id)
+                      }
+                      disabled={isUserDetailLoading}
+                      className="rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-800 disabled:opacity-50"
+                    >
+                      View as user
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              {platformUserDetailTab === "families" ? (
+                <div className="space-y-2">
+                  {selectedPlatformUser.memberships?.length ? (
+                    selectedPlatformUser.memberships.map((membership) => (
+                      <button
+                        type="button"
+                        key={membership.id}
+                        onClick={() => openPlatformFamily(membership.familyId)}
+                        className="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-indigo-200 hover:bg-indigo-50"
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate font-black text-slate-900">
+                              {membership.familyName}
+                            </p>
+                            <p className="text-sm font-semibold text-slate-500">
+                              {membership.role || "member"}
+                            </p>
+                          </div>
+                          <PlatformStatusBadge status={membership.platformStatus} />
+                        </div>
+                      </button>
+                    ))
+                  ) : (
+                    <AdminEmptyState
+                      title="No family memberships"
+                      message="This account is not linked to any active family."
+                      tone="slate"
+                    />
+                  )}
+                </div>
+              ) : null}
+
+              {platformUserDetailTab === "activity" ? (
+                <div className="space-y-4">
+                  <div className="grid gap-2 md:grid-cols-2">
+                    {selectedPlatformUser.recentLogs?.length ? (
+                      selectedPlatformUser.recentLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 p-3 text-sm"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="font-bold capitalize text-slate-900">
+                              {log.category}
+                            </p>
+                            <span className="text-xs font-semibold text-slate-500">
+                              {log.logDate} {log.logTime || ""}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-slate-600">
+                            {log.childFirstName || "Child"} -{" "}
+                            {log.familyName || "Family"}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <AdminEmptyState
+                        title="No recent logs"
+                        message="Recent entries created by this account will appear here."
+                        tone="slate"
+                      />
+                    )}
+                  </div>
+                  <details className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <summary className="cursor-pointer font-black text-slate-900">
+                      Show audit history
+                    </summary>
+                    <div className="mt-3 space-y-2">
+                      {selectedPlatformUser.auditLogs?.length ? (
+                        selectedPlatformUser.auditLogs.map((auditLog) => (
+                          <div
+                            key={auditLog.id}
+                            className="rounded-xl bg-slate-50 p-3 text-sm"
+                          >
+                            <p className="font-bold text-slate-900">
+                              {auditLog.action}
+                            </p>
+                            <p className="text-xs font-semibold text-slate-500">
+                              {formatPlatformDateTime(auditLog.createdAt)}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm font-semibold text-slate-500">
+                          No audit activity recorded yet.
+                        </p>
+                      )}
+                    </div>
+                  </details>
+                </div>
+              ) : null}
+
+              {platformUserDetailTab === "notes" ? (
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Full name
+                        <input
+                          className={inputClass}
+                          value={selectedPlatformUser.user?.fullName || ""}
+                          onChange={(event) =>
+                            updatePlatformUserField("fullName", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Email
+                        <input
+                          className={inputClass}
+                          type="email"
+                          value={selectedPlatformUser.user?.email || ""}
+                          onChange={(event) =>
+                            updatePlatformUserField("email", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                        Status
+                        <select
+                          className={inputClass}
+                          value={
+                            selectedPlatformUser.user?.platformStatus || "active"
+                          }
+                          onChange={(event) =>
+                            updatePlatformUserField(
+                              "platformStatus",
+                              event.target.value,
+                            )
+                          }
+                        >
+                          <option value="active">Active</option>
+                          <option value="watch">Watch</option>
+                          <option value="suspended">Suspended</option>
+                        </select>
+                      </label>
+                      <label className="mt-7 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(
+                            selectedPlatformUser.user?.isPlatformAdmin,
+                          )}
+                          onChange={(event) =>
+                            updatePlatformUserField(
+                              "isPlatformAdmin",
+                              event.target.checked,
+                            )
+                          }
+                        />
+                        Platform admin access
+                      </label>
+                    </div>
+                    <label className="mt-3 block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                      Internal notes
+                      <textarea
+                        className={inputClass}
+                        rows={4}
+                        value={
+                          selectedPlatformUser.user?.platformAdminNotes || ""
+                        }
+                        onChange={(event) =>
+                          updatePlatformUserField(
+                            "platformAdminNotes",
+                            event.target.value,
+                          )
+                        }
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={savePlatformUserControls}
+                      disabled={isPlatformSaving}
+                      className="mt-3 rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                    >
+                      {isPlatformSaving ? "Saving..." : "Save account details"}
+                    </button>
+                  </div>
+                  <form
+                    className="rounded-2xl border border-amber-200 bg-amber-50 p-4"
+                    onSubmit={resetPlatformUserPassword}
+                  >
+                    <h4 className="font-black text-slate-900">Reset password</h4>
+                    <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                      <input
+                        className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                        type="password"
+                        value={platformPasswordForm.password}
+                        onChange={(event) =>
+                          setPlatformPasswordForm({
+                            password: event.target.value,
+                          })
+                        }
+                        placeholder="Temporary password"
+                        minLength={10}
+                        required
+                      />
+                      <button
+                        type="submit"
+                        disabled={isPlatformSaving}
+                        className="rounded-xl bg-amber-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+                      >
+                        Set password
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {deleteUserConfirm.isOpen ? (
         <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
           <form
@@ -8518,14 +10523,14 @@ function WorkspaceGate({ session, onLogout }) {
             onSubmit={deletePlatformFamily}
           >
             <h3 className="text-lg font-black text-rose-900">
-              Delete family access
+              Archive family access
             </h3>
             <p className="mt-2 text-sm font-semibold leading-6 text-rose-800">
               This will remove access to this family and hide it from owner
-              platform lists. Use this only when you are sure.
+              platform lists. You can restore it later from Archived families.
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              The backend will soft delete the family workspace, remove active
+              The backend will archive the family workspace, remove active
               memberships, and preserve logs for audit or recovery.
             </p>
             <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800">
@@ -8566,7 +10571,7 @@ function WorkspaceGate({ session, onLogout }) {
                   deleteFamilyConfirm.confirmText !== "DELETE"
                 }
               >
-                Delete
+                Archive
               </button>
             </div>
           </form>

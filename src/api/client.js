@@ -27,6 +27,20 @@ async function request(path, options = {}) {
   return payload.data;
 }
 
+async function requestOptional(path, options = {}) {
+  try {
+    return await request(path, options);
+  } catch (error) {
+    if (
+      error.message?.includes("No route found") ||
+      error.message?.includes('invalid input syntax for type uuid: "archived"')
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
 async function uploadToSignedUrl(signedUploadUrl, file) {
   let response;
 
@@ -257,6 +271,13 @@ export const api = {
     }),
   adminOverview: () => request("/admin/overview"),
   adminFamilies: () => request("/admin/families"),
+  adminArchivedFamilies: async () => {
+    const archivedFamilies = await requestOptional("/admin/archived-families");
+    if (archivedFamilies) return archivedFamilies;
+
+    const legacyArchivedFamilies = await requestOptional("/admin/families/archived");
+    return legacyArchivedFamilies || [];
+  },
   adminCreateFamilyAccount: (payload) =>
     request("/admin/family-accounts", {
       method: "POST",
@@ -268,10 +289,24 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  adminUpdateFamilyProfile: (familyId, payload) =>
+    request(`/admin/families/${familyId}/profile`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  adminUpdateFamilyChild: (familyId, childId, payload) =>
+    request(`/admin/families/${familyId}/children/${childId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   adminDeleteFamily: (familyId, payload) =>
     request(`/admin/families/${familyId}`, {
       method: "DELETE",
       body: JSON.stringify(payload),
+    }),
+  adminRestoreFamily: (familyId) =>
+    request(`/admin/families/${familyId}/restore`, {
+      method: "PATCH",
     }),
   adminSyncFamilyStripe: (familyId) =>
     request(`/admin/families/${familyId}/sync-stripe`, {

@@ -342,6 +342,185 @@ async function buildRevenueSummaryFromStripe() {
   }
 }
 
+async function listArchivedFamilies() {
+  const { rows } = await query(
+    `
+      SELECT
+        f.id,
+        f.name,
+        f.timezone,
+        f.platform_status AS "platformStatus",
+        f.platform_admin_notes AS "platformAdminNotes",
+        f.created_at AS "createdAt",
+        f.deleted_at AS "archivedAt",
+        u.full_name AS "ownerName",
+        u.email AS "ownerEmail",
+        COALESCE(s.status, 'inactive') AS "subscriptionStatus",
+        COALESCE(s.plan, 'trial') AS plan,
+        s.trial_ends_at AS "trialEndsAt",
+        s.access_paused_at AS "accessPausedAt",
+        s.access_pause_reason AS "accessPauseReason",
+        (
+          SELECT count(*)::int
+          FROM family_members fm
+          WHERE fm.family_id = f.id
+        ) AS "memberCount",
+        (
+          SELECT count(*)::int
+          FROM children c
+          WHERE c.family_id = f.id
+            AND c.deleted_at IS NULL
+        ) AS "childCount",
+        (
+          SELECT count(*)::int
+          FROM care_logs cl
+          WHERE cl.family_id = f.id
+            AND cl.deleted_at IS NULL
+        ) AS "logCount",
+        (
+          SELECT max(cl.created_at)
+          FROM care_logs cl
+          WHERE cl.family_id = f.id
+            AND cl.deleted_at IS NULL
+        ) AS "lastActivityAt"
+      FROM families f
+      LEFT JOIN users u ON u.id = f.created_by_user_id
+      LEFT JOIN subscriptions s ON s.family_id = f.id
+      WHERE f.deleted_at IS NOT NULL
+      ORDER BY f.deleted_at DESC
+      LIMIT 100
+    `,
+  );
+
+  return rows.map((row) => ({ ...row, access: buildPlanAccess(row) }));
+}
+
+async function buildNeedsAttentionSummary() {
+  const [
+    inactiveFamilies,
+    childrenMissingFluidTargets,
+    requiredMedicationsMissingSchedules,
+    trialsEndingSoon,
+    accountsNeverLoggedIn,
+  ] = await Promise.all([
+    query(
+      `
+        SELECT
+          f.id AS "familyId",
+          f.name AS "familyName",
+          max(cl.created_at) AS "lastActivityAt"
+        FROM families f
+        LEFT JOIN care_logs cl ON cl.family_id = f.id AND cl.deleted_at IS NULL
+        WHERE f.deleted_at IS NULL
+        GROUP BY f.id, f.name
+        HAVING max(cl.created_at) IS NULL
+          OR max(cl.created_at) < now() - interval '14 days'
+        ORDER BY max(cl.created_at) ASC NULLS FIRST, f.created_at DESC
+        LIMIT 10
+      `,
+    ),
+    query(
+      `
+        SELECT
+          f.id AS "familyId",
+          f.name AS "familyName",
+          count(DISTINCT c.id)::int AS count
+        FROM families f
+        INNER JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
+        WHERE f.deleted_at IS NULL
+          AND (c.daily_fluid_target_ml IS NULL OR c.daily_fluid_target_ml <= 0)
+        GROUP BY f.id, f.name
+        ORDER BY count(DISTINCT c.id) DESC, f.name ASC
+        LIMIT 10
+      `,
+    ),
+    query(
+      `
+        SELECT
+          f.id AS "familyId",
+          f.name AS "familyName",
+          count(DISTINCT cp.child_id)::int AS count
+        FROM child_profiles cp
+        INNER JOIN families f ON f.id = cp.family_id AND f.deleted_at IS NULL
+        INNER JOIN children c ON c.id = cp.child_id AND c.deleted_at IS NULL
+        WHERE cp.current_medications ILIKE '%required%'
+          AND cp.current_medications !~* '(morning|afternoon|evening|[0-2]?[0-9]:[0-5][0-9])'
+        GROUP BY f.id, f.name
+        ORDER BY count(DISTINCT cp.child_id) DESC, f.name ASC
+        LIMIT 10
+      `,
+    ),
+    query(
+      `
+        SELECT
+          f.id AS "familyId",
+          f.name AS "familyName",
+          s.trial_ends_at AS "trialEndsAt"
+        FROM subscriptions s
+        INNER JOIN families f ON f.id = s.family_id AND f.deleted_at IS NULL
+        WHERE s.trial_ends_at IS NOT NULL
+          AND s.trial_ends_at >= now()
+          AND s.trial_ends_at <= now() + interval '7 days'
+          AND COALESCE(s.status, 'trialing') IN ('trialing', 'inactive')
+        ORDER BY s.trial_ends_at ASC
+        LIMIT 10
+      `,
+    ),
+    query(
+      `
+        SELECT
+          u.id AS "userId",
+          u.full_name AS "fullName",
+          u.email,
+          min(f.id::text)::uuid AS "familyId",
+          min(f.name) AS "familyName"
+        FROM users u
+        LEFT JOIN family_members fm ON fm.user_id = u.id AND fm.deleted_at IS NULL
+        LEFT JOIN families f ON f.id = fm.family_id AND f.deleted_at IS NULL
+        WHERE u.deleted_at IS NULL
+          AND u.last_login_at IS NULL
+        GROUP BY u.id, u.full_name, u.email
+        ORDER BY u.created_at DESC
+        LIMIT 10
+      `,
+    ),
+  ]);
+
+  let unresolvedIssues = [];
+  try {
+    const result = await query(
+      `
+        SELECT
+          ir.id AS "issueId",
+          ir.family_id AS "familyId",
+          f.name AS "familyName",
+          ir.message,
+          ir.created_at AS "createdAt"
+        FROM issue_reports ir
+        LEFT JOIN families f ON f.id = ir.family_id
+        WHERE COALESCE(ir.resolved, false) = false
+          AND COALESCE(ir.status, 'new') <> 'resolved'
+        ORDER BY ir.created_at DESC
+        LIMIT 10
+      `,
+    );
+    unresolvedIssues = result.rows;
+  } catch (error) {
+    if (!isMissingFeedbackTable(error)) {
+      throw error;
+    }
+  }
+
+  return {
+    inactiveFamilies: inactiveFamilies.rows,
+    childrenMissingFluidTargets: childrenMissingFluidTargets.rows,
+    requiredMedicationsMissingSchedules: requiredMedicationsMissingSchedules.rows,
+    unresolvedIssues,
+    trialsEndingSoon: trialsEndingSoon.rows,
+    accountsNeverLoggedIn: accountsNeverLoggedIn.rows,
+  };
+}
+
 adminRouter.get(
   "/overview",
   asyncHandler(async (req, res) => {
@@ -357,6 +536,8 @@ adminRouter.get(
       logsThisWeek,
       activeUsersLast7Days,
       newAccountsThisWeek,
+      needsAttention,
+      recentActivity,
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
@@ -426,6 +607,26 @@ adminRouter.get(
             AND created_at >= now() - interval '7 days'
         `,
       ),
+      buildNeedsAttentionSummary(),
+      query(
+        `
+          SELECT
+            al.id,
+            al.action,
+            al.entity_type AS "entityType",
+            al.entity_id AS "entityId",
+            al.family_id AS "familyId",
+            f.name AS "familyName",
+            al.created_at AS "createdAt",
+            u.full_name AS "adminName",
+            u.email AS "adminEmail"
+          FROM audit_logs al
+          LEFT JOIN families f ON f.id = al.family_id
+          LEFT JOIN users u ON u.id = al.user_id
+          ORDER BY al.created_at DESC
+          LIMIT 12
+        `,
+      ),
     ]);
 
     res.json({
@@ -444,6 +645,8 @@ adminRouter.get(
         logsThisWeek: logsThisWeek.rows[0].count,
         activeUsersLast7Days: activeUsersLast7Days.rows[0].count,
         newAccountsThisWeek: newAccountsThisWeek.rows[0].count,
+        needsAttention,
+        recentActivity: recentActivity.rows,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
@@ -880,6 +1083,16 @@ adminRouter.patch(
 );
 
 adminRouter.get(
+  "/archived-families",
+  asyncHandler(async (req, res) => {
+    res.json({
+      data: await listArchivedFamilies(),
+      error: null,
+    });
+  }),
+);
+
+adminRouter.get(
   "/families",
   asyncHandler(async (req, res) => {
     const { rows } = await query(
@@ -898,6 +1111,9 @@ adminRouter.get(
           s.trial_ends_at AS "trialEndsAt",
           s.access_paused_at AS "accessPausedAt",
           s.access_pause_reason AS "accessPauseReason",
+          max(u.last_login_at) AS "ownerLastLoginAt",
+          max(member_users.last_login_at) AS "lastLoginAt",
+          max(cl.created_at) AS "lastActivityAt",
           count(DISTINCT fm.id)::int AS "memberCount",
           count(
             DISTINCT concat_ws(
@@ -916,6 +1132,7 @@ adminRouter.get(
         LEFT JOIN users u ON u.id = f.created_by_user_id
         LEFT JOIN subscriptions s ON s.family_id = f.id
         LEFT JOIN family_members fm ON fm.family_id = f.id AND fm.deleted_at IS NULL
+        LEFT JOIN users member_users ON member_users.id = fm.user_id AND member_users.deleted_at IS NULL
         LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.family_id = f.id AND cl.deleted_at IS NULL
         WHERE f.deleted_at IS NULL
@@ -933,9 +1150,20 @@ adminRouter.get(
 );
 
 adminRouter.get(
+  "/families/archived",
+  asyncHandler(async (req, res) => {
+    res.json({
+      data: await listArchivedFamilies(),
+      error: null,
+    });
+  }),
+);
+
+adminRouter.get(
   "/families/:familyId",
   asyncHandler(async (req, res) => {
     const { familyId } = req.params;
+    requireUuid(familyId, "familyId");
 
     const family = await query(
       `
@@ -963,7 +1191,21 @@ adminRouter.get(
           s.stripe_coupon_name AS "stripeCouponName",
           s.stripe_discount_percent_off AS "stripeDiscountPercentOff",
           s.stripe_discount_amount_off AS "stripeDiscountAmountOff",
-          s.stripe_discount_currency AS "stripeDiscountCurrency"
+          s.stripe_discount_currency AS "stripeDiscountCurrency",
+          (
+            SELECT max(member_users.last_login_at)
+            FROM family_members member_links
+            INNER JOIN users member_users ON member_users.id = member_links.user_id
+            WHERE member_links.family_id = f.id
+              AND member_links.deleted_at IS NULL
+              AND member_users.deleted_at IS NULL
+          ) AS "lastLoginAt",
+          (
+            SELECT max(cl.created_at)
+            FROM care_logs cl
+            WHERE cl.family_id = f.id
+              AND cl.deleted_at IS NULL
+          ) AS "lastActivityAt"
         FROM families f
         LEFT JOIN users u ON u.id = f.created_by_user_id
         LEFT JOIN subscriptions s ON s.family_id = f.id
@@ -991,7 +1233,10 @@ adminRouter.get(
             fm.joined_at AS "joinedAt",
             u.id AS "userId",
             u.full_name AS "fullName",
-            u.email
+            u.email,
+            u.created_at AS "createdAt",
+            u.last_login_at AS "lastLoginAt",
+            u.platform_status AS "platformStatus"
           FROM family_members fm
           INNER JOIN users u ON u.id = fm.user_id
           WHERE fm.family_id = $1
@@ -1011,6 +1256,7 @@ adminRouter.get(
               first_name,
               last_name,
               date_of_birth,
+              daily_fluid_target_ml,
               created_at,
               count(*) OVER (
                 PARTITION BY
@@ -1031,6 +1277,7 @@ adminRouter.get(
             first_name AS "firstName",
             last_name AS "lastName",
             date_of_birth::text AS "dateOfBirth",
+            daily_fluid_target_ml AS "dailyFluidTargetMl",
             created_at AS "createdAt",
             duplicate_count::int AS "duplicateCount"
           FROM canonical_children
@@ -1080,6 +1327,39 @@ adminRouter.get(
       ),
     ]);
 
+    let familyIssues = [];
+    try {
+      const result = await query(
+        `
+          SELECT
+            ir.id,
+            ir.message,
+            ir.severity,
+            ir.status,
+            ir.resolved,
+            ir.route,
+            ir.created_at AS "createdAt",
+            ir.resolved_at AS "resolvedAt",
+            u.full_name AS "userName",
+            u.email AS "userEmail",
+            c.first_name AS "childFirstName",
+            c.last_name AS "childLastName"
+          FROM issue_reports ir
+          LEFT JOIN users u ON u.id = ir.user_id
+          LEFT JOIN children c ON c.id = ir.child_id
+          WHERE ir.family_id = $1
+          ORDER BY ir.created_at DESC
+          LIMIT 20
+        `,
+        [familyId],
+      );
+      familyIssues = result.rows;
+    } catch (error) {
+      if (!isMissingFeedbackTable(error)) {
+        throw error;
+      }
+    }
+
     res.json({
       data: {
         family: {
@@ -1102,6 +1382,7 @@ adminRouter.get(
         children: children.rows,
         recentLogs: recentLogs.rows,
         auditLogs: auditLogs.rows,
+        issues: familyIssues,
       },
       error: null,
     });
@@ -1145,6 +1426,103 @@ adminRouter.patch(
       entityId: familyId,
       action: "platform_family_updated",
       metadata: { platformStatus, platformAdminNotes },
+    });
+
+    res.json({ data: rows[0], error: null });
+  }),
+);
+
+adminRouter.patch(
+  "/families/:familyId/profile",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const name = requireString(req.body, "name", "Family name");
+
+    const { rows } = await query(
+      `
+        UPDATE families
+        SET name = $1
+        WHERE id = $2
+          AND deleted_at IS NULL
+        RETURNING
+          id,
+          name,
+          platform_status AS "platformStatus",
+          platform_admin_notes AS "platformAdminNotes"
+      `,
+      [name, familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Family not found.");
+    }
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_family_name_updated",
+      metadata: { name },
+    });
+
+    res.json({ data: rows[0], error: null });
+  }),
+);
+
+adminRouter.patch(
+  "/families/:familyId/children/:childId",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const childId = requireUuid(req.params.childId, "Child ID");
+    const firstName = requireString(req.body, "firstName", "Child name");
+    const lastName = optionalString(req.body, "lastName") || "";
+    const rawTarget = req.body?.dailyFluidTargetMl;
+    const dailyFluidTargetMl =
+      rawTarget === null || rawTarget === "" || typeof rawTarget === "undefined"
+        ? null
+        : Number.parseInt(rawTarget, 10);
+
+    if (
+      dailyFluidTargetMl !== null &&
+      (!Number.isFinite(dailyFluidTargetMl) || dailyFluidTargetMl < 0)
+    ) {
+      throw badRequest("Fluid target must be a positive number.");
+    }
+
+    const { rows } = await query(
+      `
+        UPDATE children
+        SET first_name = $1,
+            last_name = $2,
+            daily_fluid_target_ml = $3
+        WHERE id = $4
+          AND family_id = $5
+          AND deleted_at IS NULL
+        RETURNING
+          id,
+          first_name AS "firstName",
+          last_name AS "lastName",
+          date_of_birth::text AS "dateOfBirth",
+          daily_fluid_target_ml AS "dailyFluidTargetMl",
+          created_at AS "createdAt"
+      `,
+      [firstName, lastName, dailyFluidTargetMl, childId, familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Child not found.");
+    }
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "child",
+      entityId: childId,
+      action: "platform_child_updated",
+      metadata: {
+        firstName,
+        lastName,
+        dailyFluidTargetMl,
+      },
     });
 
     res.json({ data: rows[0], error: null });
@@ -1455,6 +1833,74 @@ adminRouter.delete(
         id: rows[0].id,
         name: rows[0].name,
         deleted: true,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/families/:familyId/restore",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+
+    const { rows } = await query(
+      `
+        UPDATE families
+        SET deleted_at = NULL,
+            platform_status = 'active',
+            platform_admin_notes = concat_ws(
+              E'\n',
+              NULLIF(platform_admin_notes, ''),
+              'Restored by owner platform on ' || to_char(now(), 'YYYY-MM-DD HH24:MI')
+            )
+        WHERE id = $1
+          AND deleted_at IS NOT NULL
+        RETURNING id, name
+      `,
+      [familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Archived family not found.");
+    }
+
+    await query(
+      `
+        UPDATE family_members
+        SET deleted_at = NULL
+        WHERE family_id = $1
+      `,
+      [familyId],
+    );
+
+    await query(
+      `
+        UPDATE subscriptions
+        SET access_paused_at = NULL,
+            access_pause_reason = NULL,
+            status = CASE
+              WHEN status = 'canceled' THEN 'inactive'
+              ELSE status
+            END
+        WHERE family_id = $1
+      `,
+      [familyId],
+    );
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_family_restored",
+      metadata: { name: rows[0].name },
+    });
+
+    res.json({
+      data: {
+        id: rows[0].id,
+        name: rows[0].name,
+        restored: true,
       },
       error: null,
     });
