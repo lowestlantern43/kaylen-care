@@ -4,6 +4,24 @@ import jsPDF from "jspdf";
 import { supabase } from "./Supabase";
 import { api } from "./api/client";
 
+const DEFAULT_MODULE_VISIBILITY = {
+  food: true,
+  drink: true,
+  medication: true,
+  sleep: true,
+  toileting: true,
+  health: true,
+  measurements: true,
+  reports: true,
+  snapshot: true,
+  calendar: true,
+};
+
+const normalizeModuleVisibility = (value = {}) => ({
+  ...DEFAULT_MODULE_VISIBILITY,
+  ...(value && typeof value === "object" ? value : {}),
+});
+
 const todayValue = () => {
   const d = new Date();
   const day = String(d.getDate()).padStart(2, "0");
@@ -487,10 +505,16 @@ export default function KaylenCareMonitorDashboard({
   childProfile: childProfileProp = {},
   importantEvents = [],
   accountAccess = null,
+  moduleVisibility = DEFAULT_MODULE_VISIBILITY,
   showToast,
   useSaasApi = false,
 } = {}) {
   const childProfile = childProfileProp || {};
+  const visibleModules = useMemo(
+    () => normalizeModuleVisibility(moduleVisibility),
+    [moduleVisibility],
+  );
+  const isModuleEnabled = (moduleKey) => visibleModules[moduleKey] !== false;
   const isReadOnly = Boolean(
     accountAccess?.viewOnly || accountAccess?.canAddLogs === false,
   );
@@ -774,14 +798,66 @@ export default function KaylenCareMonitorDashboard({
   );
   const profileMedicationLabels = profileMedicationOptions.map((item) => item.name);
 
+  const sectionModuleKey = (title) => {
+    switch (title) {
+      case "Food Diary":
+        return isModuleEnabled("food") || isModuleEnabled("drink")
+          ? "foodDiary"
+          : "hidden";
+      case "Medication":
+        return "medication";
+      case "Toileting":
+        return "toileting";
+      case "Health":
+        return "health";
+      case "Sleep":
+        return "sleep";
+      case "Growth / Measurements":
+        return "measurements";
+      case "Reports":
+        return "reports";
+      case "Care Snapshot":
+        return "snapshot";
+      case "Calendar":
+        return "calendar";
+      default:
+        return "";
+    }
+  };
+
+  const isSectionVisible = (section) => {
+    const moduleKey = sectionModuleKey(section.title);
+    if (moduleKey === "foodDiary") return true;
+    if (moduleKey === "hidden") return false;
+    return moduleKey ? isModuleEnabled(moduleKey) : true;
+  };
+
+  const visibleSections = useMemo(
+    () => sections.filter((section) => isSectionVisible(section)),
+    [sections, visibleModules],
+  );
+
+  const quickAddItems = useMemo(
+    () =>
+      [
+        { label: "Food", title: "Food Diary", preset: "", icon: "Food", module: "food" },
+        { label: "Drink", title: "Food Diary", preset: "Drink", icon: "Drink", module: "drink" },
+        { label: "Medication", title: "Medication", preset: "", icon: "Med", module: "medication" },
+        { label: "Sleep", title: "Sleep", preset: "", icon: "Sleep", module: "sleep" },
+        { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
+        { label: "Health", title: "Health", preset: "", icon: "Health", module: "health" },
+      ].filter((item) => isModuleEnabled(item.module)),
+    [visibleModules],
+  );
+
   const orderedSections = useMemo(() => {
-    const byTitle = new Map(sections.map((section) => [section.title, section]));
+    const byTitle = new Map(visibleSections.map((section) => [section.title, section]));
     const ordered = dashboardOrder
       .map((title) => byTitle.get(title))
       .filter(Boolean);
-    const missing = sections.filter((section) => !dashboardOrder.includes(section.title));
+    const missing = visibleSections.filter((section) => !dashboardOrder.includes(section.title));
     return [...ordered, ...missing];
-  }, [dashboardOrder, sections]);
+  }, [dashboardOrder, visibleSections]);
 
   const sectionDraftKind = (title = activeSection?.title) => {
     switch (title) {
@@ -3015,6 +3091,41 @@ export default function KaylenCareMonitorDashboard({
   const reportCategoryLabel = (section) =>
     section === "Food Diary" ? "Food" : section;
 
+  const reportCategoryOptions = useMemo(
+    () =>
+      reportCategoryOrder.filter((section) => {
+        if (section === "Food Diary") {
+          return isModuleEnabled("food") || isModuleEnabled("drink");
+        }
+        if (section === "Medication") return isModuleEnabled("medication");
+        if (section === "Sleep") return isModuleEnabled("sleep");
+        if (section === "Toileting") return isModuleEnabled("toileting");
+        if (section === "Health") return isModuleEnabled("health");
+        return true;
+      }),
+    [reportCategoryOrder, visibleModules],
+  );
+
+  useEffect(() => {
+    if (
+      reportCategoryFilter !== "All" &&
+      !reportCategoryOptions.includes(reportCategoryFilter)
+    ) {
+      setReportCategoryFilter("All");
+    }
+  }, [reportCategoryFilter, reportCategoryOptions]);
+
+  const renderReportCategoryOptions = () => (
+    <>
+      <option value="All">All categories</option>
+      {reportCategoryOptions.map((section) => (
+        <option key={section} value={section}>
+          {section === "Food Diary" ? "Food and drink" : reportCategoryLabel(section)}
+        </option>
+      ))}
+    </>
+  );
+
   const dailyReportGroups = useMemo(() => {
     const groups = [];
 
@@ -3789,36 +3900,54 @@ export default function KaylenCareMonitorDashboard({
         label: "Add your child",
         completed: Boolean(childId),
         action: "child",
+        module: "core",
       },
       {
         label: "Add first medication",
         completed: hasMedication,
         action: "medication",
+        module: "medication",
       },
       {
         label: "Add first meal",
         completed: sharedLog.some((entry) => entry.section === "Food Diary"),
         action: "food",
+        module: "foodDiary",
       },
       {
         label: "Add first sleep entry",
         completed: sharedLog.some((entry) => entry.section === "Sleep"),
         action: "sleep",
+        module: "sleep",
       },
       {
         label: "View Care Snapshot",
         completed: hasViewedCareSnapshot,
         action: "snapshot",
+        module: "snapshot",
       },
       {
         label: "Generate a report",
         completed: sharedLog.length >= 3,
         action: "reports",
+        module: "reports",
       },
     ];
 
-    return items;
-  }, [childId, hasViewedCareSnapshot, profileMedicationOptions.length, sharedLog]);
+    return items.filter((item) => {
+      if (item.module === "core") return true;
+      if (item.module === "foodDiary") {
+        return isModuleEnabled("food") || isModuleEnabled("drink");
+      }
+      return isModuleEnabled(item.module);
+    });
+  }, [
+    childId,
+    hasViewedCareSnapshot,
+    profileMedicationOptions.length,
+    sharedLog,
+    visibleModules,
+  ]);
 
   const showOnboardingChecklist =
     !isGettingStartedDismissed &&
@@ -8524,12 +8653,7 @@ export default function KaylenCareMonitorDashboard({
             value={reportCategoryFilter}
             onChange={(event) => setReportCategoryFilter(event.target.value)}
           >
-            <option value="All">All categories</option>
-            <option value="Food Diary">Food</option>
-            <option value="Medication">Medication</option>
-            <option value="Sleep">Sleep</option>
-            <option value="Toileting">Toileting</option>
-            <option value="Health">Health</option>
+            {renderReportCategoryOptions()}
           </select>
         </div>
         {showDetailedOptions ? (
@@ -9037,6 +9161,7 @@ export default function KaylenCareMonitorDashboard({
               <span className="font-bold">Allergies:</span> {allergies}
             </p>
           </div>
+          {isModuleEnabled("medication") ? (
           <div
             data-snapshot-pdf-card="half"
             className={`pdf-avoid-break border border-rose-200 bg-rose-50 ${isPdf ? "rounded-xl p-2.5" : "rounded-2xl p-3"}`}
@@ -9067,10 +9192,11 @@ export default function KaylenCareMonitorDashboard({
               <p className="mt-2 text-sm text-slate-700">Not added</p>
             )}
           </div>
+          ) : null}
         </section>
 
         <section className={`${isPdf ? "grid grid-cols-2 gap-2" : "grid gap-2 md:grid-cols-2"}`}>
-          {shareSections.medication
+          {shareSections.medication && isModuleEnabled("medication")
             ? renderSnapshotList(
                 "Medication logs",
                 snapshotBySection.medication,
@@ -9079,7 +9205,7 @@ export default function KaylenCareMonitorDashboard({
                 mode,
               )
             : null}
-          {shareSections.food
+          {shareSections.food && (isModuleEnabled("food") || isModuleEnabled("drink"))
             ? renderSnapshotList(
                 "Food / drink",
                 snapshotBySection.food,
@@ -9088,10 +9214,10 @@ export default function KaylenCareMonitorDashboard({
                 mode,
               )
             : null}
-          {shareSections.sleep
+          {shareSections.sleep && isModuleEnabled("sleep")
             ? renderSnapshotList("Sleep", snapshotBySection.sleep, "indigo", 3, mode)
             : null}
-          {shareSections.toileting
+          {shareSections.toileting && isModuleEnabled("toileting")
             ? renderSnapshotList(
                 "Toileting",
                 snapshotBySection.toileting,
@@ -9100,7 +9226,7 @@ export default function KaylenCareMonitorDashboard({
                 mode,
               )
             : null}
-          {shareSections.health
+          {shareSections.health && isModuleEnabled("health")
             ? renderSnapshotList(
                 "Health events",
                 snapshotBySection.health,
@@ -9142,7 +9268,17 @@ export default function KaylenCareMonitorDashboard({
               />
               Include sensitive info
             </label>
-            {Object.entries(shareSections).map(([key, value]) => (
+            {Object.entries(shareSections)
+              .filter(([key]) => {
+                if (key === "food") {
+                  return isModuleEnabled("food") || isModuleEnabled("drink");
+                }
+                if (["medication", "sleep", "toileting", "health"].includes(key)) {
+                  return isModuleEnabled(key);
+                }
+                return true;
+              })
+              .map(([key, value]) => (
               <label
                 key={key}
                 className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold capitalize text-slate-700"
@@ -9400,12 +9536,7 @@ export default function KaylenCareMonitorDashboard({
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
-                    <option value="All">All categories</option>
-                    <option value="Food Diary">Food</option>
-                    <option value="Medication">Medication</option>
-                    <option value="Toileting">Toileting</option>
-                    <option value="Health">Health</option>
-                    <option value="Sleep">Sleep</option>
+                    {renderReportCategoryOptions()}
                   </select>
                 </div>
               </div>
@@ -9477,12 +9608,7 @@ export default function KaylenCareMonitorDashboard({
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
-                    <option value="All">All categories</option>
-                    <option value="Food Diary">Food</option>
-                    <option value="Medication">Medication</option>
-                    <option value="Toileting">Toileting</option>
-                    <option value="Health">Health</option>
-                    <option value="Sleep">Sleep</option>
+                    {renderReportCategoryOptions()}
                   </select>
                 </div>
               </div>
@@ -9557,12 +9683,7 @@ export default function KaylenCareMonitorDashboard({
                     value={reportCategoryFilter}
                     onChange={(e) => setReportCategoryFilter(e.target.value)}
                   >
-                    <option value="All">All categories</option>
-                    <option value="Food Diary">Food</option>
-                    <option value="Medication">Medication</option>
-                    <option value="Toileting">Toileting</option>
-                    <option value="Health">Health</option>
-                    <option value="Sleep">Sleep</option>
+                    {renderReportCategoryOptions()}
                   </select>
                 </div>
                 <div className={cardClassName}>
@@ -10139,6 +10260,7 @@ export default function KaylenCareMonitorDashboard({
     const detailedReportSections = [
       {
         title: "Sleep",
+        module: "sleep",
         entries: sleepEntries,
         summary: sleepStat?.value || "No average yet",
         emptyText: "No sleep recorded yet - log your first night to start tracking patterns.",
@@ -10146,6 +10268,7 @@ export default function KaylenCareMonitorDashboard({
       },
       {
         title: "Food & Drink",
+        module: "foodDiary",
         entries: foodEntries,
         summary: `${foodEntries.length} logged`,
         emptyText: "No food entries yet - start logging meals to build a daily picture.",
@@ -10153,6 +10276,7 @@ export default function KaylenCareMonitorDashboard({
       },
       {
         title: "Medication",
+        module: "medication",
         entries: medicationEntries,
         summary: medicationStat?.value || "No medication data",
         emptyText: "No medication records yet - add medication to track consistency.",
@@ -10160,6 +10284,7 @@ export default function KaylenCareMonitorDashboard({
       },
       {
         title: "Toileting",
+        module: "toileting",
         entries: toiletingEntries,
         summary: `${toiletingEntries.length} logged`,
         emptyText: "No toileting data yet - logging this helps identify patterns.",
@@ -10167,6 +10292,7 @@ export default function KaylenCareMonitorDashboard({
       },
       {
         title: "Health",
+        module: "health",
         entries: healthEntries,
         summary: `${healthEntries.length} logged`,
         emptyText: "No health entries found for this period.",
@@ -10176,6 +10302,7 @@ export default function KaylenCareMonitorDashboard({
         ? [
             {
               title: "Measurements",
+              module: "measurements",
               entries: measurementEntries,
               summary: `${measurementEntries.length} logged`,
               emptyText: "No measurements found for this period.",
@@ -10183,7 +10310,12 @@ export default function KaylenCareMonitorDashboard({
             },
           ]
         : []),
-    ];
+    ].filter((section) => {
+      if (section.module === "foodDiary") {
+        return isModuleEnabled("food") || isModuleEnabled("drink");
+      }
+      return isModuleEnabled(section.module);
+    });
 
     const rangeOptions = ["7", "14", "30", "custom"];
 
@@ -10286,12 +10418,7 @@ export default function KaylenCareMonitorDashboard({
                   value={reportCategoryFilter}
                   onChange={(event) => setReportCategoryFilter(event.target.value)}
                 >
-                  <option value="All">All categories</option>
-                  <option value="Food Diary">Food and drink</option>
-                  <option value="Medication">Medication</option>
-                  <option value="Sleep">Sleep</option>
-                  <option value="Toileting">Toileting</option>
-                  <option value="Health">Health</option>
+                  {renderReportCategoryOptions()}
                 </select>
               </div>
               <div>
@@ -10716,7 +10843,7 @@ export default function KaylenCareMonitorDashboard({
           </section>
         ) : null}
 
-        {!isCareSnapshotPromptDismissed ? (
+        {!isCareSnapshotPromptDismissed && isModuleEnabled("snapshot") ? (
         <section className="relative mb-5 rounded-[1.5rem] border border-cyan-100 bg-cyan-50/80 p-4 pr-12 shadow-sm">
           <button
             type="button"
@@ -10746,6 +10873,7 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
+        {(isModuleEnabled("drink") || isModuleEnabled("medication")) ? (
         <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -10763,7 +10891,14 @@ export default function KaylenCareMonitorDashboard({
             </p>
           </div>
 
-          <div className="mt-3 grid gap-3 lg:grid-cols-[0.85fr_1.15fr]">
+          <div
+            className={`mt-3 grid gap-3 ${
+              isModuleEnabled("drink") && isModuleEnabled("medication")
+                ? "lg:grid-cols-[0.85fr_1.15fr]"
+                : "lg:grid-cols-1"
+            }`}
+          >
+            {isModuleEnabled("drink") ? (
             <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -10800,7 +10935,9 @@ export default function KaylenCareMonitorDashboard({
                   </button>
                 ) : null}
               </div>
+            ) : null}
 
+            {isModuleEnabled("medication") ? (
             <div>
             {todayDashboard.requiredMedication.length ? (
               <div
@@ -10912,8 +11049,10 @@ export default function KaylenCareMonitorDashboard({
               </div>
             ) : null}
             </div>
+            ) : null}
           </div>
         </section>
+        ) : null}
 
         <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
@@ -11058,6 +11197,7 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </div>
 
+      {quickAddItems.length ? (
       <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:hidden">
         {quickAddOpen ? (
           <div className="w-[min(18rem,calc(100vw-2rem))] rounded-[1.5rem] border border-sky-100 bg-white p-3 shadow-2xl">
@@ -11090,7 +11230,23 @@ export default function KaylenCareMonitorDashboard({
               ["Sleep", "Sleep", "", "🌙"],
               ["Toileting", "Toileting", "", "🚽"],
               ["Health", "Health", "", "✚"],
-            ].map(([label, title, preset, icon]) => (
+            ].map(([label, title, preset, icon]) => {
+              const moduleKey =
+                label === "Food"
+                  ? "food"
+                  : label === "Drink"
+                    ? "drink"
+                    : label === "Medication"
+                      ? "medication"
+                      : label === "Sleep"
+                        ? "sleep"
+                        : label === "Toileting"
+                          ? "toileting"
+                          : label === "Health"
+                            ? "health"
+                            : "";
+              if (moduleKey && !isModuleEnabled(moduleKey)) return null;
+              return (
               <button
                 key={label}
                 type="button"
@@ -11102,7 +11258,8 @@ export default function KaylenCareMonitorDashboard({
                 </span>
                 <span>{label}</span>
               </button>
-            ))}
+              );
+            })}
             </div>
           </div>
         ) : null}
@@ -11116,6 +11273,7 @@ export default function KaylenCareMonitorDashboard({
           <span>{quickAddOpen ? "Close" : "Add"}</span>
         </button>
       </div>
+      ) : null}
 
       {activeSection ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 backdrop-blur-sm md:p-4">

@@ -15,6 +15,62 @@ const PRODUCTION_URL = "https://familytrack.care";
 const INSTALL_ONBOARDING_SEEN_KEY = "familytrack:install-onboarding-seen";
 const INSTALL_ONBOARDING_DISMISSED_KEY =
   "familytrack:install-onboarding-dismissed";
+const MODULE_VISIBILITY_OPTIONS = [
+  {
+    key: "food",
+    label: "Food",
+    description: "Meal entries and saved food options.",
+  },
+  {
+    key: "drink",
+    label: "Drink / fluids",
+    description: "Drink entries, fluid totals, and fluid progress.",
+  },
+  {
+    key: "medication",
+    label: "Medication",
+    description: "Medication logging and required medication prompts.",
+  },
+  {
+    key: "sleep",
+    label: "Sleep",
+    description: "Sleep logs, sleep trends, and sleep report sections.",
+  },
+  {
+    key: "toileting",
+    label: "Toileting",
+    description: "Toileting logs, patterns, and report sections.",
+  },
+  {
+    key: "health",
+    label: "Health",
+    description: "Health notes, concerns, and health report sections.",
+  },
+  {
+    key: "measurements",
+    label: "Growth / measurements",
+    description: "Height, weight, and measurement summaries.",
+  },
+  {
+    key: "reports",
+    label: "Reports",
+    description: "The full reports area and report dashboard card.",
+  },
+  {
+    key: "snapshot",
+    label: "Care Snapshot",
+    description: "The 72-hour Snapshot card and Snapshot widgets.",
+  },
+  {
+    key: "calendar",
+    label: "Calendar",
+    description: "The monthly log overview card.",
+  },
+];
+const DEFAULT_MODULE_VISIBILITY = MODULE_VISIBILITY_OPTIONS.reduce(
+  (settings, option) => ({ ...settings, [option.key]: true }),
+  {},
+);
 const screenshotAssets = {
   "/screenshots/dashboard.png": dashboardScreenshot,
   "/screenshots/logging-food.png": foodScreenshot,
@@ -422,6 +478,22 @@ const safeLocalStorageSet = (key, value) => {
     // Local UI preferences should never block the app.
   }
 };
+
+const safeJsonParse = (value, fallback = null) => {
+  try {
+    return value ? JSON.parse(value) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const normalizeModuleVisibility = (value = {}) => ({
+  ...DEFAULT_MODULE_VISIBILITY,
+  ...(value && typeof value === "object" ? value : {}),
+});
+
+const moduleVisibilityStorageKey = (familyId, childId) =>
+  `familytrack:module-visibility:${familyId || "family"}:${childId || "child"}`;
 
 const isIosDevice = () => {
   if (typeof navigator === "undefined") return false;
@@ -2413,6 +2485,9 @@ function WorkspaceGate({ session, onLogout }) {
       return "auto";
     }
   });
+  const [moduleVisibility, setModuleVisibility] = useState(
+    DEFAULT_MODULE_VISIBILITY,
+  );
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [platformData, setPlatformData] = useState({
@@ -2623,6 +2698,35 @@ function WorkspaceGate({ session, onLogout }) {
       // Local display preference only.
     }
   }, [timeZonePreference]);
+
+  useEffect(() => {
+    const key = moduleVisibilityStorageKey(selectedFamilyId, selectedChildId);
+    const saved = safeJsonParse(safeLocalStorageGet(key), {});
+    setModuleVisibility(normalizeModuleVisibility(saved));
+  }, [selectedFamilyId, selectedChildId]);
+
+  const updateModuleVisibility = (moduleKey, enabled) => {
+    setModuleVisibility((current) => {
+      const next = normalizeModuleVisibility({
+        ...current,
+        [moduleKey]: Boolean(enabled),
+      });
+      safeLocalStorageSet(
+        moduleVisibilityStorageKey(selectedFamilyId, selectedChildId),
+        JSON.stringify(next),
+      );
+      return next;
+    });
+  };
+
+  const resetModuleVisibility = () => {
+    const next = normalizeModuleVisibility(DEFAULT_MODULE_VISIBILITY);
+    setModuleVisibility(next);
+    safeLocalStorageSet(
+      moduleVisibilityStorageKey(selectedFamilyId, selectedChildId),
+      JSON.stringify(next),
+    );
+  };
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (event) => {
@@ -6693,6 +6797,65 @@ function WorkspaceGate({ session, onLogout }) {
                         Show install help
                       </button>
                     </div>
+
+                    <div className="mt-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <h4 className="font-bold text-slate-900">
+                            Customise dashboard sections
+                          </h4>
+                          <p className="mt-1 text-sm leading-6 text-slate-600">
+                            Hide sections this child does not use. This only
+                            changes what is shown in the app; it never deletes
+                            logs or saved data.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={resetModuleVisibility}
+                          className="w-fit rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-black text-indigo-700 shadow-sm"
+                        >
+                          Show all
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                        {MODULE_VISIBILITY_OPTIONS.map((moduleOption) => {
+                          const enabled =
+                            moduleVisibility[moduleOption.key] !== false;
+                          return (
+                            <label
+                              key={moduleOption.key}
+                              className={`flex min-w-0 items-center justify-between gap-3 rounded-2xl border px-3 py-3 transition ${
+                                enabled
+                                  ? "border-indigo-100 bg-white shadow-sm"
+                                  : "border-slate-200 bg-slate-50"
+                              }`}
+                            >
+                              <span className="min-w-0">
+                                <span className="block text-sm font-black text-slate-900">
+                                  {moduleOption.label}
+                                </span>
+                                <span className="mt-0.5 block text-xs font-semibold leading-5 text-slate-500">
+                                  {moduleOption.description}
+                                </span>
+                              </span>
+                              <input
+                                type="checkbox"
+                                className="h-5 w-5 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                checked={enabled}
+                                onChange={(event) =>
+                                  updateModuleVisibility(
+                                    moduleOption.key,
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </section>
 
                   <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
@@ -9639,6 +9802,7 @@ function WorkspaceGate({ session, onLogout }) {
           childProfile={childProfile || emptyChildProfile}
           importantEvents={importantEvents}
           accountAccess={selectedFamilyAccess}
+          moduleVisibility={moduleVisibility}
           showToast={showToast}
           useSaasApi
         />
