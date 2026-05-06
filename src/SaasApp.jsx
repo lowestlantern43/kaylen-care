@@ -12,6 +12,9 @@ const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
+const INSTALL_ONBOARDING_SEEN_KEY = "familytrack:install-onboarding-seen";
+const INSTALL_ONBOARDING_DISMISSED_KEY =
+  "familytrack:install-onboarding-dismissed";
 const screenshotAssets = {
   "/screenshots/dashboard.png": dashboardScreenshot,
   "/screenshots/logging-food.png": foodScreenshot,
@@ -418,6 +421,19 @@ const safeLocalStorageSet = (key, value) => {
   } catch {
     // Local UI preferences should never block the app.
   }
+};
+
+const isIosDevice = () => {
+  if (typeof navigator === "undefined") return false;
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || "");
+};
+
+const isStandaloneDisplay = () => {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true
+  );
 };
 
 const asSafeDate = (value) => {
@@ -2453,6 +2469,8 @@ function WorkspaceGate({ session, onLogout }) {
   const [showAdminStatsPopup, setShowAdminStatsPopup] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [showInstallOnboarding, setShowInstallOnboarding] = useState(false);
   const [isFloatingChildSwitcherOpen, setIsFloatingChildSwitcherOpen] =
     useState(false);
   const [adminIssueFilter, setAdminIssueFilter] = useState("active");
@@ -2540,6 +2558,11 @@ function WorkspaceGate({ session, onLogout }) {
   const showTrialUpgradeBanner =
     selectedFamilyAccess?.reason === "trial" &&
     Date.now() >= dismissedUpgradeUntil;
+  const installDeviceType = isIosDevice()
+    ? "ios"
+    : installPromptEvent
+      ? "native"
+      : "manual";
 
   const groupedCareOptions = useMemo(
     () => {
@@ -2600,6 +2623,69 @@ function WorkspaceGate({ session, onLogout }) {
       // Local display preference only.
     }
   }, [timeZonePreference]);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (event) => {
+      event.preventDefault();
+      setInstallPromptEvent(event);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener(
+        "beforeinstallprompt",
+        handleBeforeInstallPrompt,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (isLoading || !selectedFamily || !selectedChild || isStandaloneDisplay()) {
+      return undefined;
+    }
+
+    if (
+      safeLocalStorageGet(INSTALL_ONBOARDING_DISMISSED_KEY) === "true" ||
+      safeLocalStorageGet(INSTALL_ONBOARDING_SEEN_KEY) === "true"
+    ) {
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      safeLocalStorageSet(INSTALL_ONBOARDING_SEEN_KEY, "true");
+      setShowInstallOnboarding(true);
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [isLoading, selectedChild, selectedFamily]);
+
+  const closeInstallOnboarding = ({ dontShowAgain = false } = {}) => {
+    safeLocalStorageSet(INSTALL_ONBOARDING_SEEN_KEY, "true");
+    if (dontShowAgain) {
+      safeLocalStorageSet(INSTALL_ONBOARDING_DISMISSED_KEY, "true");
+    }
+    setShowInstallOnboarding(false);
+  };
+
+  const reopenInstallOnboarding = () => {
+    setShowInstallOnboarding(true);
+  };
+
+  const startInstallPrompt = async () => {
+    if (!installPromptEvent) return;
+
+    try {
+      installPromptEvent.prompt();
+      await installPromptEvent.userChoice;
+      setInstallPromptEvent(null);
+      closeInstallOnboarding({ dontShowAgain: true });
+    } catch {
+      showToast({
+        message: "Install prompt could not open. Use your browser menu instead.",
+        type: "warning",
+      });
+    }
+  };
 
   useEffect(
     () => () => {
@@ -6592,6 +6678,21 @@ function WorkspaceGate({ session, onLogout }) {
                       Dates shown in account settings use {activeTimeZone}. Diary
                       entries keep their saved date and time values.
                     </p>
+                    <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 p-4">
+                      <h4 className="font-bold text-slate-900">
+                        Add FamilyTrack to this device
+                      </h4>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        Reopen the home-screen help for this browser or phone.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={reopenInstallOnboarding}
+                        className="mt-3 rounded-xl bg-sky-700 px-4 py-2.5 text-sm font-black text-white shadow-sm"
+                      >
+                        Show install help
+                      </button>
+                    </div>
                   </section>
 
                   <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
@@ -11074,6 +11175,93 @@ function WorkspaceGate({ session, onLogout }) {
               </div>
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {showInstallOnboarding && !isStandaloneDisplay() ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/40 p-3 sm:items-center sm:justify-center">
+          <div className="w-full max-w-md rounded-[1.75rem] border border-sky-100 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-700">
+                  FamilyTrack
+                </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">
+                  Add to your home screen
+                </h3>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                  Open FamilyTrack like an app from your phone or tablet, with
+                  quicker access when you need to log care.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => closeInstallOnboarding()}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-600"
+                aria-label="Close install help"
+              >
+                Close
+              </button>
+            </div>
+
+            {installDeviceType === "native" ? (
+              <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+                <p className="text-sm font-bold text-sky-950">
+                  Your browser supports a quick install.
+                </p>
+                <button
+                  type="button"
+                  onClick={startInstallPrompt}
+                  className="mt-3 w-full rounded-2xl bg-sky-700 px-4 py-3 text-sm font-black text-white shadow-sm"
+                >
+                  Install FamilyTrack
+                </button>
+              </div>
+            ) : (
+              <div className="mt-4 space-y-2">
+                {(installDeviceType === "ios"
+                  ? [
+                      "Open FamilyTrack in Safari.",
+                      "Tap the Share button at the bottom of Safari.",
+                      "Choose Add to Home Screen, then tap Add.",
+                    ]
+                  : [
+                      "Open the browser menu.",
+                      "Choose Install app or Add to Home screen.",
+                      "Confirm to add FamilyTrack to this device.",
+                    ]
+                ).map((step, index) => (
+                  <div
+                    key={step}
+                    className="flex gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3"
+                  >
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-sky-100 text-xs font-black text-sky-700">
+                      {index + 1}
+                    </span>
+                    <p className="text-sm font-semibold leading-6 text-slate-700">
+                      {step}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => closeInstallOnboarding()}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => closeInstallOnboarding({ dontShowAgain: true })}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-600"
+              >
+                Don't show again
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
       <ReportIssueWidget

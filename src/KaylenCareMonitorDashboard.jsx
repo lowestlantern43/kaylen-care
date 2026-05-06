@@ -1444,7 +1444,24 @@ export default function KaylenCareMonitorDashboard({
           ? "Last 72 hours"
           : `Last ${effectiveReportDays} day${effectiveReportDays === 1 ? "" : "s"}`;
 
-  const openSection = (section) => {
+  const resetFormForNewEntry = (title) => {
+    const kind = sectionDraftKind(title);
+    if (kind) {
+      skipNextDraftSaveRef.current[kind] = true;
+    }
+
+    if (title === "Food Diary") resetFoodForm();
+    if (title === "Medication") resetMedicationForm();
+    if (title === "Toileting") resetToiletingForm();
+    if (title === "Health" || title === "Growth / Measurements") resetHealthForm();
+    if (title === "Sleep") resetSleepForm();
+  };
+
+  const openSection = (section, options = {}) => {
+    if (!section) return;
+    if (options.reset !== false) {
+      resetFormForNewEntry(section.title);
+    }
     setActiveSection(section);
     if (section.title !== "Medication") setMedicationValue("");
     if (section.title !== "Food Diary") setFoodValue("");
@@ -5827,15 +5844,11 @@ export default function KaylenCareMonitorDashboard({
                   key={item}
                   type="button"
                   onClick={() => {
-                    const recalledNote = getFoodDefaultNote(item);
                     setFoodForm({
                       ...foodForm,
                       item,
                       otherItem: item,
-                      description:
-                        recalledNote && !foodForm.description.trim()
-                          ? recalledNote
-                          : foodForm.description,
+                      description: "",
                     });
                   }}
                   className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800"
@@ -5949,6 +5962,8 @@ export default function KaylenCareMonitorDashboard({
             rows={3}
             placeholder="What was offered, texture, brand, flavour, or cup/bottle"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`food-description-${childId || "child"}-${activeSection?.title || "new"}`}
             value={foodForm.description}
             onChange={(e) =>
               setFoodForm({ ...foodForm, description: e.target.value })
@@ -5962,6 +5977,8 @@ export default function KaylenCareMonitorDashboard({
             rows={5}
             placeholder="Texture, brand, where eaten, who helped, anything important"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`food-notes-${childId || "child"}-${activeSection?.title || "new"}`}
             value={foodForm.notes}
             onChange={(e) => setFoodForm({ ...foodForm, notes: e.target.value })}
           />
@@ -6278,6 +6295,8 @@ export default function KaylenCareMonitorDashboard({
             }
             rows={5}
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`medication-notes-${childId || "child"}-${selectedMedicine || "new"}`}
             value={medicationForm.notes}
             onChange={(e) =>
               setMedicationForm({ ...medicationForm, notes: e.target.value })
@@ -6407,6 +6426,8 @@ export default function KaylenCareMonitorDashboard({
             rows={5}
             placeholder="Any patterns, concerns, or extra detail"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`toileting-notes-${childId || "child"}-${activeSection?.title || "new"}`}
             value={toiletingForm.notes}
             onChange={(e) =>
               setToiletingForm({ ...toiletingForm, notes: e.target.value })
@@ -6517,6 +6538,8 @@ export default function KaylenCareMonitorDashboard({
             rows={5}
             placeholder="Describe symptoms or what was observed"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`health-happened-${childId || "child"}-${activeSection?.title || "new"}`}
             value={healthForm.happened}
             onChange={(e) =>
               setHealthForm({ ...healthForm, happened: e.target.value })
@@ -6532,6 +6555,8 @@ export default function KaylenCareMonitorDashboard({
             rows={4}
             placeholder="First aid, rescue medication, call to school, etc"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`health-action-${childId || "child"}-${activeSection?.title || "new"}`}
             value={healthForm.action}
             onChange={(e) =>
               setHealthForm({ ...healthForm, action: e.target.value })
@@ -6547,6 +6572,8 @@ export default function KaylenCareMonitorDashboard({
             rows={3}
             placeholder="What happened afterwards"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`health-outcome-${childId || "child"}-${activeSection?.title || "new"}`}
             value={healthForm.outcome}
             onChange={(e) =>
               setHealthForm({ ...healthForm, outcome: e.target.value })
@@ -6560,6 +6587,8 @@ export default function KaylenCareMonitorDashboard({
             rows={4}
             placeholder="Anything else important"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`health-notes-${childId || "child"}-${activeSection?.title || "new"}`}
             value={healthForm.notes}
             onChange={(e) =>
               setHealthForm({ ...healthForm, notes: e.target.value })
@@ -6711,9 +6740,6 @@ export default function KaylenCareMonitorDashboard({
       (section) => section.title === "Medication",
     );
     const knownMedicine = medicationOptions.includes(medicine.name);
-    const doseSlot = medicine.timeWindow
-      ? `${formatTimeWindowLabel(medicine.timeWindow)} dose`
-      : "";
 
     setSelectedMedicationShortcut(medicine.name);
     setMedicationValue(knownMedicine ? medicine.name : "Other");
@@ -6727,11 +6753,11 @@ export default function KaylenCareMonitorDashboard({
       time: nowTimeValue(),
       givenBy: "",
       otherGivenBy: "",
-      notes: [doseSlot, medicine.notes || ""].filter(Boolean).join(" - "),
+      notes: "",
     }));
 
     if (medicationSection) {
-      openSection(medicationSection);
+      openSection(medicationSection, { reset: false });
     }
   };
 
@@ -6747,7 +6773,7 @@ export default function KaylenCareMonitorDashboard({
       otherMedicine: medicationOptions.includes(medicine.name) ? "" : medicine.name,
       dose: medicine.dose || getMedicationDefaultDose(medicine.name) || current.dose,
       time: current.time,
-      notes: medicine.notes || current.notes,
+      notes: "",
       status: "given",
       date: todayValue(),
     }));
@@ -6829,6 +6855,8 @@ export default function KaylenCareMonitorDashboard({
             rows={4}
             placeholder="Optional notes about the measurement"
             className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`measurement-notes-${childId || "child"}-${activeSection?.title || "new"}`}
             value={healthForm.notes}
             onChange={(e) =>
               setHealthForm({ ...healthForm, notes: e.target.value })
@@ -7110,6 +7138,8 @@ export default function KaylenCareMonitorDashboard({
                 rows={5}
                 placeholder="Anything unusual about sleep"
                 className={`${inputClassName} min-h-[48px]`}
+                autoComplete="off"
+                name={`sleep-notes-${childId || "child"}-${sleepEntryId || "new"}`}
                 value={sleepForm.notes}
                 onChange={(e) =>
                   setSleepForm({ ...sleepForm, notes: e.target.value })
