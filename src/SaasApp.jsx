@@ -9856,7 +9856,7 @@ function WorkspaceGate({ session, onLogout }) {
                     selectedPlatformFamily.children.map((child) => {
                       const childDraft = platformChildEdits[child.id] || {
                         firstName: child.firstName || "",
-                        fluidTargetMl: child.fluidTargetMl || "",
+                        dailyFluidTargetMl: child.dailyFluidTargetMl || "",
                       };
                       return (
                         <div
@@ -9886,13 +9886,13 @@ function WorkspaceGate({ session, onLogout }) {
                                 className={`${inputClass} mt-2`}
                                 type="number"
                                 min="0"
-                                value={childDraft.fluidTargetMl}
+                                value={childDraft.dailyFluidTargetMl}
                                 onChange={(event) =>
                                   setPlatformChildEdits((current) => ({
                                     ...current,
                                     [child.id]: {
                                       ...childDraft,
-                                      fluidTargetMl: event.target.value,
+                                      dailyFluidTargetMl: event.target.value,
                                     },
                                   }))
                                 }

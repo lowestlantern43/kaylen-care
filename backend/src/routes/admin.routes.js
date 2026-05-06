@@ -40,6 +40,7 @@ adminRouter.use(requireAuth, requirePlatformAdmin);
 adminRouter.use(
   asyncHandler(async (req, res, next) => {
     await ensurePlanAccessSchema();
+    await ensureChildProfileFluidTargetSchema();
     next();
   }),
 );
@@ -65,6 +66,12 @@ async function writeAudit(req, { familyId = null, entityType, entityId, action, 
       VALUES ($1, $2, $3, $4, $5, $6)
     `,
     [familyId, req.user.id, action, entityType, entityId, JSON.stringify(metadata)],
+  );
+}
+
+async function ensureChildProfileFluidTargetSchema() {
+  await query(
+    "ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS daily_fluid_target_ml INTEGER",
   );
 }
 
@@ -427,8 +434,9 @@ async function buildNeedsAttentionSummary() {
           count(DISTINCT c.id)::int AS count
         FROM families f
         INNER JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
+        LEFT JOIN child_profiles cp ON cp.child_id = c.id
         WHERE f.deleted_at IS NULL
-          AND (c.daily_fluid_target_ml IS NULL OR c.daily_fluid_target_ml <= 0)
+          AND (cp.daily_fluid_target_ml IS NULL OR cp.daily_fluid_target_ml <= 0)
         GROUP BY f.id, f.name
         ORDER BY count(DISTINCT c.id) DESC, f.name ASC
         LIMIT 10
@@ -1249,28 +1257,29 @@ adminRouter.get(
         `
           WITH canonical_children AS (
             SELECT DISTINCT ON (
-              lower(trim(first_name)),
-              lower(trim(COALESCE(last_name, '')))
+              lower(trim(c.first_name)),
+              lower(trim(COALESCE(c.last_name, '')))
             )
-              id,
-              first_name,
-              last_name,
-              date_of_birth,
-              daily_fluid_target_ml,
-              created_at,
+              c.id,
+              c.first_name,
+              c.last_name,
+              c.date_of_birth,
+              cp.daily_fluid_target_ml,
+              c.created_at,
               count(*) OVER (
                 PARTITION BY
-                  lower(trim(first_name)),
-                  lower(trim(COALESCE(last_name, '')))
+                  lower(trim(c.first_name)),
+                  lower(trim(COALESCE(c.last_name, '')))
               ) AS duplicate_count
-            FROM children
-            WHERE family_id = $1
-              AND deleted_at IS NULL
+            FROM children c
+            LEFT JOIN child_profiles cp ON cp.child_id = c.id
+            WHERE c.family_id = $1
+              AND c.deleted_at IS NULL
             ORDER BY
-              lower(trim(first_name)),
-              lower(trim(COALESCE(last_name, ''))),
-              created_at ASC,
-              id ASC
+              lower(trim(c.first_name)),
+              lower(trim(COALESCE(c.last_name, ''))),
+              c.created_at ASC,
+              c.id ASC
           )
           SELECT
             id,
@@ -1489,25 +1498,54 @@ adminRouter.patch(
       throw badRequest("Fluid target must be a positive number.");
     }
 
-    const { rows } = await query(
-      `
-        UPDATE children
-        SET first_name = $1,
-            last_name = $2,
-            daily_fluid_target_ml = $3
-        WHERE id = $4
-          AND family_id = $5
-          AND deleted_at IS NULL
-        RETURNING
-          id,
-          first_name AS "firstName",
-          last_name AS "lastName",
-          date_of_birth::text AS "dateOfBirth",
-          daily_fluid_target_ml AS "dailyFluidTargetMl",
-          created_at AS "createdAt"
-      `,
-      [firstName, lastName, dailyFluidTargetMl, childId, familyId],
-    );
+    const rows = await withTransaction(async (client) => {
+      const updatedChild = await client.query(
+        `
+          UPDATE children
+          SET first_name = $1,
+              last_name = $2
+          WHERE id = $3
+            AND family_id = $4
+            AND deleted_at IS NULL
+          RETURNING
+            id,
+            first_name AS "firstName",
+            last_name AS "lastName",
+            date_of_birth::text AS "dateOfBirth",
+            created_at AS "createdAt"
+        `,
+        [firstName, lastName, childId, familyId],
+      );
+
+      if (!updatedChild.rows[0]) {
+        return [];
+      }
+
+      const updatedProfile = await client.query(
+        `
+          INSERT INTO child_profiles (
+            child_id,
+            family_id,
+            updated_by_user_id,
+            daily_fluid_target_ml
+          )
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT (child_id)
+          DO UPDATE SET
+            daily_fluid_target_ml = EXCLUDED.daily_fluid_target_ml,
+            updated_by_user_id = EXCLUDED.updated_by_user_id
+          RETURNING daily_fluid_target_ml AS "dailyFluidTargetMl"
+        `,
+        [childId, familyId, req.user.id, dailyFluidTargetMl],
+      );
+
+      return [
+        {
+          ...updatedChild.rows[0],
+          dailyFluidTargetMl: updatedProfile.rows[0]?.dailyFluidTargetMl ?? null,
+        },
+      ];
+    });
 
     if (!rows[0]) {
       throw notFound("Child not found.");
