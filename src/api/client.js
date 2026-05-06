@@ -304,6 +304,16 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify(payload),
     }),
+  adminPermanentDeleteFamily: (familyId, payload) =>
+    request(`/admin/families/${familyId}/permanent`, {
+      method: "DELETE",
+      body: JSON.stringify(payload),
+    }),
+  adminSendArchiveWarning: (familyId, payload) =>
+    request(`/admin/families/${familyId}/archive-warning`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   adminRestoreFamily: (familyId) =>
     request(`/admin/families/${familyId}/restore`, {
       method: "PATCH",

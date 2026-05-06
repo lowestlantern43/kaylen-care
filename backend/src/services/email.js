@@ -171,3 +171,25 @@ export function deletionReminderEmail({ fullName, days }) {
     ]),
   };
 }
+
+export function archivedFamilyDeletionWarningEmail({
+  fullName,
+  familyName,
+  days,
+}) {
+  return {
+    subject: `FamilyTrack archived account reminder: ${days} days`,
+    text: plainTextFromLines([
+      `Hi ${fullName || "there"},`,
+      "",
+      `${familyName || "Your FamilyTrack family account"} is currently archived.`,
+      `If it remains archived, it may become eligible for permanent deletion in around ${days} days.`,
+      "",
+      "Nothing has been permanently deleted. If you need the account restored or want to discuss anything, please contact us.",
+      "",
+      `Support: ${config.supportEmail}`,
+      "",
+      "FamilyTrack",
+    ]),
+  };
+}

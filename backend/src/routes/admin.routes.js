@@ -6,6 +6,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePlatformAdmin } from "../middleware/platformAdmin.js";
 import { ensureIssueReportingSchema } from "../services/issueReportingSchema.js";
 import {
+  archivedFamilyDeletionWarningEmail,
   issueResolvedEmail,
   passwordResetEmail,
   sendAppEmail,
@@ -41,6 +42,7 @@ adminRouter.use(
   asyncHandler(async (req, res, next) => {
     await ensurePlanAccessSchema();
     await ensureChildProfileFluidTargetSchema();
+    await ensureFamilyArchivePolicySchema();
     next();
   }),
 );
@@ -72,6 +74,18 @@ async function writeAudit(req, { familyId = null, entityType, entityId, action, 
 async function ensureChildProfileFluidTargetSchema() {
   await query(
     "ALTER TABLE child_profiles ADD COLUMN IF NOT EXISTS daily_fluid_target_ml INTEGER",
+  );
+}
+
+async function ensureFamilyArchivePolicySchema() {
+  await query(
+    `
+      ALTER TABLE families
+        ADD COLUMN IF NOT EXISTS archive_delete_after timestamptz,
+        ADD COLUMN IF NOT EXISTS archive_warning_14_sent_at timestamptz,
+        ADD COLUMN IF NOT EXISTS archive_warning_7_sent_at timestamptz,
+        ADD COLUMN IF NOT EXISTS permanently_deleted_at timestamptz
+    `,
   );
 }
 
@@ -358,9 +372,12 @@ async function listArchivedFamilies() {
         f.timezone,
         f.platform_status AS "platformStatus",
         f.platform_admin_notes AS "platformAdminNotes",
-        f.created_at AS "createdAt",
-        f.deleted_at AS "archivedAt",
-        u.full_name AS "ownerName",
+          f.created_at AS "createdAt",
+          f.deleted_at AS "archivedAt",
+          f.archive_delete_after AS "archiveDeleteAfter",
+          f.archive_warning_14_sent_at AS "archiveWarning14SentAt",
+          f.archive_warning_7_sent_at AS "archiveWarning7SentAt",
+          u.full_name AS "ownerName",
         u.email AS "ownerEmail",
         COALESCE(s.status, 'inactive') AS "subscriptionStatus",
         COALESCE(s.plan, 'trial') AS plan,
@@ -393,7 +410,8 @@ async function listArchivedFamilies() {
       FROM families f
       LEFT JOIN users u ON u.id = f.created_by_user_id
       LEFT JOIN subscriptions s ON s.family_id = f.id
-      WHERE f.deleted_at IS NOT NULL
+        WHERE f.deleted_at IS NOT NULL
+          AND f.permanently_deleted_at IS NULL
       ORDER BY f.deleted_at DESC
       LIMIT 100
     `,
@@ -1820,6 +1838,9 @@ adminRouter.delete(
       `
         UPDATE families
         SET deleted_at = now(),
+            archive_delete_after = now() + interval '90 days',
+            archive_warning_14_sent_at = NULL,
+            archive_warning_7_sent_at = NULL,
             platform_status = 'suspended',
             platform_admin_notes = concat_ws(
               E'\n',
@@ -1886,6 +1907,9 @@ adminRouter.patch(
       `
         UPDATE families
         SET deleted_at = NULL,
+            archive_delete_after = NULL,
+            archive_warning_14_sent_at = NULL,
+            archive_warning_7_sent_at = NULL,
             platform_status = 'active',
             platform_admin_notes = concat_ws(
               E'\n',
@@ -1939,6 +1963,130 @@ adminRouter.patch(
         id: rows[0].id,
         name: rows[0].name,
         restored: true,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.post(
+  "/families/:familyId/archive-warning",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const days = Number(req.body?.days) === 7 ? 7 : 14;
+    const sentColumn =
+      days === 7 ? "archive_warning_7_sent_at" : "archive_warning_14_sent_at";
+
+    const { rows } = await query(
+      `
+        SELECT
+          f.id,
+          f.name,
+          f.archive_delete_after AS "archiveDeleteAfter",
+          u.full_name AS "ownerName",
+          u.email AS "ownerEmail"
+        FROM families f
+        LEFT JOIN users u ON u.id = f.created_by_user_id
+        WHERE f.id = $1
+          AND f.deleted_at IS NOT NULL
+          AND f.permanently_deleted_at IS NULL
+        LIMIT 1
+      `,
+      [familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Archived family not found.");
+    }
+    if (!rows[0].ownerEmail) {
+      throw badRequest("This archived family has no owner email to warn.");
+    }
+
+    const email = archivedFamilyDeletionWarningEmail({
+      fullName: rows[0].ownerName,
+      familyName: rows[0].name,
+      days,
+    });
+    const result = await sendAppEmail({
+      to: rows[0].ownerEmail,
+      ...email,
+      metadata: { familyId, type: "archive_delete_warning", days },
+    });
+
+    await query(
+      `
+        UPDATE families
+        SET ${sentColumn} = now()
+        WHERE id = $1
+      `,
+      [familyId],
+    );
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_family_archive_warning_sent",
+      metadata: { days, sent: result.sent, skipped: result.skipped },
+    });
+
+    res.json({
+      data: {
+        familyId,
+        days,
+        sent: result.sent,
+        skipped: result.skipped,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.delete(
+  "/families/:familyId/permanent",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const confirmText = requireString(req.body, "confirmText", "Confirmation");
+
+    if (confirmText !== "PERMANENT DELETE") {
+      throw badRequest("Type PERMANENT DELETE to confirm permanent deletion.");
+    }
+
+    const { rows } = await query(
+      `
+        UPDATE families
+        SET permanently_deleted_at = now(),
+            platform_status = 'suspended',
+            platform_admin_notes = concat_ws(
+              E'\n',
+              NULLIF(platform_admin_notes, ''),
+              'Permanently deleted from archive by owner platform on ' || to_char(now(), 'YYYY-MM-DD HH24:MI')
+            )
+        WHERE id = $1
+          AND deleted_at IS NOT NULL
+          AND permanently_deleted_at IS NULL
+        RETURNING id, name
+      `,
+      [familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Archived family not found.");
+    }
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_family_permanently_deleted",
+      metadata: { name: rows[0].name },
+    });
+
+    res.json({
+      data: {
+        id: rows[0].id,
+        name: rows[0].name,
+        permanentlyDeleted: true,
       },
       error: null,
     });

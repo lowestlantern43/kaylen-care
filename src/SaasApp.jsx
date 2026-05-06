@@ -2470,6 +2470,12 @@ function WorkspaceGate({ session, onLogout }) {
     family: null,
     confirmText: "",
   });
+  const [permanentDeleteFamilyConfirm, setPermanentDeleteFamilyConfirm] =
+    useState({
+      isOpen: false,
+      family: null,
+      confirmText: "",
+    });
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
 
@@ -4474,6 +4480,64 @@ function WorkspaceGate({ session, onLogout }) {
     } catch (caughtError) {
       setError(caughtError.message);
       showToast({ message: "Family could not be restored", type: "error" });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const sendArchiveWarning = async (familyId, days) => {
+    setIsPlatformSaving(true);
+    setError("");
+
+    try {
+      const result = await api.adminSendArchiveWarning(familyId, { days });
+      const archivedFamilies = await api.adminArchivedFamilies();
+      setPlatformData((current) => ({ ...current, archivedFamilies }));
+      showToast({
+        message: result.skipped
+          ? "Warning email skipped - email is not configured"
+          : `${days}-day warning email sent`,
+        type: result.skipped ? "warning" : "success",
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({ message: "Warning email failed", type: "error" });
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const permanentDeleteArchivedFamily = async (event) => {
+    event.preventDefault();
+    if (
+      !permanentDeleteFamilyConfirm.family?.id ||
+      permanentDeleteFamilyConfirm.confirmText !== "PERMANENT DELETE"
+    ) {
+      return;
+    }
+
+    setIsPlatformSaving(true);
+    setError("");
+
+    try {
+      await api.adminPermanentDeleteFamily(
+        permanentDeleteFamilyConfirm.family.id,
+        { confirmText: permanentDeleteFamilyConfirm.confirmText },
+      );
+      const archivedFamilies = await api.adminArchivedFamilies();
+      setPlatformData((current) => ({ ...current, archivedFamilies }));
+      setPermanentDeleteFamilyConfirm({
+        isOpen: false,
+        family: null,
+        confirmText: "",
+      });
+      showToast({
+        message: "Archived family permanently deleted",
+        type: "warning",
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({ message: "Permanent delete failed", type: "error" });
     } finally {
       setIsPlatformSaving(false);
     }
@@ -7914,15 +7978,67 @@ function WorkspaceGate({ session, onLogout }) {
                                     Archived:{" "}
                                     {formatPlatformDateTime(family.archivedAt)}
                                   </p>
+                                  <p className="mt-1 text-xs font-bold text-amber-700">
+                                    Permanent delete eligible:{" "}
+                                    {formatPlatformDateTime(
+                                      family.archiveDeleteAfter,
+                                    )}
+                                  </p>
+                                  <p className="mt-1 text-[11px] font-semibold text-slate-500">
+                                    14-day warning:{" "}
+                                    {family.archiveWarning14SentAt
+                                      ? formatPlatformDateTime(
+                                          family.archiveWarning14SentAt,
+                                        )
+                                      : "Not sent"}{" "}
+                                    - 7-day warning:{" "}
+                                    {family.archiveWarning7SentAt
+                                      ? formatPlatformDateTime(
+                                          family.archiveWarning7SentAt,
+                                        )
+                                      : "Not sent"}
+                                  </p>
                                 </div>
-                                <button
-                                  type="button"
-                                  disabled={isPlatformSaving}
-                                  onClick={() => restorePlatformFamily(family.id)}
-                                  className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 disabled:opacity-50"
-                                >
-                                  Restore
-                                </button>
+                                <div className="flex flex-wrap gap-2 sm:justify-end">
+                                  <button
+                                    type="button"
+                                    disabled={isPlatformSaving}
+                                    onClick={() => sendArchiveWarning(family.id, 14)}
+                                    className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800 disabled:opacity-50"
+                                  >
+                                    Send 14-day warning
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isPlatformSaving}
+                                    onClick={() => sendArchiveWarning(family.id, 7)}
+                                    className="rounded-full border border-orange-200 bg-orange-50 px-3 py-1.5 text-xs font-bold text-orange-800 disabled:opacity-50"
+                                  >
+                                    Send 7-day warning
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isPlatformSaving}
+                                    onClick={() => restorePlatformFamily(family.id)}
+                                    className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 disabled:opacity-50"
+                                  >
+                                    Restore
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isPlatformSaving}
+                                    onClick={() =>
+                                      setPermanentDeleteFamilyConfirm({
+                                        isOpen: true,
+                                        family,
+                                        confirmText: "",
+                                      })
+                                    }
+                                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-800 disabled:opacity-50"
+                                  >
+                                    Delete permanently
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           ))
@@ -10745,6 +10861,67 @@ function WorkspaceGate({ session, onLogout }) {
                 }
               >
                 Archive
+              </button>
+            </div>
+          </form>
+        </div>
+      ) : null}
+      {permanentDeleteFamilyConfirm.isOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 p-3 sm:items-center sm:justify-center">
+          <form
+            className="w-full rounded-[1.75rem] border border-rose-200 bg-white p-4 shadow-2xl sm:max-w-md"
+            onSubmit={permanentDeleteArchivedFamily}
+          >
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-rose-700">
+              Permanent delete
+            </p>
+            <h3 className="mt-1 text-xl font-black text-slate-950">
+              Delete archived family forever?
+            </h3>
+            <p className="mt-2 text-sm font-semibold text-slate-600">
+              This marks the archived family as permanently deleted. Only use
+              this override when you are certain it should no longer be
+              recoverable from the owner platform.
+            </p>
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-800">
+              {permanentDeleteFamilyConfirm.family?.name || "Selected family"}
+            </div>
+            <label className="mt-4 block text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+              Type PERMANENT DELETE to confirm
+              <input
+                className={inputClass}
+                value={permanentDeleteFamilyConfirm.confirmText}
+                onChange={(event) =>
+                  setPermanentDeleteFamilyConfirm((current) => ({
+                    ...current,
+                    confirmText: event.target.value,
+                  }))
+                }
+              />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  setPermanentDeleteFamilyConfirm({
+                    isOpen: false,
+                    family: null,
+                    confirmText: "",
+                  })
+                }
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold text-slate-700"
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-2xl bg-rose-700 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+                disabled={
+                  isPlatformSaving ||
+                  permanentDeleteFamilyConfirm.confirmText !==
+                    "PERMANENT DELETE"
+                }
+              >
+                Delete forever
               </button>
             </div>
           </form>
