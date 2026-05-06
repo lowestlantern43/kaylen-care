@@ -47,6 +47,11 @@ const MODULE_VISIBILITY_OPTIONS = [
     description: "Health notes, concerns, and health report sections.",
   },
   {
+    key: "behaviour",
+    label: "Behaviour",
+    description: "Meltdowns, triggers, regulation and recovery notes.",
+  },
+  {
     key: "measurements",
     label: "Growth / measurements",
     description: "Height, weight, and measurement summaries.",
@@ -60,6 +65,11 @@ const MODULE_VISIBILITY_OPTIONS = [
     key: "snapshot",
     label: "Care Snapshot",
     description: "The 72-hour Snapshot card and Snapshot widgets.",
+  },
+  {
+    key: "documents",
+    label: "Document Vault",
+    description: "Private family documents for school, EHCP, medical and care.",
   },
   {
     key: "calendar",

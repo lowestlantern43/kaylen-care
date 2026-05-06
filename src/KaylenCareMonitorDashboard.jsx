@@ -11,11 +11,50 @@ const DEFAULT_MODULE_VISIBILITY = {
   sleep: true,
   toileting: true,
   health: true,
+  behaviour: true,
   measurements: true,
   reports: true,
   snapshot: true,
+  documents: true,
   calendar: true,
 };
+
+const DOCUMENT_CATEGORIES = [
+  "EHCP",
+  "Diagnosis",
+  "Hospital",
+  "School",
+  "Medication",
+  "Therapy",
+  "Benefits / DLA",
+  "Other",
+];
+
+const DOCUMENT_ACCEPT =
+  "application/pdf,image/jpeg,image/png,image/webp,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.doc,.docx";
+
+const BEHAVIOUR_TYPES = [
+  "Meltdown",
+  "Shutdown",
+  "Aggression",
+  "Self-injury",
+  "Distress/anxiety",
+  "Emotional dysregulation",
+  "Other",
+];
+
+const BEHAVIOUR_TRIGGERS = [
+  "Noise",
+  "Transition/change",
+  "Hunger",
+  "Tiredness",
+  "Overstimulation",
+  "School",
+  "Communication frustration",
+  "Pain/discomfort",
+  "Unknown",
+  "Other",
+];
 
 const normalizeModuleVisibility = (value = {}) => ({
   ...DEFAULT_MODULE_VISIBILITY,
@@ -453,6 +492,11 @@ const sectionTheme = {
     badge: "bg-green-100 text-green-700",
     solidHeader: "bg-green-600 text-white border-green-700",
   },
+  Behaviour: {
+    report: "border-purple-200 bg-purple-50",
+    badge: "bg-purple-100 text-purple-700",
+    solidHeader: "bg-purple-600 text-white border-purple-700",
+  },
   "Growth / Measurements": {
     report: "border-teal-200 bg-teal-50",
     badge: "bg-teal-100 text-teal-700",
@@ -571,6 +615,22 @@ export default function KaylenCareMonitorDashboard({
     attachmentType: "trends",
     confirmed: false,
   });
+  const [documents, setDocuments] = useState([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [isUploadingDocument, setIsUploadingDocument] = useState(false);
+  const [documentFilters, setDocumentFilters] = useState({
+    search: "",
+    childId: "",
+    category: "All",
+  });
+  const [documentForm, setDocumentForm] = useState({
+    title: "",
+    category: "EHCP",
+    childId: childId || "",
+    documentDate: todayIsoValue(),
+    notes: "",
+    file: null,
+  });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [refreshStatus, setRefreshStatus] = useState("idle");
@@ -687,6 +747,22 @@ export default function KaylenCareMonitorDashboard({
     weightKg: "",
     heightCm: "",
   });
+  const [behaviourForm, setBehaviourForm] = useState({
+    date: todayValue(),
+    time: nowTimeValue(),
+    severity: "3",
+    duration: "",
+    triggers: [],
+    otherTrigger: "",
+    location: "",
+    otherLocation: "",
+    behaviourType: "Meltdown",
+    otherBehaviourType: "",
+    recoveryTime: "",
+    whatHelped: "",
+    notes: "",
+    attachment: null,
+  });
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
@@ -749,6 +825,14 @@ export default function KaylenCareMonitorDashboard({
       soft: "bg-emerald-50 border-emerald-300",
     },
     {
+      title: "Behaviour",
+      subtitle: "Meltdowns, triggers, regulation and recovery",
+      button: "Open Log",
+      emoji: "BT",
+      color: "from-purple-400 to-fuchsia-500",
+      soft: "bg-purple-50 border-purple-300",
+    },
+    {
       title: "Sleep",
       subtitle: "Night sleep and wake-up tracking",
       button: "Open Log",
@@ -781,6 +865,14 @@ export default function KaylenCareMonitorDashboard({
       soft: "bg-cyan-50 border-cyan-300",
     },
     {
+      title: "Document Vault",
+      subtitle: "Private EHCP, school, medical and care files",
+      button: "Open Vault",
+      emoji: "DOC",
+      color: "from-slate-500 to-blue-600",
+      soft: "bg-slate-50 border-slate-300",
+    },
+    {
       title: "Calendar",
       subtitle: "Monthly log overview",
       button: "Open Calendar",
@@ -810,6 +902,8 @@ export default function KaylenCareMonitorDashboard({
         return "toileting";
       case "Health":
         return "health";
+      case "Behaviour":
+        return "behaviour";
       case "Sleep":
         return "sleep";
       case "Growth / Measurements":
@@ -818,6 +912,8 @@ export default function KaylenCareMonitorDashboard({
         return "reports";
       case "Care Snapshot":
         return "snapshot";
+      case "Document Vault":
+        return "documents";
       case "Calendar":
         return "calendar";
       default:
@@ -846,6 +942,7 @@ export default function KaylenCareMonitorDashboard({
         { label: "Sleep", title: "Sleep", preset: "", icon: "Sleep", module: "sleep" },
         { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
         { label: "Health", title: "Health", preset: "", icon: "Health", module: "health" },
+        { label: "Behaviour", title: "Behaviour", preset: "", icon: "Mood", module: "behaviour" },
       ].filter((item) => isModuleEnabled(item.module)),
     [visibleModules],
   );
@@ -869,6 +966,8 @@ export default function KaylenCareMonitorDashboard({
         return "toileting";
       case "Health":
         return "health";
+      case "Behaviour":
+        return "behaviour";
       case "Sleep":
         return "sleep";
       default:
@@ -900,6 +999,8 @@ export default function KaylenCareMonitorDashboard({
         return { toiletingForm };
       case "health":
         return { healthForm };
+      case "behaviour":
+        return { behaviourForm };
       case "sleep":
         return { sleepForm };
       default:
@@ -913,6 +1014,7 @@ export default function KaylenCareMonitorDashboard({
       medication: JSON.stringify(getDraftPayload("medication")),
       toileting: JSON.stringify(getDraftPayload("toileting")),
       health: JSON.stringify(getDraftPayload("health")),
+      behaviour: JSON.stringify(getDraftPayload("behaviour")),
       sleep: JSON.stringify(getDraftPayload("sleep")),
     };
   }
@@ -963,6 +1065,20 @@ export default function KaylenCareMonitorDashboard({
             payload.healthForm?.notes ||
             payload.healthForm?.weightKg ||
             payload.healthForm?.heightCm,
+        );
+      case "behaviour":
+        return Boolean(
+          payload.behaviourForm?.duration ||
+            payload.behaviourForm?.triggers?.length ||
+            payload.behaviourForm?.otherTrigger ||
+            payload.behaviourForm?.location ||
+            payload.behaviourForm?.otherLocation ||
+            payload.behaviourForm?.behaviourType !== "Meltdown" ||
+            payload.behaviourForm?.otherBehaviourType ||
+            payload.behaviourForm?.recoveryTime ||
+            payload.behaviourForm?.whatHelped ||
+            payload.behaviourForm?.notes ||
+            payload.behaviourForm?.attachment,
         );
       case "sleep":
         return (
@@ -1019,6 +1135,10 @@ export default function KaylenCareMonitorDashboard({
 
     if (kind === "health") {
       setHealthForm({ ...healthForm, ...(draft.healthForm || {}) });
+    }
+
+    if (kind === "behaviour") {
+      setBehaviourForm({ ...behaviourForm, ...(draft.behaviourForm || {}) });
     }
 
     if (kind === "sleep") {
@@ -1083,6 +1203,76 @@ export default function KaylenCareMonitorDashboard({
         .catch(() => null);
     }
     openSection(snapshotSection);
+  };
+
+  const formatFileSize = (bytes) => {
+    const value = Number(bytes || 0);
+    if (!value) return "Unknown size";
+    if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))}KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)}MB`;
+  };
+
+  const handleDocumentUpload = async (event) => {
+    event.preventDefault();
+    if (!familyId || !documentForm.file || !documentForm.title.trim()) return;
+
+    setIsUploadingDocument(true);
+    try {
+      const uploaded = await api.uploadFamilyDocument(
+        familyId,
+        {
+          title: documentForm.title.trim(),
+          category: documentForm.category,
+          childId: documentForm.childId,
+          documentDate: documentForm.documentDate,
+          notes: documentForm.notes.trim(),
+        },
+        documentForm.file,
+      );
+      setDocuments((current) => [uploaded, ...current]);
+      setDocumentForm({
+        title: "",
+        category: "EHCP",
+        childId: childId || "",
+        documentDate: todayIsoValue(),
+        notes: "",
+        file: null,
+      });
+      event.currentTarget.reset();
+      showToast?.({
+        message: "Document saved securely",
+        type: "success",
+      });
+    } catch (error) {
+      showToast?.({
+        message: error.message || "Document upload failed.",
+        type: "error",
+      });
+    } finally {
+      setIsUploadingDocument(false);
+    }
+  };
+
+  const deleteDocument = async (document) => {
+    if (!familyId || !document?.id) return;
+    const confirmed = window.confirm(
+      `Remove "${document.title}" from the Document Vault? This hides it from the app and removes the stored file.`,
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.deleteDocument(familyId, document.id);
+      setDocuments((current) => current.filter((item) => item.id !== document.id));
+      showToast?.({
+        message: "Document removed",
+        type: "success",
+      });
+    } catch (error) {
+      showToast?.({
+        message: error.message || "Document could not be removed.",
+        type: "error",
+      });
+    }
   };
 
   useEffect(() => {
@@ -1158,6 +1348,35 @@ export default function KaylenCareMonitorDashboard({
   }, [careSnapshotViewedKey]);
 
   useEffect(() => {
+    setDocumentForm((current) => ({
+      ...current,
+      childId: current.childId || childId || "",
+    }));
+  }, [childId]);
+
+  const loadDocuments = async () => {
+    if (!useSaasApi || !familyId) return;
+
+    setIsLoadingDocuments(true);
+    try {
+      const results = await api.listDocuments(familyId, documentFilters);
+      setDocuments(results || []);
+    } catch (error) {
+      showToast?.({
+        message: error.message || "Documents could not be loaded.",
+        type: "error",
+      });
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isUnlocked || !useSaasApi || !familyId) return;
+    loadDocuments();
+  }, [documentFilters, familyId, isUnlocked, useSaasApi]);
+
+  useEffect(() => {
     let ignore = false;
 
     async function loadCareSnapshotPreference() {
@@ -1209,6 +1428,7 @@ export default function KaylenCareMonitorDashboard({
     foodForm,
     foodValue,
     healthForm,
+    behaviourForm,
     medicationForm,
     medicationValue,
     saveFoodForFuture,
@@ -1530,6 +1750,7 @@ export default function KaylenCareMonitorDashboard({
     if (title === "Medication") resetMedicationForm();
     if (title === "Toileting") resetToiletingForm();
     if (title === "Health" || title === "Growth / Measurements") resetHealthForm();
+    if (title === "Behaviour") resetBehaviourForm();
     if (title === "Sleep") resetSleepForm();
   };
 
@@ -2062,6 +2283,55 @@ export default function KaylenCareMonitorDashboard({
     ].filter(Boolean),
   });
 
+  const mapSaasBehaviourEntry = (row) => {
+    const triggers = Array.isArray(row.data?.triggers)
+      ? row.data.triggers.filter(Boolean)
+      : String(row.data?.triggers || "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+    const behaviourType =
+      row.data?.behaviour_type || row.data?.type || "Behaviour entry";
+    const severity = row.data?.severity || "";
+    const duration = row.data?.duration || "";
+    const recoveryTime = row.data?.recovery_time || "";
+    const whatHelped = row.data?.what_helped || "";
+
+    return {
+      id: `care-${row.id}`,
+      createdAt: row.createdAt || new Date().toISOString(),
+      section: "Behaviour",
+      date: formatDisplayDateFromIso(row.logDate) || todayValue(),
+      time: row.logTime || "",
+      behaviourType,
+      severity,
+      triggers,
+      duration,
+      recoveryTime,
+      whatHelped,
+      location: row.data?.location || "",
+      summary: [
+        behaviourType,
+        severity ? `severity ${severity}/5` : "",
+        duration ? duration : "",
+      ]
+        .filter(Boolean)
+        .join(" - "),
+      details: [
+        triggers.length ? `Triggers: ${triggers.join(", ")}` : null,
+        row.data?.location ? `Location: ${row.data.location}` : null,
+        recoveryTime ? `Recovery time: ${recoveryTime}` : null,
+        whatHelped ? `What helped: ${whatHelped}` : null,
+        row.data?.attachment_file_name
+          ? `Attachment: ${row.data.attachment_file_name}`
+          : null,
+        row.notes ? `Notes: ${row.notes}` : null,
+        row.createdByName ? `Logged by: ${row.createdByName}` : null,
+      ].filter(Boolean),
+      notes: row.notes || "",
+    };
+  };
+
   const mapSaasSleepEntry = (row) => {
     const entryDate = formatDisplayDateFromIso(row.logDate) || todayValue();
     const wakeDate = formatDisplayDateFromIso(row.data?.wake_date) || entryDate;
@@ -2153,6 +2423,8 @@ export default function KaylenCareMonitorDashboard({
               return mapSaasMedicationEntry(row);
             case "toileting":
               return mapSaasToiletingEntry(row);
+            case "behaviour":
+              return mapSaasBehaviourEntry(row);
             case "sleep":
               return mapSaasSleepEntry(row);
             case "health":
@@ -2557,12 +2829,16 @@ export default function KaylenCareMonitorDashboard({
         return "Log toilet or nappy changes with any extra notes.";
       case "Health":
         return "Record health events and measurements like weight and height.";
+      case "Behaviour":
+        return "Track meltdowns, triggers, regulation and what helped recovery.";
       case "Sleep":
         return "Log bedtime first, then complete wake-up the next morning.";
       case "Reports":
         return "View recent entries and export a proper PDF.";
       case "Care Snapshot":
         return "A compact 72-hour summary for urgent handovers and appointments.";
+      case "Document Vault":
+        return "Store and download private family documents for school, medical and care use.";
       case "Calendar":
         return "Tap a date to review that day's logs.";
       default:
@@ -3084,6 +3360,7 @@ export default function KaylenCareMonitorDashboard({
     "Medication",
     "Sleep",
     "Toileting",
+    "Behaviour",
     "Health",
     "General Notes",
   ];
@@ -3100,6 +3377,7 @@ export default function KaylenCareMonitorDashboard({
         if (section === "Medication") return isModuleEnabled("medication");
         if (section === "Sleep") return isModuleEnabled("sleep");
         if (section === "Toileting") return isModuleEnabled("toileting");
+        if (section === "Behaviour") return isModuleEnabled("behaviour");
         if (section === "Health") return isModuleEnabled("health");
         return true;
       }),
@@ -3241,6 +3519,7 @@ export default function KaylenCareMonitorDashboard({
       medication: countBySection("Medication"),
       sleep: countBySection("Sleep"),
       toileting: countBySection("Toileting"),
+      behaviour: countBySection("Behaviour"),
       health: countBySection("Health"),
       averageSleepMinutes: sleepDurations.length
         ? Math.round(
@@ -3302,6 +3581,9 @@ export default function KaylenCareMonitorDashboard({
         afternoon: 0,
         evening: 0,
         night: 0,
+        behaviourCount: null,
+        behaviourSeverityTotal: 0,
+        behaviourSeverityCount: 0,
       });
     }
 
@@ -3365,6 +3647,10 @@ export default function KaylenCareMonitorDashboard({
     let medicationConcerns = 0;
     let totalToileting = 0;
     let toiletingDays = 0;
+    let totalBehaviour = 0;
+    let behaviourDays = 0;
+    const triggerCounts = new Map();
+    const behaviourTypeCounts = new Map();
 
     recentEntries.forEach((entry) => {
       const key = getDayKey(entry);
@@ -3417,6 +3703,26 @@ export default function KaylenCareMonitorDashboard({
         if (timeBucket) day[timeBucket] += 1;
         totalToileting += 1;
       }
+
+      if (entry.section === "Behaviour") {
+        day.behaviourCount = (day.behaviourCount || 0) + 1;
+        if (day.behaviourCount === 1) behaviourDays += 1;
+        totalBehaviour += 1;
+        const severity = Number(entry.severity || 0);
+        if (severity > 0) {
+          day.behaviourSeverityTotal += severity;
+          day.behaviourSeverityCount += 1;
+        }
+        (entry.triggers || []).forEach((trigger) => {
+          triggerCounts.set(trigger, (triggerCounts.get(trigger) || 0) + 1);
+        });
+        if (entry.behaviourType) {
+          behaviourTypeCounts.set(
+            entry.behaviourType,
+            (behaviourTypeCounts.get(entry.behaviourType) || 0) + 1,
+          );
+        }
+      }
     });
 
     const daily = Array.from(dayMap.values());
@@ -3426,6 +3732,14 @@ export default function KaylenCareMonitorDashboard({
     const avgSleepHours = sleepDays ? totalSleepHours / sleepDays : 0;
     const avgFluidMl = fluidDays ? totalFluidMl / fluidDays : 0;
     const toiletingAvg = toiletingDays ? totalToileting / toiletingDays : 0;
+    const behaviourData = daily.filter((day) => day.behaviourCount !== null);
+    const behaviourAvg = behaviourDays ? totalBehaviour / behaviourDays : 0;
+    const topTrigger = Array.from(triggerCounts.entries()).sort(
+      (a, b) => b[1] - a[1],
+    )[0];
+    const topBehaviourType = Array.from(behaviourTypeCounts.entries()).sort(
+      (a, b) => b[1] - a[1],
+    )[0];
     const medicationPercent = expectedMedicationDoses
       ? Math.min(100, Math.round((medicationLogged / expectedMedicationDoses) * 100))
       : 0;
@@ -3464,6 +3778,15 @@ export default function KaylenCareMonitorDashboard({
         value: toiletingDays ? `${roundTo(toiletingAvg)} / day` : "Not enough data",
         meta: toiletingDays ? `${toiletingDays} day${toiletingDays === 1 ? "" : "s"} logged` : "No toileting entries",
         tone: "cyan",
+      },
+      {
+        key: "behaviour",
+        label: "Behaviour entries",
+        value: totalBehaviour ? `${totalBehaviour} logged` : "No entries",
+        meta: totalBehaviour
+          ? `${behaviourDays} day${behaviourDays === 1 ? "" : "s"} with behaviour notes`
+          : "No behaviour entries",
+        tone: "violet",
       },
     ];
 
@@ -3517,6 +3840,16 @@ export default function KaylenCareMonitorDashboard({
       insights.push("Not enough toileting data to confirm a clear pattern.");
     }
 
+    if (totalBehaviour >= 3) {
+      insights.push(
+        topTrigger
+          ? `Behaviour entries most often mention ${topTrigger[0].toLowerCase()} as a trigger.`
+          : "Behaviour entries are logged, but triggers are not yet consistent enough to summarise.",
+      );
+    } else if (totalBehaviour > 0) {
+      insights.push("Some behaviour entries were logged, but more data is needed to identify patterns.");
+    }
+
     const dataCompleteness = [
       {
         label: "Sleep logged",
@@ -3540,6 +3873,11 @@ export default function KaylenCareMonitorDashboard({
         value: `${toiletingDays} of ${rangeDays} days`,
         tone: "cyan",
       },
+      {
+        label: "Behaviour logged",
+        value: `${behaviourDays} of ${rangeDays} days`,
+        tone: "violet",
+      },
     ];
 
     return {
@@ -3551,6 +3889,7 @@ export default function KaylenCareMonitorDashboard({
         medicationCount: medicationLogged,
         typicalMedicationCount: expectedMedicationDoses,
         toiletingAvg,
+        behaviourAvg,
       },
       summaryStats: metricCards,
       insights: uniqueList(insights).slice(0, 5),
@@ -3594,6 +3933,24 @@ export default function KaylenCareMonitorDashboard({
           value: day.hasToileting ? day.toiletingCount || 0 : null,
           hasData: day.hasToileting,
         })),
+        behaviour: {
+          total: totalBehaviour,
+          days: behaviourDays,
+          topTrigger: topTrigger
+            ? { label: topTrigger[0], count: topTrigger[1] }
+            : null,
+          topType: topBehaviourType
+            ? { label: topBehaviourType[0], count: topBehaviourType[1] }
+            : null,
+          daily: behaviourData.map((day) => ({
+            label: day.label,
+            value: day.behaviourCount || 0,
+            averageSeverity: day.behaviourSeverityCount
+              ? roundTo(day.behaviourSeverityTotal / day.behaviourSeverityCount)
+              : null,
+            hasData: true,
+          })),
+        },
       },
     };
   }, [
@@ -4689,6 +5046,82 @@ export default function KaylenCareMonitorDashboard({
     return true;
   };
 
+  const saveBehaviourEntryToSupabase = async () => {
+    if (!useSaasApi) {
+      alert("Behaviour tracking is available in the FamilyTrack account version.");
+      return false;
+    }
+
+    if (!familyId || !childId) {
+      alert("Choose a family and child before saving.");
+      return false;
+    }
+
+    const logDate = parseDateToIso(behaviourForm.date);
+    if (!logDate) {
+      alert("Use date format DD/MM/YYYY.");
+      return false;
+    }
+
+    const behaviourType =
+      behaviourForm.behaviourType === "Other"
+        ? behaviourForm.otherBehaviourType.trim() || "Other"
+        : behaviourForm.behaviourType;
+    const location =
+      behaviourForm.location === "Other"
+        ? behaviourForm.otherLocation.trim()
+        : behaviourForm.location;
+    const triggers = uniqueList([
+      ...behaviourForm.triggers.filter((trigger) => trigger !== "Other"),
+      behaviourForm.triggers.includes("Other") ? behaviourForm.otherTrigger : "",
+    ]);
+
+    let attachmentInfo = {};
+    if (behaviourForm.attachment) {
+      const uploaded = await api.uploadFamilyDocument(
+        familyId,
+        {
+          title: `Behaviour attachment - ${behaviourType}`,
+          category: "Other",
+          childId,
+          documentDate: logDate,
+          notes: "Attached to a behaviour tracker entry.",
+        },
+        behaviourForm.attachment,
+      );
+      attachmentInfo = {
+        attachment_document_id: uploaded?.id || "",
+        attachment_file_name: uploaded?.fileName || behaviourForm.attachment.name,
+      };
+    }
+
+    try {
+      const saved = await createCareLogWithOfflineQueue({
+        childId,
+        category: "behaviour",
+        logDate,
+        logTime: behaviourForm.time,
+        data: {
+          behaviour_type: behaviourType,
+          severity: Number(behaviourForm.severity || 0) || "",
+          duration: behaviourForm.duration || "",
+          triggers,
+          location,
+          recovery_time: behaviourForm.recoveryTime || "",
+          what_helped: behaviourForm.whatHelped || "",
+          ...attachmentInfo,
+        },
+        notes: behaviourForm.notes || "",
+      });
+
+      return saved || true;
+    } catch (error) {
+      console.error("SaaS behaviour save failed:", error);
+      alert(error.message || "Behaviour save failed");
+      return false;
+    }
+  };
+
   const toastSavedForChild = (saved) => {
     if (!showToast) return;
     const rawId = saved?.id ? String(saved.id).replace(/^care-/, "") : "";
@@ -4703,6 +5136,25 @@ export default function KaylenCareMonitorDashboard({
               await loadEntriesFromSupabase();
             }
           : null,
+    });
+  };
+
+  const resetBehaviourForm = () => {
+    setBehaviourForm({
+      date: todayValue(),
+      time: nowTimeValue(),
+      severity: "3",
+      duration: "",
+      triggers: [],
+      otherTrigger: "",
+      location: "",
+      otherLocation: "",
+      behaviourType: "Meltdown",
+      otherBehaviourType: "",
+      recoveryTime: "",
+      whatHelped: "",
+      notes: "",
+      attachment: null,
     });
   };
 
@@ -6792,6 +7244,357 @@ export default function KaylenCareMonitorDashboard({
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {activeSaveAction === "health" ? "Saving..." : "Save health entry"}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderBehaviourForm = () => {
+    const selectedBehaviourType =
+      behaviourForm.behaviourType === "Other"
+        ? behaviourForm.otherBehaviourType.trim()
+        : behaviourForm.behaviourType;
+    const selectedLocation =
+      behaviourForm.location === "Other"
+        ? behaviourForm.otherLocation.trim()
+        : behaviourForm.location;
+    const canSaveBehaviour =
+      !!behaviourForm.date.trim() &&
+      !!behaviourForm.time.trim() &&
+      !!selectedBehaviourType &&
+      !activeSaveAction;
+
+    const toggleTrigger = (trigger) => {
+      setBehaviourForm((current) => ({
+        ...current,
+        triggers: current.triggers.includes(trigger)
+          ? current.triggers.filter((item) => item !== trigger)
+          : [...current.triggers, trigger],
+      }));
+    };
+
+    return (
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("behaviour")}
+
+        <div className="md:col-span-2 rounded-2xl border border-purple-100 bg-purple-50/80 px-4 py-3 text-sm font-semibold leading-6 text-purple-900 shadow-sm">
+          Keep this quick during stressful moments. Add what you know now, and
+          use notes later if more detail is needed.
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">Date</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="DD/MM/YYYY"
+            className={dateTimeInputClass}
+            value={behaviourForm.date}
+            onChange={(e) =>
+              setBehaviourForm({ ...behaviourForm, date: e.target.value })
+            }
+          />
+        </div>
+
+        {renderTimeInput({
+          label: "Time",
+          value: behaviourForm.time,
+          onChange: (time) => setBehaviourForm({ ...behaviourForm, time }),
+          onNow: () => setBehaviourForm({ ...behaviourForm, time: nowTimeValue() }),
+        })}
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Behaviour type
+          </label>
+          <select
+            className={`${inputClassName} min-h-[48px]`}
+            value={behaviourForm.behaviourType}
+            onChange={(e) =>
+              setBehaviourForm({
+                ...behaviourForm,
+                behaviourType: e.target.value,
+                otherBehaviourType:
+                  e.target.value === "Other"
+                    ? behaviourForm.otherBehaviourType
+                    : "",
+              })
+            }
+          >
+            {BEHAVIOUR_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Severity
+          </label>
+          <div className="mt-2 grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 5].map((level) => (
+              <button
+                key={level}
+                type="button"
+                onClick={() =>
+                  setBehaviourForm({
+                    ...behaviourForm,
+                    severity: String(level),
+                  })
+                }
+                className={`min-h-[44px] rounded-xl border text-sm font-black transition ${
+                  behaviourForm.severity === String(level)
+                    ? "border-purple-300 bg-purple-600 text-white shadow-sm"
+                    : "border-slate-200 bg-white text-slate-700"
+                }`}
+              >
+                {level}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {behaviourForm.behaviourType === "Other" ? (
+          <div className={`${cardClassName} md:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">
+              Other behaviour type
+            </label>
+            <input
+              type="text"
+              placeholder="Describe behaviour type"
+              className={`${inputClassName} min-h-[48px] border-dashed`}
+              value={behaviourForm.otherBehaviourType}
+              onChange={(e) =>
+                setBehaviourForm({
+                  ...behaviourForm,
+                  otherBehaviourType: e.target.value,
+                })
+              }
+            />
+          </div>
+        ) : null}
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Possible triggers
+          </label>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {BEHAVIOUR_TRIGGERS.map((trigger) => {
+              const active = behaviourForm.triggers.includes(trigger);
+              return (
+                <button
+                  key={trigger}
+                  type="button"
+                  onClick={() => toggleTrigger(trigger)}
+                  className={`rounded-full border px-3 py-2 text-xs font-black transition ${
+                    active
+                      ? "border-purple-300 bg-purple-600 text-white shadow-sm"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {trigger}
+                </button>
+              );
+            })}
+          </div>
+          {behaviourForm.triggers.includes("Other") ? (
+            <input
+              type="text"
+              placeholder="Custom trigger"
+              className={`${inputClassName} min-h-[48px] border-dashed`}
+              value={behaviourForm.otherTrigger}
+              onChange={(e) =>
+                setBehaviourForm({
+                  ...behaviourForm,
+                  otherTrigger: e.target.value,
+                })
+              }
+            />
+          ) : null}
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Duration
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. 12 minutes"
+            className={`${inputClassName} min-h-[48px]`}
+            value={behaviourForm.duration}
+            onChange={(e) =>
+              setBehaviourForm({ ...behaviourForm, duration: e.target.value })
+            }
+          />
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Recovery time
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. 30 minutes"
+            className={`${inputClassName} min-h-[48px]`}
+            value={behaviourForm.recoveryTime}
+            onChange={(e) =>
+              setBehaviourForm({
+                ...behaviourForm,
+                recoveryTime: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Location
+          </label>
+          <select
+            className={`${inputClassName} min-h-[48px]`}
+            value={behaviourForm.location}
+            onChange={(e) =>
+              setBehaviourForm({
+                ...behaviourForm,
+                location: e.target.value,
+                otherLocation:
+                  e.target.value === "Other" ? behaviourForm.otherLocation : "",
+              })
+            }
+          >
+            <option value="">Select location</option>
+            {uniqueList([
+              "Home",
+              "School",
+              "Car",
+              "Shop",
+              "Appointment",
+              ...customLocationOptions.map((option) => option.label || option),
+              "Other",
+            ]).map((location) => (
+              <option key={location} value={location}>
+                {location}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {behaviourForm.location === "Other" ? (
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Location name
+            </label>
+            <input
+              type="text"
+              placeholder="Where did it happen?"
+              className={`${inputClassName} min-h-[48px] border-dashed`}
+              value={behaviourForm.otherLocation}
+              onChange={(e) =>
+                setBehaviourForm({
+                  ...behaviourForm,
+                  otherLocation: e.target.value,
+                })
+              }
+            />
+          </div>
+        ) : (
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Optional attachment/photo
+            </label>
+            <input
+              type="file"
+              accept={DOCUMENT_ACCEPT}
+              className={`${inputClassName} min-h-[48px]`}
+              onChange={(e) =>
+                setBehaviourForm({
+                  ...behaviourForm,
+                  attachment: e.target.files?.[0] || null,
+                })
+              }
+            />
+          </div>
+        )}
+
+        {behaviourForm.location === "Other" ? (
+          <div className={cardClassName}>
+            <label className="text-sm font-semibold text-slate-700">
+              Optional attachment/photo
+            </label>
+            <input
+              type="file"
+              accept={DOCUMENT_ACCEPT}
+              className={`${inputClassName} min-h-[48px]`}
+              onChange={(e) =>
+                setBehaviourForm({
+                  ...behaviourForm,
+                  attachment: e.target.files?.[0] || null,
+                })
+              }
+            />
+          </div>
+        ) : null}
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            What helped?
+          </label>
+          <textarea
+            rows={3}
+            placeholder="Calming strategy, quiet space, sensory support, communication aid..."
+            className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`behaviour-helped-${childId || "child"}-${activeSection?.title || "new"}`}
+            value={behaviourForm.whatHelped}
+            onChange={(e) =>
+              setBehaviourForm({
+                ...behaviourForm,
+                whatHelped: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">Notes</label>
+          <textarea
+            rows={5}
+            placeholder="Anything else important, what happened before or after, who was present..."
+            className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`behaviour-notes-${childId || "child"}-${activeSection?.title || "new"}`}
+            value={behaviourForm.notes}
+            onChange={(e) =>
+              setBehaviourForm({ ...behaviourForm, notes: e.target.value })
+            }
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <button
+            type="button"
+            disabled={!canSaveBehaviour}
+            onClick={() =>
+              runLockedSave("behaviour", async () => {
+                const saved = await saveBehaviourEntryToSupabase();
+
+                if (!saved) return;
+
+                await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
+                clearLogDraft("behaviour");
+                resetBehaviourForm();
+                closeSection();
+              })
+            }
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {activeSaveAction === "behaviour"
+              ? "Saving..."
+              : "Save behaviour entry"}
           </button>
         </div>
       </div>
@@ -9398,6 +10201,273 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 
+  const renderDocumentVaultForm = () => (
+    <div className="mt-6 space-y-4">
+      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-500">
+              Secure storage
+            </p>
+            <h3 className="mt-1 text-lg font-extrabold text-slate-950">
+              Document Vault
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              Store important EHCP, school, hospital, diagnosis and care
+              documents privately for this family. Turning this section off only
+              hides it; uploaded documents stay safe.
+            </p>
+          </div>
+          <span className="w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
+            {documents.length} document{documents.length === 1 ? "" : "s"}
+          </span>
+        </div>
+      </section>
+
+      <form
+        onSubmit={handleDocumentUpload}
+        className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-4 shadow-sm"
+      >
+        <h4 className="font-black text-slate-950">Upload document</h4>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="text-sm font-bold text-slate-700">
+            Title
+            <input
+              className={inputClassName}
+              value={documentForm.title}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              placeholder="e.g. EHCP review letter"
+              required
+            />
+          </label>
+          <label className="text-sm font-bold text-slate-700">
+            Category
+            <select
+              className={inputClassName}
+              value={documentForm.category}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  category: event.target.value,
+                }))
+              }
+            >
+              {DOCUMENT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-bold text-slate-700">
+            Child
+            <select
+              className={inputClassName}
+              value={documentForm.childId}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  childId: event.target.value,
+                }))
+              }
+            >
+              <option value="">Family document</option>
+              {children.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.firstName || child.first_name || "Child"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-bold text-slate-700">
+            Document date
+            <input
+              type="date"
+              className={inputClassName}
+              value={documentForm.documentDate}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  documentDate: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="text-sm font-bold text-slate-700 md:col-span-2">
+            File
+            <input
+              type="file"
+              accept={DOCUMENT_ACCEPT}
+              className={`${inputClassName} file:mr-3 file:rounded-xl file:border-0 file:bg-slate-900 file:px-3 file:py-2 file:text-sm file:font-black file:text-white`}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  file: event.target.files?.[0] || null,
+                }))
+              }
+              required
+            />
+          </label>
+          <label className="text-sm font-bold text-slate-700 md:col-span-2">
+            Notes
+            <textarea
+              className={`${inputClassName} min-h-24`}
+              value={documentForm.notes}
+              onChange={(event) =>
+                setDocumentForm((current) => ({
+                  ...current,
+                  notes: event.target.value,
+                }))
+              }
+              placeholder="Optional notes about this document"
+            />
+          </label>
+        </div>
+        <button
+          type="submit"
+          disabled={isUploadingDocument || !documentForm.title.trim() || !documentForm.file}
+          className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
+        >
+          {isUploadingDocument ? "Uploading..." : "Save document"}
+        </button>
+      </form>
+
+      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-3 md:grid-cols-3">
+          <label className="text-sm font-bold text-slate-700">
+            Search
+            <input
+              className={inputClassName}
+              value={documentFilters.search}
+              onChange={(event) =>
+                setDocumentFilters((current) => ({
+                  ...current,
+                  search: event.target.value,
+                }))
+              }
+              placeholder="Search title, file or notes"
+            />
+          </label>
+          <label className="text-sm font-bold text-slate-700">
+            Child
+            <select
+              className={inputClassName}
+              value={documentFilters.childId}
+              onChange={(event) =>
+                setDocumentFilters((current) => ({
+                  ...current,
+                  childId: event.target.value,
+                }))
+              }
+            >
+              <option value="">All children/family</option>
+              {children.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.firstName || child.first_name || "Child"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm font-bold text-slate-700">
+            Category
+            <select
+              className={inputClassName}
+              value={documentFilters.category}
+              onChange={(event) =>
+                setDocumentFilters((current) => ({
+                  ...current,
+                  category: event.target.value,
+                }))
+              }
+            >
+              <option value="All">All categories</option>
+              {DOCUMENT_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {isLoadingDocuments ? (
+            <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-5 text-center text-sm font-bold text-slate-500">
+              Loading documents...
+            </div>
+          ) : documents.length ? (
+            documents.map((document) => (
+              <article
+                key={document.id}
+                className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3"
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                        {document.category}
+                      </span>
+                      {document.childName ? (
+                        <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-blue-700">
+                          {document.childName}
+                        </span>
+                      ) : null}
+                    </div>
+                    <h4 className="mt-2 break-words text-base font-black text-slate-950">
+                      {document.title}
+                    </h4>
+                    <p className="mt-1 text-xs font-bold text-slate-500">
+                      {[document.documentDate, document.fileName, formatFileSize(document.fileSizeBytes)]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </p>
+                    {document.notes ? (
+                      <p className="mt-2 break-words text-sm leading-6 text-slate-600">
+                        {document.notes}
+                      </p>
+                    ) : null}
+                  </div>
+                  <div className="flex shrink-0 gap-2">
+                    <a
+                      href={api.documentDownloadUrl(familyId, document.id)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm"
+                    >
+                      View / download
+                    </a>
+                    {!isReadOnly ? (
+                      <button
+                        type="button"
+                        onClick={() => deleteDocument(document)}
+                        className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-xs font-black text-rose-700"
+                      >
+                        Remove
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            ))
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center">
+              <p className="font-black text-slate-800">No documents found</p>
+              <p className="mt-1 text-sm leading-6 text-slate-500">
+                Upload EHCP, diagnosis, hospital, school or care documents here
+                when you need one secure place to keep them.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+
   const renderReportsForm = () => {
     const filtersLabel =
       reportCategoryFilter === "All"
@@ -9895,6 +10965,7 @@ export default function KaylenCareMonitorDashboard({
     const medicationEntries = sortEntriesByDate(groupedReportEntries.Medication || []);
     const sleepEntries = sortEntriesByDate(groupedReportEntries.Sleep || []);
     const toiletingEntries = sortEntriesByDate(groupedReportEntries.Toileting || []);
+    const behaviourEntries = sortEntriesByDate(groupedReportEntries.Behaviour || []);
     const healthEntries = sortEntriesByDate(
       (groupedReportEntries.Health || []).filter((entry) => !isMeasurementEntry(entry)),
     );
@@ -9975,6 +11046,12 @@ export default function KaylenCareMonitorDashboard({
         tone: "border-cyan-100 bg-cyan-50/80 text-cyan-900",
       },
       {
+        label: "Behaviour",
+        value: behaviourEntries.length || "No entries",
+        meta: `${behaviourEntries.length} behaviour entr${behaviourEntries.length === 1 ? "y" : "ies"}`,
+        tone: "border-purple-100 bg-purple-50/80 text-purple-900",
+      },
+      {
         label: "Health",
         value: healthEntries.length || "No entries",
         meta: `${healthEntries.length} health entr${healthEntries.length === 1 ? "y" : "ies"}`,
@@ -9995,6 +11072,9 @@ export default function KaylenCareMonitorDashboard({
         : "",
       foodEntries.length
         ? `${foodEntries.length} food or fluid entr${foodEntries.length === 1 ? "y was" : "ies were"} logged.`
+        : "",
+      behaviourEntries.length
+        ? `${behaviourEntries.length} behaviour entr${behaviourEntries.length === 1 ? "y was" : "ies were"} logged, including triggers and recovery notes where available.`
         : "",
       healthEntries.length
         ? `${healthEntries.length} health entr${healthEntries.length === 1 ? "y was" : "ies were"} logged in this period.`
@@ -10085,6 +11165,15 @@ export default function KaylenCareMonitorDashboard({
             badges.push(makeEntryBadge(label, "bg-rose-100 text-rose-700"));
           }
         });
+      }
+
+      if (sectionTitle === "Behaviour") {
+        if (entry.severity) {
+          badges.push(makeEntryBadge(`Severity ${entry.severity}/5`, "bg-purple-100 text-purple-700"));
+        }
+        if (entry.triggers?.length) {
+          badges.push(makeEntryBadge(`${entry.triggers.length} trigger${entry.triggers.length === 1 ? "" : "s"}`, "bg-amber-100 text-amber-700"));
+        }
       }
 
       if (sectionTitle === "Toileting") {
@@ -10289,6 +11378,16 @@ export default function KaylenCareMonitorDashboard({
         summary: `${toiletingEntries.length} logged`,
         emptyText: "No toileting data yet - logging this helps identify patterns.",
         tone: "border-cyan-100 bg-cyan-50/70",
+      },
+      {
+        title: "Behaviour",
+        module: "behaviour",
+        entries: behaviourEntries,
+        summary: reportTrendModel.graphs.behaviour?.total
+          ? `${reportTrendModel.graphs.behaviour.total} logged`
+          : "No behaviour data",
+        emptyText: "No behaviour data recorded for this period.",
+        tone: "border-purple-100 bg-purple-50/70",
       },
       {
         title: "Health",
@@ -10561,6 +11660,30 @@ export default function KaylenCareMonitorDashboard({
                   {renderFluidBarGraph()}
                   {renderMedicationConsistencyCard()}
                   {renderToiletingPatternCard()}
+                  {isModuleEnabled("behaviour")
+                    ? renderTrendInfoCard({
+                        title: "Behaviour pattern",
+                        value: reportTrendModel.graphs.behaviour?.total
+                          ? `${reportTrendModel.graphs.behaviour.total} logged`
+                          : "No behaviour entries",
+                        description: reportTrendModel.graphs.behaviour?.total
+                          ? [
+                              reportTrendModel.graphs.behaviour.topType
+                                ? `Most common type: ${reportTrendModel.graphs.behaviour.topType.label}.`
+                                : "",
+                              reportTrendModel.graphs.behaviour.topTrigger
+                                ? `Most common trigger: ${reportTrendModel.graphs.behaviour.topTrigger.label}.`
+                                : "Triggers will appear here when they are logged.",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")
+                          : "Behaviour frequency, triggers and severity will appear when entries are logged.",
+                        meta: reportTrendModel.graphs.behaviour?.daily?.length
+                          ? `${reportTrendModel.graphs.behaviour.daily.length} day${reportTrendModel.graphs.behaviour.daily.length === 1 ? "" : "s"} with behaviour logs`
+                          : "",
+                        tone: "border-purple-100 bg-purple-50/70",
+                      })
+                    : null}
                 </>
               ) : (
                 renderTrendInfoCard({
@@ -10628,6 +11751,8 @@ export default function KaylenCareMonitorDashboard({
         return renderToiletingForm();
       case "Health":
         return renderHealthForm();
+      case "Behaviour":
+        return renderBehaviourForm();
       case "Growth / Measurements":
         return renderMeasurementsForm();
       case "Sleep":
@@ -10636,6 +11761,8 @@ export default function KaylenCareMonitorDashboard({
         return renderShareableReportsForm();
       case "Care Snapshot":
         return renderCareSnapshotForm();
+      case "Document Vault":
+        return renderDocumentVaultForm();
       case "Calendar":
         return renderCalendarForm();
       default:
@@ -10740,7 +11867,7 @@ export default function KaylenCareMonitorDashboard({
     );
   }
 
-  const isReportsOpen = ["Reports", "Care Snapshot", "Calendar"].includes(
+  const isReportsOpen = ["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(
     activeSection?.title,
   );
 
@@ -11091,7 +12218,7 @@ export default function KaylenCareMonitorDashboard({
                     {renderDashboardIcon(section)}
                   </div>
                   <div className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    {["Reports", "Care Snapshot", "Calendar"].includes(section.title)
+                    {["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(section.title)
                       ? "View"
                       : "Log"}
                   </div>
@@ -11143,7 +12270,7 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   ) : null}
 
-                  {!["Reports", "Care Snapshot", "Calendar"].includes(section.title) ? (
+                  {!["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(section.title) ? (
                   <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Latest
@@ -11230,6 +12357,7 @@ export default function KaylenCareMonitorDashboard({
               ["Sleep", "Sleep", "", "🌙"],
               ["Toileting", "Toileting", "", "🚽"],
               ["Health", "Health", "", "✚"],
+              ["Behaviour", "Behaviour", "", "BT"],
             ].map(([label, title, preset, icon]) => {
               const moduleKey =
                 label === "Food"
@@ -11244,7 +12372,9 @@ export default function KaylenCareMonitorDashboard({
                           ? "toileting"
                           : label === "Health"
                             ? "health"
-                            : "";
+                            : label === "Behaviour"
+                              ? "behaviour"
+                              : "";
               if (moduleKey && !isModuleEnabled(moduleKey)) return null;
               return (
               <button

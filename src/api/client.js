@@ -100,6 +100,46 @@ async function uploadProfilePhoto({ familyId, childId, file }) {
   return payload.data;
 }
 
+async function uploadFamilyDocument(familyId, payload, file) {
+  const params = new URLSearchParams({
+    title: payload.title,
+    category: payload.category,
+    fileName: file.name,
+  });
+
+  if (payload.childId) params.set("childId", payload.childId);
+  if (payload.documentDate) params.set("documentDate", payload.documentDate);
+  if (payload.notes) params.set("notes", payload.notes);
+
+  const response = await fetch(
+    `${API_BASE_URL}/families/${familyId}/documents?${params.toString()}`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": file.type,
+      },
+      body: file,
+    },
+  );
+
+  const responsePayload = await response.json().catch(() => ({
+    data: null,
+    error: {
+      message: "The server returned an unreadable document upload response.",
+    },
+  }));
+
+  if (!response.ok) {
+    throw new Error(
+      responsePayload?.error?.message ||
+        "The document upload failed. Please try again.",
+    );
+  }
+
+  return responsePayload.data;
+}
+
 export const api = {
   me: () => request("/auth/me"),
   login: ({ email, password }) =>
@@ -224,6 +264,21 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  listDocuments: (familyId, query = {}) => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value && value !== "All") params.set(key, value);
+    });
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return request(`/families/${familyId}/documents${suffix}`);
+  },
+  uploadFamilyDocument,
+  deleteDocument: (familyId, documentId) =>
+    request(`/families/${familyId}/documents/${documentId}`, {
+      method: "DELETE",
+    }),
+  documentDownloadUrl: (familyId, documentId) =>
+    `${API_BASE_URL}/families/${familyId}/documents/${documentId}/download`,
   getIncompleteSleepLog: (familyId, childId) =>
     request(
       `/families/${familyId}/care-logs/sleep/incomplete?childId=${encodeURIComponent(

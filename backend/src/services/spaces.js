@@ -8,6 +8,18 @@ const allowedImageTypes = new Map([
   ["image/webp", "webp"],
 ]);
 
+const allowedDocumentTypes = new Map([
+  ["application/pdf", "pdf"],
+  ["image/jpeg", "jpg"],
+  ["image/png", "png"],
+  ["image/webp", "webp"],
+  ["application/msword", "doc"],
+  [
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "docx",
+  ],
+]);
+
 function hmac(key, value, encoding) {
   return crypto.createHmac("sha256", key).update(value).digest(encoding);
 }
@@ -99,9 +111,25 @@ export function getProfilePhotoExtension(fileType) {
   return extension;
 }
 
+export function getDocumentExtension(fileType) {
+  const extension = allowedDocumentTypes.get(fileType);
+
+  if (!extension) {
+    throw badRequest("Documents must be PDF, JPG, PNG, WebP, DOC or DOCX files.");
+  }
+
+  return extension;
+}
+
 export function buildProfilePhotoObjectKey({ familyId, childId, fileType }) {
   const extension = getProfilePhotoExtension(fileType);
   return `families/${familyId}/children/${childId}/profile-${Date.now()}.${extension}`;
+}
+
+export function buildDocumentObjectKey({ familyId, childId, fileType }) {
+  const extension = getDocumentExtension(fileType);
+  const childSegment = childId || "family";
+  return `families/${familyId}/documents/${childSegment}/document-${Date.now()}-${crypto.randomUUID()}.${extension}`;
 }
 
 export function buildPublicSpacesUrl(objectKey) {
@@ -210,6 +238,111 @@ export function createSignedPutUrl({ objectKey, fileType, expiresInSeconds = 300
   uploadUrl.search = queryParams.toString();
 
   return uploadUrl.toString();
+}
+
+export function createSignedPrivatePutUrl({
+  objectKey,
+  fileType,
+  expiresInSeconds = 300,
+}) {
+  requireSpacesConfig();
+  getDocumentExtension(fileType);
+
+  const uploadUrl = buildBucketObjectUrl(objectKey);
+  const host = uploadUrl.host;
+  const { amzDate, dateStamp } = buildAmzDates();
+  const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
+  const signedHeaders = "content-type;host";
+
+  const queryParams = new URLSearchParams({
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${config.spacesKey}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+  });
+
+  const canonicalQueryString = buildCanonicalQueryString(queryParams);
+
+  const canonicalHeaders = `content-type:${fileType}\nhost:${host}\n`;
+  const canonicalRequest = [
+    "PUT",
+    uploadUrl.pathname,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const signingKey = getSigningKey(
+    config.spacesSecret,
+    dateStamp,
+    config.spacesRegion,
+  );
+  const signature = hmac(signingKey, stringToSign, "hex");
+
+  queryParams.set("X-Amz-Signature", signature);
+  uploadUrl.search = queryParams.toString();
+
+  return uploadUrl.toString();
+}
+
+export function createSignedGetUrl({ objectKey, expiresInSeconds = 300 }) {
+  requireSpacesConfig();
+
+  const getUrl = buildBucketObjectUrl(objectKey);
+  const host = getUrl.host;
+  const { amzDate, dateStamp } = buildAmzDates();
+  const credentialScope = `${dateStamp}/${config.spacesRegion}/s3/aws4_request`;
+  const signedHeaders = "host";
+
+  const queryParams = new URLSearchParams({
+    "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+    "X-Amz-Credential": `${config.spacesKey}/${credentialScope}`,
+    "X-Amz-Date": amzDate,
+    "X-Amz-Expires": String(expiresInSeconds),
+    "X-Amz-SignedHeaders": signedHeaders,
+    "X-Amz-Content-Sha256": "UNSIGNED-PAYLOAD",
+  });
+
+  const canonicalQueryString = buildCanonicalQueryString(queryParams);
+
+  const canonicalHeaders = `host:${host}\n`;
+  const canonicalRequest = [
+    "GET",
+    getUrl.pathname,
+    canonicalQueryString,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+
+  const stringToSign = [
+    "AWS4-HMAC-SHA256",
+    amzDate,
+    credentialScope,
+    sha256(canonicalRequest),
+  ].join("\n");
+
+  const signingKey = getSigningKey(
+    config.spacesSecret,
+    dateStamp,
+    config.spacesRegion,
+  );
+  const signature = hmac(signingKey, stringToSign, "hex");
+
+  queryParams.set("X-Amz-Signature", signature);
+  getUrl.search = queryParams.toString();
+
+  return getUrl.toString();
 }
 
 export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {

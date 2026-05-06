@@ -14,7 +14,15 @@ import {
 
 export const careLogsRouter = Router({ mergeParams: true });
 
-const categories = new Set(["food", "medication", "sleep", "toileting", "health", "general"]);
+const categories = new Set([
+  "food",
+  "medication",
+  "sleep",
+  "toileting",
+  "health",
+  "behaviour",
+  "general",
+]);
 
 careLogsRouter.use(requireAuth, requireFamilyMember);
 
