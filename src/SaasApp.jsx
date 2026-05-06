@@ -2450,6 +2450,7 @@ function WorkspaceGate({ session, onLogout }) {
   });
   const [dismissedUpgradeBanners, setDismissedUpgradeBanners] = useState({});
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
+  const [showAdminStatsPopup, setShowAdminStatsPopup] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimeoutRef = useRef(null);
   const [isFloatingChildSwitcherOpen, setIsFloatingChildSwitcherOpen] =
@@ -2700,6 +2701,40 @@ function WorkspaceGate({ session, onLogout }) {
   useEffect(() => {
     setIsPlatformQuickJumpOpen(false);
   }, [platformAdminTab, showPlatformAdmin]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !session.user.isPlatformAdmin) return;
+    if (window.location.pathname.replace(/\/$/, "") !== "/admin/stats") return;
+
+    setPlatformAdminTab("stats");
+    if (!showPlatformAdmin && !isPlatformLoading) {
+      openPlatformAdmin();
+    }
+  }, [session?.user?.id, session?.user?.isPlatformAdmin]);
+
+  useEffect(() => {
+    if (!showPlatformAdmin || !platformData.overview || !session?.user?.id) {
+      return;
+    }
+
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = `familytrack-admin-stats-popup:${session.user.id}`;
+    if (localStorage.getItem(storageKey) === todayKey) return;
+
+    const needsAttention = platformData.overview.needsAttention || {};
+    const totalImportant =
+      (needsAttention.inactiveFamilies || []).length +
+      (needsAttention.childrenMissingFluidTargets || []).length +
+      (needsAttention.requiredMedicationsMissingSchedules || []).length +
+      (needsAttention.unresolvedIssues || []).length +
+      (needsAttention.trialsEndingSoon || []).length +
+      (needsAttention.accountsNeverLoggedIn || []).length;
+
+    if (totalImportant > 0) {
+      localStorage.setItem(storageKey, todayKey);
+      setShowAdminStatsPopup(true);
+    }
+  }, [showPlatformAdmin, platformData.overview, session?.user?.id]);
 
   useEffect(() => {
     if (!isPlatformQuickJumpOpen) return undefined;
@@ -4795,6 +4830,86 @@ function WorkspaceGate({ session, onLogout }) {
       },
     },
   ].filter((item) => item.count > 0);
+  const adminStatsCards = [
+    {
+      id: "active-families",
+      label: "Active families",
+      value: platformData.overview?.families ?? 0,
+      detail: "Current non-archived family accounts",
+      tone: "border-indigo-100 bg-indigo-50 text-indigo-800",
+      onClick: () => setPlatformAdminTab("families"),
+    },
+    {
+      id: "inactive-families",
+      label: "No recent activity",
+      value: countAttentionRows(attentionData.inactiveFamilies || []),
+      detail: "No diary activity for 14+ days",
+      tone: "border-amber-100 bg-amber-50 text-amber-800",
+      onClick: () => openFirstAttentionFamily(attentionData.inactiveFamilies),
+    },
+    {
+      id: "trials-ending",
+      label: "Trials ending soon",
+      value: countAttentionRows(attentionData.trialsEndingSoon || []),
+      detail: "Trial accounts ending within 7 days",
+      tone: "border-orange-100 bg-orange-50 text-orange-800",
+      onClick: () => openFirstAttentionFamily(attentionData.trialsEndingSoon),
+    },
+    {
+      id: "unresolved-issues",
+      label: "Unresolved issues",
+      value: attentionData.unresolvedIssues?.length ?? openIssueCount,
+      detail: "Tester reports needing review",
+      tone: "border-purple-100 bg-purple-50 text-purple-800",
+      onClick: () => setPlatformAdminTab("issues"),
+    },
+    {
+      id: "never-logged-in",
+      label: "Never logged in",
+      value: countAttentionRows(attentionData.accountsNeverLoggedIn || []),
+      detail: "Accounts created but not used yet",
+      tone: "border-slate-200 bg-slate-50 text-slate-800",
+      onClick: () => {
+        setPlatformAccountFilter("never");
+        setPlatformAdminTab("accounts");
+      },
+    },
+    {
+      id: "missing-setup",
+      label: "Children missing setup",
+      value:
+        countAttentionRows(attentionData.childrenMissingFluidTargets || []) +
+        countAttentionRows(
+          attentionData.requiredMedicationsMissingSchedules || [],
+        ),
+      detail: "Fluid targets or required med schedules missing",
+      tone: "border-sky-100 bg-sky-50 text-sky-800",
+      onClick: () =>
+        openFirstAttentionFamily(
+          attentionData.childrenMissingFluidTargets?.length
+            ? attentionData.childrenMissingFluidTargets
+            : attentionData.requiredMedicationsMissingSchedules,
+        ),
+    },
+    {
+      id: "revenue",
+      label: "Revenue",
+      value: formatMoney(
+        platformData.overview?.revenue?.netPaidGbp ||
+          platformData.overview?.revenue?.estimatedMrrGbp ||
+          0,
+      ),
+      detail: "Latest 30 days from Stripe invoices",
+      tone: "border-emerald-100 bg-emerald-50 text-emerald-800",
+      onClick: () => setPlatformAdminTab("revenue"),
+    },
+  ];
+  const adminStatsSummaryText = needsAttentionItems.length
+    ? needsAttentionItems
+        .slice(0, 3)
+        .map((item) => `${item.count} ${item.label.toLowerCase()}`)
+        .join(", ")
+    : "Everything looks up to date";
 
   const unresolvedIssuesForFamily = (familyId) =>
     platformIssues.filter(
@@ -6610,7 +6725,12 @@ function WorkspaceGate({ session, onLogout }) {
               </div>
               <button
                 type="button"
-                onClick={() => setShowPlatformAdmin(false)}
+                onClick={() => {
+                  setShowPlatformAdmin(false);
+                  if (window.location.pathname.replace(/\/$/, "") === "/admin/stats") {
+                    window.history.pushState({}, "", "/");
+                  }
+                }}
                 className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 shadow-sm transition hover:bg-white"
               >
                 Back
@@ -6953,6 +7073,7 @@ function WorkspaceGate({ session, onLogout }) {
                   <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
                     {[
                       ["Create family", "create", "bg-indigo-50 text-indigo-800"],
+                      ["Stats", "stats", "bg-slate-50 text-slate-800"],
                       ["Invite user", "families", "bg-sky-50 text-sky-800"],
                       ["View issues", "issues", "bg-purple-50 text-purple-800"],
                       ["Revenue", "revenue", "bg-emerald-50 text-emerald-800"],
@@ -6970,158 +7091,11 @@ function WorkspaceGate({ session, onLogout }) {
                   </div>
                 </section>
 
-                <div className="mt-3 grid grid-cols-3 gap-2">
-                  {[
-                    [
-                      "New issues",
-                      openIssueCount,
-                      "Open tester reports",
-                      "border-rose-100 bg-rose-50 text-rose-700",
-                      () => setPlatformAdminTab("issues"),
-                    ],
-                    [
-                      "New accounts",
-                      recentlyCreatedAccounts,
-                      "Created this week",
-                      "border-sky-100 bg-sky-50 text-sky-700",
-                      () => {
-                        setPlatformAccountFilter("all");
-                        setPlatformAdminTab("accounts");
-                      },
-                    ],
-                    [
-                      "Inactive users",
-                      inactiveUsersCount,
-                      "Needs a look",
-                      "border-amber-100 bg-amber-50 text-amber-700",
-                      () => {
-                        setPlatformAccountFilter("inactive");
-                        setPlatformAdminTab("accounts");
-                      },
-                    ],
-                  ].map(([label, value, detail, className, onClick]) => (
-                    <button
-                      type="button"
-                      key={label}
-                      onClick={onClick}
-                      className={`rounded-2xl border px-2 py-2 text-left shadow-sm ${className}`}
-                    >
-                      <p className="truncate text-[10px] font-black uppercase tracking-[0.12em]">
-                        {label}
-                      </p>
-                      <p className="mt-0.5 text-xl font-black leading-tight">
-                        {value}
-                      </p>
-                      <p className="truncate text-[10px] font-bold opacity-80">
-                        {detail}
-                      </p>
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-                  {[
-                    ["Logs today", platformData.overview?.logsToday],
-                    ["Logs this week", platformData.overview?.logsThisWeek],
-                    [
-                      "Active users 7d",
-                      platformData.overview?.activeUsersLast7Days,
-                    ],
-                    [
-                      "New accounts 7d",
-                      platformData.overview?.newAccountsThisWeek,
-                    ],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="rounded-2xl border border-indigo-100 bg-white px-3 py-2 shadow-sm"
-                    >
-                      <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                        {label}
-                      </p>
-                      <p className="mt-0.5 text-lg font-black text-slate-900">
-                        {value ?? 0}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                  {[
-                    ["Families", platformData.overview?.families, "bg-indigo-500"],
-                    ["Users", platformData.overview?.users, "bg-sky-500"],
-                    ["Children", platformData.overview?.children, "bg-violet-500"],
-                    ["Logs", platformData.overview?.careLogs, "bg-emerald-500"],
-                    [
-                      "Active subs",
-                      platformData.overview?.activeSubscriptions,
-                      "bg-teal-500",
-                    ],
-                    [
-                      "Inactive subs",
-                      platformData.overview?.inactiveSubscriptions,
-                      "bg-amber-500",
-                    ],
-                  ].map(([label, value, accentClass]) => (
-                    <div
-                      key={label}
-                      className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm"
-                    >
-                      <span
-                        className={`absolute left-0 top-0 h-full w-1 ${accentClass}`}
-                      />
-                      <p className="pl-1 text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                        {label}
-                      </p>
-                      <p className="mt-0.5 pl-1 text-xl font-black leading-tight text-slate-900 sm:text-2xl">
-                        {value ?? 0}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-
-                <section className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3 shadow-sm sm:p-4">
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.16em] text-emerald-700">
-                        Revenue dashboard
-                      </p>
-                      <h3 className="mt-1 text-xl font-black text-slate-950">
-                        {formatMoney(
-                          platformData.overview?.revenue?.netPaidGbp ||
-                            platformData.overview?.revenue?.estimatedMrrGbp ||
-                            0,
-                        )}{" "}
-                        / month
-                      </h3>
-                      <p className="mt-1 text-sm font-semibold text-emerald-900">
-                        Real paid Stripe invoice totals from the latest 30 days.
-                      </p>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:min-w-[16rem]">
-                      {(platformData.overview?.revenue?.planBreakdown || [])
-                        .slice(0, 4)
-                        .map((item) => (
-                          <div
-                            key={`${item.plan}-${item.status}`}
-                            className="rounded-xl border border-emerald-100 bg-white px-3 py-2"
-                          >
-                            <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
-                              {item.plan} / {item.status}
-                            </p>
-                            <p className="text-lg font-black text-slate-900">
-                              {item.count}
-                            </p>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                </section>
-
                 <div className="mt-3 overflow-x-auto rounded-2xl border border-indigo-100 bg-white p-1.5 shadow-sm">
                   <div className="flex min-w-max gap-1.5">
                   {[
                     ["overview", "Overview"],
+                    ["stats", "Stats"],
                     ["create", "Create"],
                     ["revenue", "Revenue"],
                     ["accounts", "Accounts"],
@@ -7132,7 +7106,17 @@ function WorkspaceGate({ session, onLogout }) {
                     <button
                       type="button"
                       key={tabId}
-                      onClick={() => setPlatformAdminTab(tabId)}
+                      onClick={() => {
+                        setPlatformAdminTab(tabId);
+                        if (tabId === "stats") {
+                          window.history.pushState({}, "", "/admin/stats");
+                        } else if (
+                          window.location.pathname.replace(/\/$/, "") ===
+                          "/admin/stats"
+                        ) {
+                          window.history.pushState({}, "", "/");
+                        }
+                      }}
                       className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition sm:px-4 sm:text-sm ${
                         platformAdminTab === tabId
                           ? "bg-indigo-600 text-white shadow-sm"
@@ -7144,6 +7128,111 @@ function WorkspaceGate({ session, onLogout }) {
                   ))}
                   </div>
                 </div>
+
+                {platformAdminTab === "stats" ? (
+                  <section className="mt-3 space-y-3">
+                    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
+                            Admin Stats
+                          </p>
+                          <h3 className="mt-1 text-xl font-black text-slate-950">
+                            Status overview
+                          </h3>
+                          <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
+                            A compact daily view of account health, setup gaps,
+                            trial risk and tester issues.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openPlatformAdmin}
+                          disabled={isPlatformLoading}
+                          className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 disabled:opacity-50"
+                        >
+                          {isPlatformLoading ? "Refreshing..." : "Refresh stats"}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {adminStatsCards.map((card) => (
+                        <button
+                          type="button"
+                          key={card.id}
+                          onClick={card.onClick}
+                          className={`rounded-2xl border p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${card.tone}`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <span className="min-w-0">
+                              <span className="block text-[10px] font-black uppercase tracking-[0.14em] opacity-80">
+                                {card.label}
+                              </span>
+                              <span className="mt-2 block text-2xl font-black leading-tight text-slate-950">
+                                {card.value}
+                              </span>
+                              <span className="mt-1 block text-xs font-bold opacity-80">
+                                {card.detail}
+                              </span>
+                            </span>
+                            <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-black uppercase tracking-[0.12em] opacity-80 shadow-sm">
+                              View
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                            Needs Attention
+                          </p>
+                          <h4 className="text-lg font-black text-slate-950">
+                            Today&apos;s action list
+                          </h4>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                          {needsAttentionItems.length
+                            ? `${needsAttentionItems.length} areas`
+                            : "All clear"}
+                        </span>
+                      </div>
+                      {needsAttentionItems.length ? (
+                        <div className="mt-3 space-y-2">
+                          {needsAttentionItems.map((item) => (
+                            <button
+                              type="button"
+                              key={item.id}
+                              onClick={item.onClick}
+                              className={`w-full rounded-2xl border px-3 py-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${item.tone}`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="min-w-0">
+                                  <span className="block font-black">
+                                    {item.label}
+                                  </span>
+                                  <span className="mt-0.5 block truncate text-xs font-bold opacity-80">
+                                    {item.detail}
+                                  </span>
+                                </span>
+                                <span className="shrink-0 rounded-full bg-white/80 px-3 py-1 text-sm font-black shadow-sm">
+                                  {item.count}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-sm font-bold text-emerald-800">
+                          Everything looks up to date. No urgent admin checks need attention right now.
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                ) : null}
 
                 {platformAdminTab === "overview" ? (
                   <section className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm sm:p-4">
@@ -9487,6 +9576,90 @@ function WorkspaceGate({ session, onLogout }) {
               </section>
             </div>
           </div>
+        </div>
+      ) : null}
+      {showAdminStatsPopup ? (
+        <div className="fixed inset-0 z-[66] flex items-end bg-slate-950/35 p-3 sm:items-center sm:justify-center">
+          <section className="w-full rounded-[1.5rem] border border-indigo-100 bg-white p-4 shadow-2xl sm:max-w-md">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-indigo-700">
+                  Daily admin summary
+                </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">
+                  {adminStatsSummaryText}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(
+                    `familytrack-admin-stats-popup:${session.user.id}`,
+                    new Date().toISOString().slice(0, 10),
+                  );
+                  setShowAdminStatsPopup(false);
+                }}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-black text-slate-600"
+                aria-label="Close daily admin summary"
+              >
+                X
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {needsAttentionItems.slice(0, 4).map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => {
+                    localStorage.setItem(
+                      `familytrack-admin-stats-popup:${session.user.id}`,
+                      new Date().toISOString().slice(0, 10),
+                    );
+                    setShowAdminStatsPopup(false);
+                    item.onClick();
+                  }}
+                  className={`w-full rounded-2xl border px-3 py-2 text-left text-sm font-bold ${item.tone}`}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="min-w-0 truncate">{item.label}</span>
+                    <span className="rounded-full bg-white/80 px-2 py-0.5 text-xs font-black">
+                      {item.count}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(
+                    `familytrack-admin-stats-popup:${session.user.id}`,
+                    new Date().toISOString().slice(0, 10),
+                  );
+                  setShowAdminStatsPopup(false);
+                }}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-black text-slate-700"
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem(
+                    `familytrack-admin-stats-popup:${session.user.id}`,
+                    new Date().toISOString().slice(0, 10),
+                  );
+                  setShowAdminStatsPopup(false);
+                  setPlatformAdminTab("stats");
+                  window.history.pushState({}, "", "/admin/stats");
+                }}
+                className="rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-black text-white"
+              >
+                View full stats
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
       {selectedPlatformFamily ? (
