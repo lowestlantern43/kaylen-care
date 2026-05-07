@@ -1292,6 +1292,44 @@ class DashboardErrorBoundary extends Component {
   }
 }
 
+const DEFAULT_HYDRATION_CHECKPOINTS = [
+  { time: "13:00", percent: 50 },
+  { time: "16:30", percent: 70 },
+  { time: "20:00", percent: 100 },
+];
+
+const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
+
+const normaliseHydrationCheckpoints = (value) => {
+  const rawItems = Array.isArray(value) ? value : DEFAULT_HYDRATION_CHECKPOINTS;
+  const checkpoints = rawItems
+    .map((item) => ({
+      time: String(item?.time || "").slice(0, 5),
+      percent: Number.parseInt(item?.percent, 10),
+    }))
+    .filter(
+      (item) =>
+        /^\d{2}:\d{2}$/.test(item.time) &&
+        Number.isFinite(item.percent) &&
+        item.percent > 0,
+    )
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  return checkpoints.length
+    ? checkpoints
+    : DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item }));
+};
+
+const normaliseQuietHours = (value) => ({
+  enabled: Boolean(value?.enabled),
+  start: /^\d{2}:\d{2}$/.test(String(value?.start || ""))
+    ? String(value.start).slice(0, 5)
+    : DEFAULT_QUIET_HOURS.start,
+  end: /^\d{2}:\d{2}$/.test(String(value?.end || ""))
+    ? String(value.end).slice(0, 5)
+    : DEFAULT_QUIET_HOURS.end,
+});
+
 const emptyChildProfile = {
   diagnosisNeeds: "",
   communicationStyle: "",
@@ -1305,12 +1343,25 @@ const emptyChildProfile = {
   calmingStrategies: "",
   eatingPreferences: "",
   dailyFluidTargetMl: "",
+  hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
+  hydrationNotificationTone: "gentle",
+  quietHours: { ...DEFAULT_QUIET_HOURS },
   sleepPreferences: "",
   toiletingNotes: "",
   sensoryNeeds: "",
   schoolEhcpNotes: "",
   medicalNotes: "",
 };
+
+const normaliseChildProfile = (profile = {}) => ({
+  ...emptyChildProfile,
+  ...(profile || {}),
+  hydrationCheckpoints: normaliseHydrationCheckpoints(
+    profile?.hydrationCheckpoints,
+  ),
+  hydrationNotificationTone: profile?.hydrationNotificationTone || "gentle",
+  quietHours: normaliseQuietHours(profile?.quietHours),
+});
 
 const emptyImportantEvent = {
   eventDate: "",
@@ -3418,7 +3469,7 @@ function WorkspaceGate({ session, onLogout }) {
         ]);
         if (!ignore) setChildCareOptions(options);
         if (!ignore) {
-          setChildProfile({ ...emptyChildProfile, ...profile });
+          setChildProfile(normaliseChildProfile(profile));
           setCareMedicationRows(
             careMedicationRowsFromProfile(profile?.currentMedications),
           );
@@ -3848,7 +3899,7 @@ function WorkspaceGate({ session, onLogout }) {
         selectedChildId,
         profileToSave,
       );
-      setChildProfile({ ...emptyChildProfile, ...profile });
+      setChildProfile(normaliseChildProfile(profile));
       setCareMedicationRows(
         careMedicationRowsFromProfile(profile?.currentMedications),
       );
@@ -3857,6 +3908,65 @@ function WorkspaceGate({ session, onLogout }) {
     } finally {
       setIsSavingProfile(false);
     }
+  };
+
+  const updateHydrationCheckpoint = (index, field, value) => {
+    setChildProfile((current) => {
+      const checkpoints = normaliseHydrationCheckpoints(
+        current.hydrationCheckpoints,
+      );
+      checkpoints[index] = {
+        ...checkpoints[index],
+        [field]: field === "percent" ? Number.parseInt(value || 0, 10) : value,
+      };
+      return {
+        ...current,
+        hydrationCheckpoints: normaliseHydrationCheckpoints(checkpoints),
+      };
+    });
+  };
+
+  const addHydrationCheckpoint = () => {
+    setChildProfile((current) => ({
+      ...current,
+      hydrationCheckpoints: [
+        ...normaliseHydrationCheckpoints(current.hydrationCheckpoints),
+        { time: "12:00", percent: 50 },
+      ],
+    }));
+  };
+
+  const removeHydrationCheckpoint = (index) => {
+    setChildProfile((current) => {
+      const checkpoints = normaliseHydrationCheckpoints(
+        current.hydrationCheckpoints,
+      ).filter((_, checkpointIndex) => checkpointIndex !== index);
+      return {
+        ...current,
+        hydrationCheckpoints: checkpoints.length
+          ? checkpoints
+          : DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
+      };
+    });
+  };
+
+  const resetHydrationCheckpoints = () => {
+    setChildProfile((current) => ({
+      ...current,
+      hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({
+        ...item,
+      })),
+    }));
+  };
+
+  const updateQuietHours = (field, value) => {
+    setChildProfile((current) => ({
+      ...current,
+      quietHours: normaliseQuietHours({
+        ...(current.quietHours || DEFAULT_QUIET_HOURS),
+        [field]: value,
+      }),
+    }));
   };
 
   const updateCareMedicationRow = (index, field, value) => {
@@ -3907,7 +4017,7 @@ function WorkspaceGate({ session, onLogout }) {
         nextProfile,
       );
       const nextRows = careMedicationRowsFromProfile(profile?.currentMedications);
-      setChildProfile({ ...emptyChildProfile, ...profile });
+      setChildProfile(normaliseChildProfile(profile));
       setCareMedicationRows(nextRows);
       return profile;
     } catch (caughtError) {
@@ -4020,7 +4130,7 @@ function WorkspaceGate({ session, onLogout }) {
       selectedChildId,
       nextProfile,
     );
-    setChildProfile({ ...emptyChildProfile, ...profile });
+    setChildProfile(normaliseChildProfile(profile));
     setCareMedicationRows(careMedicationRowsFromProfile(profile?.currentMedications));
     return profile;
   };
@@ -7150,8 +7260,8 @@ function WorkspaceGate({ session, onLogout }) {
                       Daily fluid target
                     </h4>
                     <p className="mt-1 text-sm text-slate-600">
-                      Used for the dashboard fluids progress bar. Leave blank if
-                      you do not want a target yet.
+                      Used for the dashboard progress bar and gentle hydration
+                      checkpoints. Leave blank if you do not want a target yet.
                     </p>
                     <label className="mt-3 block text-sm font-semibold text-slate-700">
                       Target per day (ml)
@@ -7170,6 +7280,141 @@ function WorkspaceGate({ session, onLogout }) {
                         placeholder="e.g. 1000"
                       />
                     </label>
+                    <div className="mt-4 rounded-2xl border border-sky-100 bg-white/80 p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-black text-slate-900">
+                            Hydration checkpoints
+                          </p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                            FamilyTrack checks progress at these times and sends
+                            a gentle nudge only if reminders are enabled.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={resetHydrationCheckpoints}
+                          className="w-fit rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700"
+                        >
+                          Reset defaults
+                        </button>
+                      </div>
+                      <div className="mt-3 space-y-2">
+                        {normaliseHydrationCheckpoints(
+                          childProfile.hydrationCheckpoints,
+                        ).map((checkpoint, index) => (
+                          <div
+                            key={`${checkpoint.time}-${index}`}
+                            className="grid gap-2 rounded-xl border border-slate-200 bg-white p-2 sm:grid-cols-[1fr_1fr_auto]"
+                          >
+                            <label className="min-w-0 text-xs font-bold text-slate-600">
+                              Time
+                              <input
+                                type="time"
+                                className={`${inputClass} mt-1`}
+                                value={checkpoint.time}
+                                onChange={(event) =>
+                                  updateHydrationCheckpoint(
+                                    index,
+                                    "time",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </label>
+                            <label className="min-w-0 text-xs font-bold text-slate-600">
+                              Target %
+                              <input
+                                type="number"
+                                min="1"
+                                max="150"
+                                inputMode="numeric"
+                                className={`${inputClass} mt-1`}
+                                value={checkpoint.percent}
+                                onChange={(event) =>
+                                  updateHydrationCheckpoint(
+                                    index,
+                                    "percent",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              onClick={() => removeHydrationCheckpoint(index)}
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 sm:self-end"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={addHydrationCheckpoint}
+                        className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-black text-sky-700"
+                      >
+                        + Add checkpoint
+                      </button>
+                    </div>
+                    <div className="mt-3 grid gap-3 rounded-2xl border border-slate-200 bg-white/80 p-3 sm:grid-cols-2">
+                      <label className="text-xs font-bold text-slate-600">
+                        Reminder wording
+                        <select
+                          className={`${inputClass} mt-1`}
+                          value={childProfile.hydrationNotificationTone || "gentle"}
+                          onChange={(event) =>
+                            setChildProfile({
+                              ...childProfile,
+                              hydrationNotificationTone: event.target.value,
+                            })
+                          }
+                        >
+                          <option value="gentle">Gentle check-in</option>
+                          <option value="direct">Direct reminder</option>
+                        </select>
+                      </label>
+                      <div className="text-xs font-bold text-slate-600">
+                        Quiet hours
+                        <label className="mt-2 flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(childProfile.quietHours?.enabled)}
+                            onChange={(event) =>
+                              updateQuietHours("enabled", event.target.checked)
+                            }
+                          />
+                          Do not nudge during quiet hours
+                        </label>
+                      </div>
+                      {childProfile.quietHours?.enabled ? (
+                        <div className="grid gap-2 sm:col-span-2 sm:grid-cols-2">
+                          <label className="text-xs font-bold text-slate-600">
+                            Quiet start
+                            <input
+                              type="time"
+                              className={`${inputClass} mt-1`}
+                              value={childProfile.quietHours?.start || "21:00"}
+                              onChange={(event) =>
+                                updateQuietHours("start", event.target.value)
+                              }
+                            />
+                          </label>
+                          <label className="text-xs font-bold text-slate-600">
+                            Quiet end
+                            <input
+                              type="time"
+                              className={`${inputClass} mt-1`}
+                              value={childProfile.quietHours?.end || "07:00"}
+                              onChange={(event) =>
+                                updateQuietHours("end", event.target.value)
+                              }
+                            />
+                          </label>
+                        </div>
+                      ) : null}
+                    </div>
                   </section>
 
                   <div className="grid gap-3 md:grid-cols-2">

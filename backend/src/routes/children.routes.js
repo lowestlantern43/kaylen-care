@@ -18,6 +18,31 @@ export const childrenRouter = Router({ mergeParams: true });
 
 childrenRouter.use(requireAuth, requireFamilyMember);
 
+const DEFAULT_HYDRATION_CHECKPOINTS = [
+  { time: "13:00", percent: 50 },
+  { time: "16:30", percent: 70 },
+  { time: "20:00", percent: 100 },
+];
+const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
+
+async function ensureChildProfileHydrationSchema() {
+  await query(`
+    ALTER TABLE child_profiles
+      ADD COLUMN IF NOT EXISTS hydration_checkpoints JSONB NOT NULL DEFAULT
+        '[{"time":"13:00","percent":50},{"time":"16:30","percent":70},{"time":"20:00","percent":100}]'::JSONB,
+      ADD COLUMN IF NOT EXISTS hydration_notification_tone TEXT NOT NULL DEFAULT 'gentle',
+      ADD COLUMN IF NOT EXISTS quiet_hours JSONB NOT NULL DEFAULT
+        '{"enabled":false,"start":"21:00","end":"07:00"}'::JSONB
+  `);
+}
+
+childrenRouter.use(
+  asyncHandler(async (_req, _res, next) => {
+    await ensureChildProfileHydrationSchema();
+    next();
+  }),
+);
+
 const profileFields = [
   "diagnosisNeeds",
   "communicationStyle",
@@ -31,6 +56,9 @@ const profileFields = [
   "calmingStrategies",
   "eatingPreferences",
   "dailyFluidTargetMl",
+  "hydrationCheckpoints",
+  "hydrationNotificationTone",
+  "quietHours",
   "sleepPreferences",
   "toiletingNotes",
   "sensoryNeeds",
@@ -51,6 +79,9 @@ const profileColumnMap = {
   calmingStrategies: "calming_strategies",
   eatingPreferences: "eating_preferences",
   dailyFluidTargetMl: "daily_fluid_target_ml",
+  hydrationCheckpoints: "hydration_checkpoints",
+  hydrationNotificationTone: "hydration_notification_tone",
+  quietHours: "quiet_hours",
   sleepPreferences: "sleep_preferences",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
@@ -66,6 +97,17 @@ function optionalInteger(reqBody, key, label) {
     throw badRequest(`${label} must be a positive number.`);
   }
   return numberValue;
+}
+
+function optionalJson(reqBody, key, fallback) {
+  const value = reqBody?.[key];
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    throw badRequest(`${key} must be valid JSON.`);
+  }
 }
 
 async function assertChildInFamily(childId, familyId) {
@@ -284,6 +326,9 @@ childrenRouter.get(
           calming_strategies AS "calmingStrategies",
           eating_preferences AS "eatingPreferences",
           daily_fluid_target_ml AS "dailyFluidTargetMl",
+          hydration_checkpoints AS "hydrationCheckpoints",
+          hydration_notification_tone AS "hydrationNotificationTone",
+          quiet_hours AS "quietHours",
           sleep_preferences AS "sleepPreferences",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
@@ -313,7 +358,13 @@ childrenRouter.put(
     const values = profileFields.map((field) =>
       field === "dailyFluidTargetMl"
         ? optionalInteger(req.body, field, "Daily fluid target")
-        : optionalString(req.body, field),
+        : field === "hydrationCheckpoints"
+          ? optionalJson(req.body, field, DEFAULT_HYDRATION_CHECKPOINTS)
+          : field === "quietHours"
+            ? optionalJson(req.body, field, DEFAULT_QUIET_HOURS)
+            : field === "hydrationNotificationTone"
+              ? optionalString(req.body, field) || "gentle"
+              : optionalString(req.body, field),
     );
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
@@ -348,6 +399,9 @@ childrenRouter.put(
           calming_strategies AS "calmingStrategies",
           eating_preferences AS "eatingPreferences",
           daily_fluid_target_ml AS "dailyFluidTargetMl",
+          hydration_checkpoints AS "hydrationCheckpoints",
+          hydration_notification_tone AS "hydrationNotificationTone",
+          quiet_hours AS "quietHours",
           sleep_preferences AS "sleepPreferences",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",

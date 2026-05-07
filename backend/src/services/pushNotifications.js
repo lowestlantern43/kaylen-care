@@ -58,6 +58,15 @@ export async function ensureNotificationSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
+
+  await query(`
+    ALTER TABLE child_profiles
+      ADD COLUMN IF NOT EXISTS hydration_checkpoints JSONB NOT NULL DEFAULT
+        '[{"time":"13:00","percent":50},{"time":"16:30","percent":70},{"time":"20:00","percent":100}]'::JSONB,
+      ADD COLUMN IF NOT EXISTS hydration_notification_tone TEXT NOT NULL DEFAULT 'gentle',
+      ADD COLUMN IF NOT EXISTS quiet_hours JSONB NOT NULL DEFAULT
+        '{"enabled":false,"start":"21:00","end":"07:00"}'::JSONB
+  `);
 }
 
 export async function savePushSubscription({
@@ -285,6 +294,101 @@ const minutesFromTime = (time = "00:00") => {
   return hours * 60 + minutes;
 };
 
+const DEFAULT_HYDRATION_CHECKPOINTS = [
+  { time: "13:00", percent: 50 },
+  { time: "16:30", percent: 70 },
+  { time: "20:00", percent: 100 },
+];
+
+const normaliseHydrationCheckpoints = (value) => {
+  const rawItems = Array.isArray(value) ? value : DEFAULT_HYDRATION_CHECKPOINTS;
+  const checkpoints = rawItems
+    .map((item) => ({
+      time: String(item?.time || "").slice(0, 5),
+      percent: Number.parseInt(item?.percent, 10),
+    }))
+    .filter(
+      (item) =>
+        /^\d{2}:\d{2}$/.test(item.time) &&
+        Number.isFinite(item.percent) &&
+        item.percent > 0,
+    )
+    .sort((a, b) => minutesFromTime(a.time) - minutesFromTime(b.time));
+
+  return checkpoints.length ? checkpoints : DEFAULT_HYDRATION_CHECKPOINTS;
+};
+
+const normaliseQuietHours = (value) => ({
+  enabled: Boolean(value?.enabled),
+  start: /^\d{2}:\d{2}$/.test(String(value?.start || ""))
+    ? String(value.start).slice(0, 5)
+    : "21:00",
+  end: /^\d{2}:\d{2}$/.test(String(value?.end || ""))
+    ? String(value.end).slice(0, 5)
+    : "07:00",
+});
+
+const isInQuietHours = (quietHours, currentTime) => {
+  const settings = normaliseQuietHours(quietHours);
+  if (!settings.enabled) return false;
+  const nowMinutes = minutesFromTime(currentTime);
+  const startMinutes = minutesFromTime(settings.start);
+  const endMinutes = minutesFromTime(settings.end);
+  if (startMinutes === endMinutes) return false;
+  if (startMinutes < endMinutes) {
+    return nowMinutes >= startMinutes && nowMinutes < endMinutes;
+  }
+  return nowMinutes >= startMinutes || nowMinutes < endMinutes;
+};
+
+const toFiniteNumber = (value) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const fluidMlFromLogData = (data = {}) => {
+  const entryType = String(data.entry_type || data.entryType || data.type || "").toLowerCase();
+  if (entryType && !entryType.includes("drink") && !entryType.includes("fluid")) {
+    return 0;
+  }
+  if (data.isMilk === false || data.is_drink === false) return 0;
+
+  if (data.amountMl !== undefined && data.amountMl !== null) {
+    return toFiniteNumber(data.amountMl);
+  }
+  if (data.amount_ml !== undefined && data.amount_ml !== null) {
+    return toFiniteNumber(data.amount_ml);
+  }
+  if (data.amountOz !== undefined && data.amountOz !== null) {
+    return toFiniteNumber(data.amountOz) * 29.5735;
+  }
+  if (data.amount_oz !== undefined && data.amount_oz !== null) {
+    return toFiniteNumber(data.amount_oz) * 29.5735;
+  }
+
+  const unit = String(data.unit || data.amountUnit || data.amount_unit || "").toLowerCase();
+  const amount = toFiniteNumber(data.amount || data.quantity);
+  if (amount && unit.includes("ml")) return amount;
+  if (amount && (unit.includes("oz") || unit.includes("ounce"))) {
+    return amount * 29.5735;
+  }
+
+  const text = [
+    data.name,
+    data.item,
+    data.summary,
+    data.notes,
+    data.details,
+  ]
+    .flat()
+    .filter(Boolean)
+    .join(" ");
+  const mlMatch = text.match(/(\d+(?:\.\d+)?)\s*ml/i);
+  if (mlMatch) return toFiniteNumber(mlMatch[1]);
+  const ozMatch = text.match(/(\d+(?:\.\d+)?)\s*oz/i);
+  return ozMatch ? toFiniteNumber(ozMatch[1]) * 29.5735 : 0;
+};
+
 async function familyReminderUsers(familyId, type) {
   const { rows } = await query(
     `
@@ -397,7 +501,7 @@ export async function runDueReminderScan(now = new Date()) {
   const current = londonParts(now);
   const currentMinutes = minutesFromTime(current.time);
   const currentDate = new Date(`${current.date}T12:00:00`);
-  const results = { medication: 0, appointments: 0, duplicates: 0 };
+  const results = { medication: 0, appointments: 0, hydration: 0, duplicates: 0 };
 
   const { rows: medicationRows } = await query(
     `
@@ -476,6 +580,72 @@ export async function runDueReminderScan(now = new Date()) {
       });
       if (result.skippedDuplicate) results.duplicates += 1;
       else results.appointments += result.sent || 0;
+    }
+  }
+
+  const { rows: hydrationRows } = await query(
+    `
+      SELECT
+        cp.family_id,
+        cp.child_id,
+        c.first_name,
+        cp.daily_fluid_target_ml,
+        cp.hydration_checkpoints,
+        cp.hydration_notification_tone,
+        cp.quiet_hours
+      FROM child_profiles cp
+      JOIN children c ON c.id = cp.child_id
+      WHERE c.deleted_at IS NULL
+        AND cp.daily_fluid_target_ml IS NOT NULL
+        AND cp.daily_fluid_target_ml > 0
+    `,
+  );
+
+  for (const row of hydrationRows) {
+    if (isInQuietHours(row.quiet_hours, current.time)) continue;
+
+    const checkpoint = normaliseHydrationCheckpoints(row.hydration_checkpoints).find(
+      (item) => Math.abs(currentMinutes - minutesFromTime(item.time)) <= 5,
+    );
+    if (!checkpoint) continue;
+
+    const { rows: drinkRows } = await query(
+      `
+        SELECT data
+        FROM care_logs
+        WHERE family_id = $1
+          AND child_id = $2
+          AND category = 'food'
+          AND deleted_at IS NULL
+          AND log_date::text = $3
+      `,
+      [row.family_id, row.child_id, current.date],
+    );
+
+    const loggedMl = drinkRows.reduce(
+      (sum, logRow) => sum + fluidMlFromLogData(logRow.data || {}),
+      0,
+    );
+    const expectedMl = (Number(row.daily_fluid_target_ml || 0) * checkpoint.percent) / 100;
+    if (!expectedMl || loggedMl >= expectedMl) continue;
+
+    const users = await familyReminderUsers(row.family_id, "hydration");
+    for (const user of users) {
+      const directTone = row.hydration_notification_tone === "direct";
+      const result = await sendReminderOnce({
+        user,
+        familyId: row.family_id,
+        childId: row.child_id,
+        type: "hydration",
+        reminderKey: `hydration:${row.child_id}:${current.date}:${checkpoint.time}:${checkpoint.percent}`,
+        title: directTone ? "Hydration reminder" : "Hydration check-in",
+        body: directTone
+          ? `${row.first_name}: ${Math.round(loggedMl)}ml logged so far. Today's ${checkpoint.percent}% checkpoint is about ${Math.round(expectedMl)}ml.`
+          : `${row.first_name}: ${Math.round(loggedMl)}ml logged so far. The ${checkpoint.percent}% checkpoint is about ${Math.round(expectedMl)}ml by ${checkpoint.time}.`,
+        url: "/",
+      });
+      if (result.skippedDuplicate) results.duplicates += 1;
+      else results.hydration += result.sent || 0;
     }
   }
 

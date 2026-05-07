@@ -74,6 +74,30 @@ const normalizeModuleVisibility = (value = {}) => ({
   ...(value && typeof value === "object" ? value : {}),
 });
 
+const DEFAULT_HYDRATION_CHECKPOINTS = [
+  { time: "13:00", percent: 50 },
+  { time: "16:30", percent: 70 },
+  { time: "20:00", percent: 100 },
+];
+
+const normaliseHydrationCheckpoints = (value) => {
+  const rawItems = Array.isArray(value) ? value : DEFAULT_HYDRATION_CHECKPOINTS;
+  const checkpoints = rawItems
+    .map((item) => ({
+      time: String(item?.time || "").slice(0, 5),
+      percent: Number.parseInt(item?.percent, 10),
+    }))
+    .filter(
+      (item) =>
+        /^\d{2}:\d{2}$/.test(item.time) &&
+        Number.isFinite(item.percent) &&
+        item.percent > 0,
+    )
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  return checkpoints.length ? checkpoints : DEFAULT_HYDRATION_CHECKPOINTS;
+};
+
 const todayValue = () => {
   const d = new Date();
   const day = String(d.getDate()).padStart(2, "0");
@@ -3804,6 +3828,27 @@ export default function KaylenCareMonitorDashboard({
     const fluidPercent = fluidTargetMl
       ? Math.min(100, Math.round((fluidMl / fluidTargetMl) * 100))
       : 0;
+    const hydrationCheckpoints = normaliseHydrationCheckpoints(
+      childProfile.hydrationCheckpoints,
+    ).map((checkpoint) => {
+      const expectedMl = fluidTargetMl
+        ? Math.round((fluidTargetMl * checkpoint.percent) / 100)
+        : 0;
+      const met = fluidTargetMl ? fluidMl >= expectedMl : false;
+      const isPast = nowTimeValue() >= checkpoint.time;
+      return {
+        ...checkpoint,
+        expectedMl,
+        met,
+        isPast,
+        statusLabel: met ? "Met" : isPast ? "Below" : "Later",
+      };
+    });
+    const nextHydrationCheckpoint =
+      hydrationCheckpoints.find((checkpoint) => !checkpoint.met && !checkpoint.isPast) ||
+      hydrationCheckpoints.find((checkpoint) => !checkpoint.met) ||
+      hydrationCheckpoints[hydrationCheckpoints.length - 1] ||
+      null;
 
     const getWindowRange = (windowName) => {
       if (windowName === "morning") return { start: 6, end: 12 };
@@ -3954,6 +3999,8 @@ export default function KaylenCareMonitorDashboard({
       fluidMl,
       fluidTargetMl,
       fluidPercent,
+      hydrationCheckpoints,
+      nextHydrationCheckpoint,
       drinkCount: todayDrinkEntries.length,
       toiletingCount: todayToiletingEntries.length,
       medicationTaken: allRequiredMedication.filter((item) => item.status === "taken")
@@ -3963,7 +4010,12 @@ export default function KaylenCareMonitorDashboard({
       requiredMedication,
       alerts,
     };
-  }, [childProfile.dailyFluidTargetMl, profileMedicationOptions, sharedLog]);
+  }, [
+    childProfile.dailyFluidTargetMl,
+    childProfile.hydrationCheckpoints,
+    profileMedicationOptions,
+    sharedLog,
+  ]);
 
   useEffect(() => {
     const reportCardCount = 3;
@@ -9925,6 +9977,20 @@ export default function KaylenCareMonitorDashboard({
             </span>
           ) : null}
         </div>
+        {target ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {normaliseHydrationCheckpoints(childProfile.hydrationCheckpoints).map(
+              (checkpoint) => (
+                <span
+                  key={`report-hydration-${checkpoint.time}-${checkpoint.percent}`}
+                  className="rounded-full bg-sky-50 px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-sky-700"
+                >
+                  {checkpoint.percent}% by {checkpoint.time}
+                </span>
+              ),
+            )}
+          </div>
+        ) : null}
         {values.length ? (
           <>
             <div className="mt-3 grid h-36 grid-cols-[38px_minmax(0,1fr)] gap-2">
@@ -13688,6 +13754,38 @@ export default function KaylenCareMonitorDashboard({
                     }}
                   />
                 </div>
+                {todayDashboard.fluidTargetMl &&
+                todayDashboard.nextHydrationCheckpoint ? (
+                  <div className="mt-3 rounded-xl border border-sky-100 bg-white/80 px-3 py-2">
+                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-700">
+                      Next checkpoint
+                    </p>
+                    <p className="mt-1 text-xs font-bold leading-5 text-slate-600">
+                      {todayDashboard.nextHydrationCheckpoint.percent}% by{" "}
+                      {todayDashboard.nextHydrationCheckpoint.time} · about{" "}
+                      {todayDashboard.nextHydrationCheckpoint.expectedMl}ml
+                    </p>
+                  </div>
+                ) : null}
+                {todayDashboard.fluidTargetMl ? (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {todayDashboard.hydrationCheckpoints.map((checkpoint) => (
+                      <span
+                        key={`${checkpoint.time}-${checkpoint.percent}`}
+                        className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
+                          checkpoint.met
+                            ? "bg-emerald-100 text-emerald-700"
+                            : checkpoint.isPast
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-white text-sky-700"
+                        }`}
+                      >
+                        {checkpoint.percent}% {checkpoint.time}:{" "}
+                        {checkpoint.statusLabel}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
                 {!todayDashboard.fluidTargetMl ? (
                   <button
                     type="button"
