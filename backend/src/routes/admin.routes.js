@@ -505,6 +505,13 @@ async function buildNeedsAttentionSummary() {
         LEFT JOIN families f ON f.id = fm.family_id AND f.deleted_at IS NULL
         WHERE u.deleted_at IS NULL
           AND u.last_login_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1
+            FROM care_logs cl
+            WHERE cl.created_by_user_id = u.id
+              AND cl.deleted_at IS NULL
+            LIMIT 1
+          )
         GROUP BY u.id, u.full_name, u.email
         ORDER BY u.created_at DESC
         LIMIT 10
@@ -620,9 +627,17 @@ adminRouter.get(
       query(
         `
           SELECT count(*)::int AS count
-          FROM users
-          WHERE deleted_at IS NULL
-            AND last_login_at >= now() - interval '7 days'
+          FROM users u
+          WHERE u.deleted_at IS NULL
+            AND COALESCE(
+              u.last_login_at,
+              (
+                SELECT max(cl.created_at)
+                FROM care_logs cl
+                WHERE cl.created_by_user_id = u.id
+                  AND cl.deleted_at IS NULL
+              )
+            ) >= now() - interval '7 days'
         `,
       ),
       query(
@@ -2141,6 +2156,7 @@ adminRouter.get(
           u.platform_admin_notes AS "platformAdminNotes",
           u.created_at AS "createdAt",
           u.last_login_at AS "lastLoginAt",
+          COALESCE(u.last_login_at, max(cl.created_at)) AS "lastSeenAt",
           count(DISTINCT fm.family_id)::int AS "familyCount",
           count(DISTINCT cl.id)::int AS "logCount",
           primary_subscription.plan AS "plan",
@@ -2188,7 +2204,16 @@ adminRouter.get(
           platform_status AS "platformStatus",
           platform_admin_notes AS "platformAdminNotes",
           created_at AS "createdAt",
-          last_login_at AS "lastLoginAt"
+          last_login_at AS "lastLoginAt",
+          COALESCE(
+            last_login_at,
+            (
+              SELECT max(cl.created_at)
+              FROM care_logs cl
+              WHERE cl.created_by_user_id = users.id
+                AND cl.deleted_at IS NULL
+            )
+          ) AS "lastSeenAt"
         FROM users
         WHERE id = $1
           AND deleted_at IS NULL

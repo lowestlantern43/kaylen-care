@@ -4958,8 +4958,8 @@ function WorkspaceGate({ session, onLogout }) {
     }).format(Number(value || 0));
 
   const accountHealthForUser = (user) => {
-    const lastLoginAt = safeDate(user?.lastLoginAt);
-    if (!lastLoginAt) {
+    const lastSeenAt = safeDate(user?.lastSeenAt || user?.lastLoginAt);
+    if (!lastSeenAt && !Number(user?.logCount || 0)) {
       return {
         label: "Inactive",
         tone: "red",
@@ -4968,7 +4968,16 @@ function WorkspaceGate({ session, onLogout }) {
       };
     }
 
-    const age = now.getTime() - lastLoginAt.getTime();
+    if (!lastSeenAt && Number(user?.logCount || 0) > 0) {
+      return {
+        label: "Active",
+        tone: "green",
+        dotClass: "bg-emerald-500",
+        badgeClass: "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+    }
+
+    const age = now.getTime() - lastSeenAt.getTime();
     if (age <= sevenDaysInMs) {
       return {
         label: "Active",
@@ -4997,19 +5006,21 @@ function WorkspaceGate({ session, onLogout }) {
 
   const matchesAccountFilter = (user) => {
     const lastLoginAt = safeDate(user.lastLoginAt);
-    const age = lastLoginAt ? now.getTime() - lastLoginAt.getTime() : null;
+    const lastSeenAt = safeDate(user.lastSeenAt || user.lastLoginAt);
+    const hasActivity = Boolean(lastSeenAt || Number(user.logCount || 0) > 0);
+    const age = lastSeenAt ? now.getTime() - lastSeenAt.getTime() : null;
 
     if (platformAccountFilter === "active-today") {
-      return Boolean(lastLoginAt && isSameDay(lastLoginAt));
+      return Boolean(lastSeenAt && isSameDay(lastSeenAt));
     }
     if (platformAccountFilter === "last-7-days") {
-      return Boolean(lastLoginAt && age <= sevenDaysInMs);
+      return Boolean(lastSeenAt && age <= sevenDaysInMs);
     }
     if (platformAccountFilter === "inactive") {
-      return !lastLoginAt || age > thirtyDaysInMs;
+      return !hasActivity || (lastSeenAt && age > thirtyDaysInMs);
     }
     if (platformAccountFilter === "never") {
-      return !lastLoginAt;
+      return !lastLoginAt && !hasActivity;
     }
     return true;
   };
@@ -5041,6 +5052,24 @@ function WorkspaceGate({ session, onLogout }) {
   };
 
   const attentionData = platformData.overview?.needsAttention || {};
+  const effectiveNeverLoggedInAccounts = (
+    attentionData.accountsNeverLoggedIn || []
+  ).filter((account) => {
+    const matchingUser = platformData.users.find(
+      (user) =>
+        String(user.id || "") === String(account.userId || "") ||
+        String(user.email || "").toLowerCase() ===
+          String(account.email || "").toLowerCase(),
+    );
+
+    if (!matchingUser) return true;
+
+    return (
+      !safeDate(matchingUser.lastLoginAt) &&
+      !safeDate(matchingUser.lastSeenAt) &&
+      Number(matchingUser.logCount || 0) === 0
+    );
+  });
   const countAttentionRows = (rows = []) =>
     rows.reduce((total, row) => total + (Number(row.count) || 1), 0);
   const openFirstAttentionFamily = (rows = []) => {
@@ -5110,9 +5139,9 @@ function WorkspaceGate({ session, onLogout }) {
     {
       id: "never-logged-in",
       label: "Never logged in",
-      count: countAttentionRows(attentionData.accountsNeverLoggedIn || []),
+      count: countAttentionRows(effectiveNeverLoggedInAccounts),
       detail:
-        attentionData.accountsNeverLoggedIn?.[0]?.email ||
+        effectiveNeverLoggedInAccounts[0]?.email ||
         "Accounts created but not used yet",
       tone: "border-slate-200 bg-slate-50 text-slate-800",
       onClick: () => {
@@ -5157,7 +5186,7 @@ function WorkspaceGate({ session, onLogout }) {
     {
       id: "never-logged-in",
       label: "Never logged in",
-      value: countAttentionRows(attentionData.accountsNeverLoggedIn || []),
+      value: countAttentionRows(effectiveNeverLoggedInAccounts),
       detail: "Accounts created but not used yet",
       tone: "border-slate-200 bg-slate-50 text-slate-800",
       onClick: () => {
@@ -8436,7 +8465,12 @@ function WorkspaceGate({ session, onLogout }) {
                           <p className="mt-1 text-sm text-slate-600">{user.email}</p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">
                             {user.familyCount} families - {user.logCount || 0} logs
-                            {" - "}Last seen: {lastSeenLabel(user.lastLoginAt)}
+                            {" - "}Last seen:{" "}
+                            {user.lastSeenAt || user.lastLoginAt
+                              ? lastSeenLabel(user.lastSeenAt || user.lastLoginAt)
+                              : Number(user.logCount || 0) > 0
+                                ? "Activity recorded"
+                                : "Never logged in"}
                           </p>
                           </button>
                           <div className="hidden">
@@ -8532,7 +8566,8 @@ function WorkspaceGate({ session, onLogout }) {
                             </p>
                             <p className="mt-0.5 text-sm font-bold text-slate-900">
                               {formatPlatformDateTime(
-                                selectedPlatformUser.user.lastLoginAt,
+                                selectedPlatformUser.user.lastSeenAt ||
+                                  selectedPlatformUser.user.lastLoginAt,
                               )}
                             </p>
                           </div>
@@ -9534,6 +9569,16 @@ function WorkspaceGate({ session, onLogout }) {
                             selectedPlatformUser.user.lastLoginAt
                               ? new Date(
                                   selectedPlatformUser.user.lastLoginAt,
+                                ).toLocaleString()
+                              : "Never",
+                          ],
+                          [
+                            "Last seen",
+                            selectedPlatformUser.user.lastSeenAt ||
+                            selectedPlatformUser.user.lastLoginAt
+                              ? new Date(
+                                  selectedPlatformUser.user.lastSeenAt ||
+                                    selectedPlatformUser.user.lastLoginAt,
                                 ).toLocaleString()
                               : "Never",
                           ],
@@ -10680,7 +10725,10 @@ function WorkspaceGate({ session, onLogout }) {
                   </div>
                   <p className="mt-1 truncate text-sm font-semibold text-slate-500">
                     {selectedPlatformUser.user?.email || "No email"} - Last seen:{" "}
-                    {lastSeenLabel(selectedPlatformUser.user?.lastLoginAt)}
+                    {lastSeenLabel(
+                      selectedPlatformUser.user?.lastSeenAt ||
+                        selectedPlatformUser.user?.lastLoginAt,
+                    )}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
@@ -10760,6 +10808,13 @@ function WorkspaceGate({ session, onLogout }) {
                         "Last login",
                         formatPlatformDateTime(
                           selectedPlatformUser.user?.lastLoginAt,
+                        ),
+                      ],
+                      [
+                        "Last seen",
+                        formatPlatformDateTime(
+                          selectedPlatformUser.user?.lastSeenAt ||
+                            selectedPlatformUser.user?.lastLoginAt,
                         ),
                       ],
                       [
