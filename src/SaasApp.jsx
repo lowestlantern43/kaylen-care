@@ -2639,6 +2639,7 @@ function WorkspaceGate({ session, onLogout }) {
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPlatformAdmin, setShowPlatformAdmin] = useState(false);
   const [settingsTab, setSettingsTab] = useState("account");
+  const [careProfileTab, setCareProfileTab] = useState("general");
   const [members, setMembers] = useState([]);
   const [invitations, setInvitations] = useState([]);
   const [inviteForm, setInviteForm] = useState({ email: "", role: "parent" });
@@ -6830,8 +6831,30 @@ function WorkspaceGate({ session, onLogout }) {
                   This is included near the top of shareable reports for
                   hospital, school, EHCP and carer handovers.
                 </p>
+                <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+                  {[
+                    ["general", "General"],
+                    ["medication", "Medication"],
+                    ["fluids", "Fluid intake"],
+                    ["support", "Support notes"],
+                  ].map(([tabKey, label]) => (
+                    <button
+                      key={tabKey}
+                      type="button"
+                      onClick={() => setCareProfileTab(tabKey)}
+                      className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-black shadow-sm transition ${
+                        careProfileTab === tabKey
+                          ? "bg-slate-900 text-white"
+                          : "border border-slate-200 bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
+                  {careProfileTab === "medication" ? (
                   <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -7254,7 +7277,9 @@ function WorkspaceGate({ session, onLogout }) {
                       )}
                     </div>
                   </section>
+                  ) : null}
 
+                  {careProfileTab === "fluids" ? (
                   <section className="rounded-2xl border border-sky-100 bg-sky-50 p-4">
                     <h4 className="font-bold text-slate-900">
                       Daily fluid target
@@ -7416,25 +7441,30 @@ function WorkspaceGate({ session, onLogout }) {
                       ) : null}
                     </div>
                   </section>
+                  ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {[
-                      ["diagnosisNeeds", "Diagnosis / needs"],
-                      ["communicationStyle", "Communication style"],
-                      ["keyNeeds", "Key needs"],
-                      ["allergies", "Known allergies"],
-                      ["emergencyNotes", "Emergency notes"],
-                      ["sensoryNeeds", "Sensory needs / calming strategies"],
-                      ["likes", "Likes"],
-                      ["dislikes", "Dislikes"],
-                      ["triggers", "Triggers"],
-                      ["calmingStrategies", "Calming strategies"],
-                      ["eatingPreferences", "Eating preferences"],
-                      ["sleepPreferences", "Sleep preferences"],
-                      ["toiletingNotes", "Toileting notes"],
-                      ["schoolEhcpNotes", "School / EHCP notes"],
-                      ["medicalNotes", "Medical notes"],
-                    ].map(([field, label]) => (
+                  {["general", "support"].includes(careProfileTab) ? (
+                  <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                    {(careProfileTab === "general"
+                      ? [
+                          ["diagnosisNeeds", "Diagnosis / needs"],
+                          ["communicationStyle", "Communication style"],
+                          ["keyNeeds", "Key needs"],
+                          ["allergies", "Known allergies"],
+                          ["emergencyNotes", "Emergency notes"],
+                        ]
+                      : [
+                          ["sensoryNeeds", "Sensory needs / calming strategies"],
+                          ["likes", "Likes"],
+                          ["dislikes", "Dislikes"],
+                          ["triggers", "Triggers"],
+                          ["calmingStrategies", "Calming strategies"],
+                          ["eatingPreferences", "Eating preferences"],
+                          ["sleepPreferences", "Sleep preferences"],
+                          ["toiletingNotes", "Toileting notes"],
+                          ["schoolEhcpNotes", "School / EHCP notes"],
+                          ["medicalNotes", "Medical notes"],
+                        ]).map(([field, label]) => (
                       <label key={field} className="text-sm font-semibold text-slate-700">
                         {label}
                         <textarea
@@ -7452,6 +7482,7 @@ function WorkspaceGate({ session, onLogout }) {
                       </label>
                     ))}
                   </div>
+                  ) : null}
                   <button
                     className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={isSavingProfile}

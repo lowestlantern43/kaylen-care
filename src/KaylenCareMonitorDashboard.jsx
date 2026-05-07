@@ -13754,38 +13754,6 @@ export default function KaylenCareMonitorDashboard({
                     }}
                   />
                 </div>
-                {todayDashboard.fluidTargetMl &&
-                todayDashboard.nextHydrationCheckpoint ? (
-                  <div className="mt-3 rounded-xl border border-sky-100 bg-white/80 px-3 py-2">
-                    <p className="text-[11px] font-black uppercase tracking-[0.12em] text-sky-700">
-                      Next checkpoint
-                    </p>
-                    <p className="mt-1 text-xs font-bold leading-5 text-slate-600">
-                      {todayDashboard.nextHydrationCheckpoint.percent}% by{" "}
-                      {todayDashboard.nextHydrationCheckpoint.time} · about{" "}
-                      {todayDashboard.nextHydrationCheckpoint.expectedMl}ml
-                    </p>
-                  </div>
-                ) : null}
-                {todayDashboard.fluidTargetMl ? (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {todayDashboard.hydrationCheckpoints.map((checkpoint) => (
-                      <span
-                        key={`${checkpoint.time}-${checkpoint.percent}`}
-                        className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
-                          checkpoint.met
-                            ? "bg-emerald-100 text-emerald-700"
-                            : checkpoint.isPast
-                              ? "bg-amber-100 text-amber-800"
-                              : "bg-white text-sky-700"
-                        }`}
-                      >
-                        {checkpoint.percent}% {checkpoint.time}:{" "}
-                        {checkpoint.statusLabel}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
                 {!todayDashboard.fluidTargetMl ? (
                   <button
                     type="button"
