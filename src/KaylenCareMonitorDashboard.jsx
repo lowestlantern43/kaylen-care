@@ -145,6 +145,68 @@ const safeRandomId = () => {
   return randomUuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
+const screenshotImportRules = [
+  {
+    category: "medication",
+    label: "Medication",
+    keywords: ["med", "medicine", "tablet", "dose", "keppra", "calpol"],
+  },
+  {
+    category: "food",
+    label: "Food / Drink",
+    keywords: ["food", "meal", "drink", "milk", "water", "fluid", "breakfast", "lunch", "dinner"],
+  },
+  {
+    category: "sleep",
+    label: "Sleep",
+    keywords: ["sleep", "bed", "wake", "night", "nap"],
+  },
+  {
+    category: "toileting",
+    label: "Toileting",
+    keywords: ["toilet", "toileting", "wet", "bowel", "poo", "wee"],
+  },
+  {
+    category: "health",
+    label: "Health",
+    keywords: ["health", "pain", "temperature", "seizure", "illness", "sick"],
+  },
+  {
+    category: "behaviour",
+    label: "Behaviour",
+    keywords: ["behaviour", "meltdown", "distress", "trigger", "shutdown"],
+  },
+  {
+    category: "appointment",
+    label: "Appointment",
+    keywords: ["appointment", "hospital", "school", "ehcp", "therapy", "gp"],
+  },
+];
+
+const buildScreenshotImportSuggestion = ({ category, label, date, sourceText }) => ({
+  id: safeRandomId(),
+  category,
+  label,
+  logDate: date || todayIsoValue(),
+  time: "",
+  title: label,
+  notes: `Suggested from screenshot${sourceText ? `: ${sourceText}` : ""}`,
+  confirmed: false,
+});
+
+const extractScreenshotSuggestions = (file, date) => {
+  const sourceText = cleanFormText(file?.name || "")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[_-]+/g, " ");
+  const haystack = sourceText.toLowerCase();
+  const matchedRules = screenshotImportRules.filter((rule) =>
+    rule.keywords.some((keyword) => haystack.includes(keyword)),
+  );
+  return matchedRules.map((rule) =>
+    buildScreenshotImportSuggestion({ ...rule, date, sourceText }),
+  );
+};
+
 const medicationTimeWindows = ["morning", "afternoon", "evening"];
 const medicationWeekDays = [
   ["sun", 0],
@@ -650,6 +712,7 @@ export default function KaylenCareMonitorDashboard({
   accountAccess = null,
   moduleVisibility = DEFAULT_MODULE_VISIBILITY,
   showToast,
+  isScreenshotImportEnabled = false,
   useSaasApi = false,
 } = {}) {
   const childProfile = childProfileProp || {};
@@ -887,6 +950,13 @@ export default function KaylenCareMonitorDashboard({
     notes: "",
     outcome: "",
   });
+  const [screenshotImportForm, setScreenshotImportForm] = useState({
+    file: null,
+    previewUrl: "",
+    date: todayIsoValue(),
+    suggestions: [],
+  });
+  const [isSavingScreenshotImport, setIsSavingScreenshotImport] = useState(false);
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
@@ -1012,6 +1082,18 @@ export default function KaylenCareMonitorDashboard({
       color: "from-slate-500 to-indigo-600",
       soft: "bg-slate-50 border-slate-300",
     },
+    ...(isScreenshotImportEnabled
+      ? [
+          {
+            title: "Screenshot Import",
+            subtitle: "Hidden beta helper to review screenshots before saving logs",
+            button: "Open Import",
+            emoji: "IMG",
+            color: "from-cyan-500 to-slate-600",
+            soft: "bg-cyan-50 border-cyan-300",
+          },
+        ]
+      : []),
     {
       title: "Calendar",
       subtitle: "Monthly log overview",
@@ -1064,6 +1146,7 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const isSectionVisible = (section) => {
+    if (section.title === "Screenshot Import") return Boolean(isScreenshotImportEnabled);
     const moduleKey = sectionModuleKey(section.title);
     if (moduleKey === "hidden") return false;
     return moduleKey ? isModuleEnabled(moduleKey) : true;
@@ -1651,6 +1734,7 @@ export default function KaylenCareMonitorDashboard({
       "Document Vault",
       "Appointments",
       "Timeline",
+      "Screenshot Import",
       "Calendar",
     ].includes(sectionTitle);
 
@@ -1759,9 +1843,18 @@ export default function KaylenCareMonitorDashboard({
         );
       case "Calendar":
       case "Timeline":
+      case "Screenshot Import":
         return (
           <svg {...common}>
-            {sectionTitle === "Timeline" ? (
+            {sectionTitle === "Screenshot Import" ? (
+              <>
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <circle cx="8" cy="10" r="1.5" />
+                <path d="m5 17 4.5-4.5 3 3 2-2L19 18" />
+                <path d="M12 3v4" />
+                <path d="m9.5 5.5 2.5 2.5 2.5-2.5" />
+              </>
+            ) : sectionTitle === "Timeline" ? (
               <>
                 <path d="M4 6h16" />
                 <path d="M4 12h10" />
@@ -1901,6 +1994,14 @@ export default function KaylenCareMonitorDashboard({
       setMedicationSchedules([]);
     }
   }, [medicationScheduleStorageKey]);
+
+  useEffect(() => {
+    return () => {
+      if (screenshotImportForm.previewUrl) {
+        URL.revokeObjectURL(screenshotImportForm.previewUrl);
+      }
+    };
+  }, [screenshotImportForm.previewUrl]);
 
   const inputClassName =
     "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -2463,6 +2564,238 @@ export default function KaylenCareMonitorDashboard({
     setSyncState(failed.length ? "Failed" : "Synced");
     if (!failed.length) {
       await loadEntriesFromSupabase();
+    }
+  };
+
+  const resetScreenshotImport = () => {
+    setScreenshotImportForm((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        file: null,
+        previewUrl: "",
+        date: todayIsoValue(),
+        suggestions: [],
+      };
+    });
+  };
+
+  const handleScreenshotImportFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      showToast?.({
+        message: "Upload a screenshot image file.",
+        type: "warning",
+      });
+      event.target.value = "";
+      return;
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setScreenshotImportForm((current) => {
+      if (current.previewUrl) {
+        URL.revokeObjectURL(current.previewUrl);
+      }
+      return {
+        ...current,
+        file,
+        previewUrl,
+        suggestions: extractScreenshotSuggestions(file, current.date),
+      };
+    });
+  };
+
+  const addScreenshotSuggestion = (category = "health") => {
+    const rule =
+      screenshotImportRules.find((item) => item.category === category) ||
+      screenshotImportRules.find((item) => item.category === "health") ||
+      screenshotImportRules[0];
+
+    setScreenshotImportForm((current) => ({
+      ...current,
+      suggestions: [
+        ...current.suggestions,
+        buildScreenshotImportSuggestion({
+          ...rule,
+          date: current.date,
+          sourceText: "manual review",
+        }),
+      ],
+    }));
+  };
+
+  const updateScreenshotSuggestion = (id, updates) => {
+    setScreenshotImportForm((current) => ({
+      ...current,
+      suggestions: current.suggestions.map((suggestion) =>
+        suggestion.id === id ? { ...suggestion, ...updates } : suggestion,
+      ),
+    }));
+  };
+
+  const removeScreenshotSuggestion = (id) => {
+    setScreenshotImportForm((current) => ({
+      ...current,
+      suggestions: current.suggestions.filter((suggestion) => suggestion.id !== id),
+    }));
+  };
+
+  const buildScreenshotSuggestionPayload = (suggestion) => {
+    const normalizeIsoDate = (value) =>
+      /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : parseDateToIso(value);
+    const logDate =
+      normalizeIsoDate(suggestion.logDate) ||
+      normalizeIsoDate(screenshotImportForm.date) ||
+      todayIsoValue();
+    const base = {
+      childId,
+      category: suggestion.category,
+      logDate,
+      logTime: suggestion.time || "",
+      notes: suggestion.notes || "",
+    };
+    const source = "screenshot_import";
+    const title = suggestion.title || suggestion.label || "Suggested entry";
+
+    switch (suggestion.category) {
+      case "food":
+        return {
+          ...base,
+          data: {
+            type: "food",
+            item: title,
+            meal_context: "",
+            amount: "",
+            unit: "",
+            description: "",
+            intake_status: "normal",
+            source,
+          },
+        };
+      case "medication":
+        return {
+          ...base,
+          data: {
+            medicine: title,
+            dose: "",
+            status: "given",
+            given_by: "",
+            scheduled_window: "",
+            scheduled_day: "",
+            source,
+          },
+        };
+      case "sleep":
+        return {
+          ...base,
+          data: {
+            bedtime: suggestion.time || "",
+            wake_time: "",
+            wake_date: "",
+            quality: "",
+            night_wakings: "",
+            nap: "",
+            source,
+          },
+        };
+      case "toileting":
+        return {
+          ...base,
+          data: {
+            entry: title,
+            source,
+          },
+        };
+      case "behaviour":
+        return {
+          ...base,
+          data: {
+            behaviour_type: title,
+            severity: "",
+            duration: "",
+            triggers: [],
+            recovery_time: "",
+            what_helped: "",
+            source,
+          },
+        };
+      case "appointment":
+        return {
+          ...base,
+          data: {
+            title,
+            location: "",
+            professional: "",
+            category: "Other",
+            outcome: "",
+            source,
+          },
+        };
+      case "health":
+      default:
+        return {
+          ...base,
+          category: "health",
+          data: {
+            event: title,
+            duration: "",
+            happened: "",
+            action: "",
+            outcome: "",
+            source,
+          },
+        };
+    }
+  };
+
+  const saveConfirmedScreenshotSuggestions = async () => {
+    if (isReadOnly) return;
+    if (!familyId || !childId) {
+      showToast?.({
+        message: "Choose a child before saving suggested entries.",
+        type: "warning",
+      });
+      return;
+    }
+
+    const confirmedSuggestions = screenshotImportForm.suggestions.filter(
+      (suggestion) => suggestion.confirmed,
+    );
+
+    if (!confirmedSuggestions.length) {
+      showToast?.({
+        message: "Select at least one suggested entry to save.",
+        type: "info",
+      });
+      return;
+    }
+
+    setIsSavingScreenshotImport(true);
+    try {
+      for (const suggestion of confirmedSuggestions) {
+        await createCareLogWithOfflineQueue(
+          buildScreenshotSuggestionPayload(suggestion),
+        );
+      }
+      await loadEntriesFromSupabase();
+      resetScreenshotImport();
+      showToast?.({
+        message: `${confirmedSuggestions.length} suggested ${
+          confirmedSuggestions.length === 1 ? "entry" : "entries"
+        } saved for ${childName}`,
+        type: "success",
+      });
+    } catch (error) {
+      console.error("Screenshot import save failed:", error);
+      showToast?.({
+        message: error.message || "Suggested entries could not be saved.",
+        type: "error",
+      });
+    } finally {
+      setIsSavingScreenshotImport(false);
     }
   };
 
@@ -3141,6 +3474,8 @@ export default function KaylenCareMonitorDashboard({
         return "Record hospital, school, EHCP and care appointments with follow-up notes.";
       case "Timeline":
         return "Search across logs, documents, appointments and care history.";
+      case "Screenshot Import":
+        return "Hidden beta helper. Upload a screenshot, review suggested entries, then choose exactly what to save.";
       case "Calendar":
         return "Tap a date to review that day's logs.";
       default:
@@ -13412,6 +13747,254 @@ export default function KaylenCareMonitorDashboard({
       </>
     );
   };
+
+  const renderScreenshotImportForm = () => {
+    if (!isScreenshotImportEnabled) {
+      return (
+        <div className={cardClassName}>
+          <p className="text-sm font-bold text-slate-700">
+            Screenshot Import is currently hidden for this account.
+          </p>
+        </div>
+      );
+    }
+
+    const confirmedCount = screenshotImportForm.suggestions.filter(
+      (suggestion) => suggestion.confirmed,
+    ).length;
+
+    return (
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
+            Beta admin module
+          </p>
+          <h3 className="mt-1 text-lg font-black text-slate-950">
+            Screenshot Import Helper
+          </h3>
+          <p className="mt-2 text-sm leading-6 text-slate-700">
+            Upload a screenshot, choose the date it relates to, then review
+            suggested entries before anything is saved. The screenshot itself is
+            not stored by default.
+          </p>
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">
+            Screenshot date
+            <input
+              type="date"
+              className={inputClassName}
+              value={screenshotImportForm.date}
+              onChange={(event) => {
+                const nextDate = event.target.value;
+                setScreenshotImportForm((current) => ({
+                  ...current,
+                  date: nextDate,
+                  suggestions: current.suggestions.map((suggestion) => ({
+                    ...suggestion,
+                    logDate: suggestion.logDate || nextDate,
+                  })),
+                }));
+              }}
+            />
+          </label>
+
+          <label className="mt-4 block text-xs font-black uppercase tracking-[0.14em] text-slate-600">
+            Upload screenshot
+            <input
+              type="file"
+              accept="image/*"
+              className={inputClassName}
+              onChange={handleScreenshotImportFile}
+            />
+          </label>
+
+          {screenshotImportForm.previewUrl ? (
+            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <img
+                src={screenshotImportForm.previewUrl}
+                alt="Screenshot selected for import review"
+                className="max-h-72 w-full object-contain"
+              />
+            </div>
+          ) : null}
+        </div>
+
+        <div className={cardClassName}>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
+                Suggested entries
+              </p>
+              <h3 className="text-lg font-black text-slate-950">
+                Review before saving
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">
+                Tick only the entries you want to add. You can edit or remove
+                each suggestion first.
+              </p>
+            </div>
+            <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
+              {confirmedCount} selected
+            </span>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {screenshotImportRules.map((rule) => (
+              <button
+                key={rule.category}
+                type="button"
+                onClick={() => addScreenshotSuggestion(rule.category)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
+              >
+                + {rule.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 space-y-3">
+            {screenshotImportForm.suggestions.length ? (
+              screenshotImportForm.suggestions.map((suggestion) => (
+                <div
+                  key={suggestion.id}
+                  className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <label className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-800">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-300"
+                        checked={Boolean(suggestion.confirmed)}
+                        onChange={(event) =>
+                          updateScreenshotSuggestion(suggestion.id, {
+                            confirmed: event.target.checked,
+                          })
+                        }
+                      />
+                      Confirm this entry
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => removeScreenshotSuggestion(suggestion.id)}
+                      className="rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Category
+                      <select
+                        className={inputClassName}
+                        value={suggestion.category}
+                        onChange={(event) => {
+                          const rule = screenshotImportRules.find(
+                            (item) => item.category === event.target.value,
+                          );
+                          updateScreenshotSuggestion(suggestion.id, {
+                            category: event.target.value,
+                            label: rule?.label || suggestion.label,
+                          });
+                        }}
+                      >
+                        {screenshotImportRules.map((rule) => (
+                          <option key={rule.category} value={rule.category}>
+                            {rule.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Date
+                      <input
+                        type="date"
+                        className={inputClassName}
+                        value={suggestion.logDate || screenshotImportForm.date}
+                        onChange={(event) =>
+                          updateScreenshotSuggestion(suggestion.id, {
+                            logDate: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Time
+                      <input
+                        type="time"
+                        className={inputClassName}
+                        value={suggestion.time || ""}
+                        onChange={(event) =>
+                          updateScreenshotSuggestion(suggestion.id, {
+                            time: event.target.value,
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                      Title
+                      <input
+                        className={inputClassName}
+                        value={suggestion.title || ""}
+                        onChange={(event) =>
+                          updateScreenshotSuggestion(suggestion.id, {
+                            title: event.target.value,
+                          })
+                        }
+                        placeholder="Suggested entry title"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                    Notes
+                    <textarea
+                      className={`${inputClassName} min-h-[92px] resize-y`}
+                      value={suggestion.notes || ""}
+                      onChange={(event) =>
+                        updateScreenshotSuggestion(suggestion.id, {
+                          notes: event.target.value,
+                        })
+                      }
+                      placeholder="Add context before saving"
+                    />
+                  </label>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
+                No suggested entries yet. Upload a screenshot or add a
+                suggestion manually using the buttons above.
+              </div>
+            )}
+          </div>
+
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              disabled={isReadOnly || isSavingScreenshotImport || !confirmedCount}
+              onClick={saveConfirmedScreenshotSuggestions}
+              className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {isSavingScreenshotImport
+                ? "Saving..."
+                : `Save ${confirmedCount || ""} confirmed ${
+                    confirmedCount === 1 ? "entry" : "entries"
+                  }`}
+            </button>
+            <button
+              type="button"
+              onClick={resetScreenshotImport}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
+            >
+              Start again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
   const renderActiveForm = () => {
     if (!activeSection) return null;
 
@@ -13440,6 +14023,8 @@ export default function KaylenCareMonitorDashboard({
         return renderAppointmentsForm();
       case "Timeline":
         return renderUnifiedTimelineForm();
+      case "Screenshot Import":
+        return renderScreenshotImportForm();
       case "Calendar":
         return renderCalendarForm();
       default:

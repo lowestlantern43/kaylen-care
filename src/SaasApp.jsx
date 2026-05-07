@@ -10727,6 +10727,10 @@ function WorkspaceGate({ session, onLogout }) {
           accountAccess={selectedFamilyAccess}
           moduleVisibility={moduleVisibility}
           showToast={showToast}
+          isScreenshotImportEnabled={
+            Boolean(session?.user?.isPlatformAdmin) ||
+            selectedFamilyAccess?.reason === "beta"
+          }
           useSaasApi
         />
       </DashboardErrorBoundary>
