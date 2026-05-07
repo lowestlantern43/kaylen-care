@@ -3109,6 +3109,20 @@ export default function KaylenCareMonitorDashboard({
     });
   };
 
+  const moveToPreviousScreenshotSuggestion = (currentId) => {
+    setScreenshotImportForm((current) => {
+      const index = current.suggestions.findIndex(
+        (suggestion) => suggestion.id === currentId,
+      );
+      const previous =
+        index > 0 ? current.suggestions[index - 1] : current.suggestions[0];
+      return {
+        ...current,
+        activeSuggestionId: previous?.id || current.activeSuggestionId,
+      };
+    });
+  };
+
   const buildScreenshotSuggestionPayload = (suggestion) => {
     const normalizeIsoDate = (value) =>
       /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : parseDateToIso(value);
@@ -14267,9 +14281,6 @@ export default function KaylenCareMonitorDashboard({
       );
     }
 
-    const confirmedCount = screenshotImportForm.suggestions.filter(
-      (suggestion) => suggestion.confirmed,
-    ).length;
     const groupedSuggestions = screenshotImportRules
       .map((rule) => ({
         ...rule,
@@ -14299,6 +14310,23 @@ export default function KaylenCareMonitorDashboard({
     const selectedRule =
       screenshotImportRules.find((rule) => rule.category === selectedCategory) ||
       screenshotImportRules.find((rule) => rule.category === "health");
+    const activeSectionPreview = {
+      title: selectedRule?.label || "Suggested entry",
+      color:
+        selectedCategory === "food"
+          ? "from-amber-400 to-orange-500"
+          : selectedCategory === "medication"
+            ? "from-rose-400 to-pink-500"
+            : selectedCategory === "sleep"
+              ? "from-indigo-400 to-purple-500"
+              : selectedCategory === "toileting"
+                ? "from-sky-400 to-blue-500"
+                : selectedCategory === "behaviour"
+                  ? "from-purple-400 to-fuchsia-500"
+                  : selectedCategory === "appointment"
+                    ? "from-blue-400 to-indigo-500"
+                    : "from-emerald-400 to-green-500",
+    };
     const activeCanImport =
       Boolean(activeSuggestion?.title?.trim()) &&
       Boolean(activeSuggestion?.logDate) &&
@@ -14315,16 +14343,27 @@ export default function KaylenCareMonitorDashboard({
     return (
       <div className="space-y-4">
         <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
-            Beta admin module
-          </p>
-          <h3 className="mt-1 text-lg font-black text-slate-950">
-            Screenshot Import Helper
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-700">
-            Upload a screenshot, then review each suggestion one at a time.
-            Nothing is saved until you import the current entry.
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
+                Beta admin module
+              </p>
+              <h3 className="mt-1 text-lg font-black text-slate-950">
+                Screenshot Import Helper
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                Upload a screenshot, then approve each detected item using a normal
+                FamilyTrack-style form.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={closeSection}
+              className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         <div className={cardClassName}>
@@ -14370,7 +14409,7 @@ export default function KaylenCareMonitorDashboard({
               <img
                 src={screenshotImportForm.previewUrl}
                 alt="Screenshot selected for import review"
-                className="max-h-56 w-full object-contain"
+                className="max-h-52 w-full object-contain"
               />
             </div>
           ) : null}
@@ -14385,8 +14424,7 @@ export default function KaylenCareMonitorDashboard({
           screenshotImportForm.file &&
           !screenshotImportForm.extractedText ? (
             <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              We couldn't read this screenshot. You can add suggestions manually
-              below.
+              We couldn't read this screenshot. You can add suggestions manually below.
               {screenshotImportForm.ocrError ? (
                 <span className="mt-1 block text-xs font-bold">
                   {screenshotImportForm.ocrError}
@@ -14398,7 +14436,7 @@ export default function KaylenCareMonitorDashboard({
           {screenshotImportForm.extractedText ? (
             <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
               <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-                OCR text found
+                Show OCR details
               </summary>
               <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-50">
                 {screenshotImportForm.extractedText}
@@ -14415,8 +14453,8 @@ export default function KaylenCareMonitorDashboard({
               </p>
               <h3 className="text-lg font-black text-slate-950">
                 {totalSuggestions
-                  ? `Suggestion ${activeIndex + 1} of ${totalSuggestions}`
-                  : "No suggestions yet"}
+                  ? `Item ${activeIndex + 1} of ${totalSuggestions}`
+                  : "No detected items yet"}
               </h3>
               <p className="mt-1 text-sm font-semibold text-slate-600">
                 {reviewedCount} reviewed
@@ -14427,7 +14465,7 @@ export default function KaylenCareMonitorDashboard({
               onClick={() => addScreenshotSuggestion("needs_review")}
               className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
             >
-              + Add suggestion
+              + Add item
             </button>
           </div>
 
@@ -14458,39 +14496,73 @@ export default function KaylenCareMonitorDashboard({
             </div>
           ) : (
             <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              Upload a screenshot or add a suggestion manually.
+              Upload a screenshot or add an item manually.
             </div>
           )}
         </div>
 
         {activeSuggestion ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
-                  {categoryLabel}
-                </p>
-                <h3 className="mt-1 text-lg font-black text-slate-950">
-                  {activeSuggestion.time || "No time"}{" "}
-                  {activeSuggestion.endTime ? `- ${activeSuggestion.endTime}` : ""}
-                  {activeSuggestion.time || activeSuggestion.endTime ? " · " : ""}
-                  {activeSuggestion.title || "Suggested entry"}
-                </h3>
-                {activeSuggestion.detail ? (
-                  <p className="mt-1 text-sm font-semibold text-slate-600">
-                    {activeSuggestion.detail}
-                  </p>
-                ) : null}
+          <div className="relative rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="absolute -top-3 right-5 flex h-12 w-12 items-center justify-center rounded-full border-4 border-white bg-sky-100 text-sm font-black text-sky-800 shadow-md">
+              {childName?.slice(0, 1) || "C"}
+            </div>
+            <div className="flex items-start gap-3 pr-12">
+              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${activeSectionPreview.color} text-white shadow-md`}>
+                {renderSectionIcon(
+                  selectedCategory === "food"
+                    ? "Food Diary"
+                    : selectedCategory === "medication"
+                      ? "Medication"
+                      : selectedCategory === "sleep"
+                        ? "Sleep"
+                        : selectedCategory === "toileting"
+                          ? "Toileting"
+                          : selectedCategory === "behaviour"
+                            ? "Behaviour"
+                            : selectedCategory === "appointment"
+                              ? "Appointments"
+                              : "Health",
+                  "h-7 w-7",
+                )}
               </div>
-              {activeNeedsReview ? (
-                <span className="w-fit rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-800">
-                  Needs review
-                </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
+                  Item {activeIndex + 1} of {totalSuggestions}
+                </p>
+                <h3 className="mt-1 text-xl font-black text-slate-950">
+                  Review {categoryLabel}
+                </h3>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                  OCR pre-filled this FamilyTrack form. Edit anything needed before saving.
+                </p>
+              </div>
+            </div>
+
+            {activeNeedsReview ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
+                This item needs review. Choose the matching form before saving.
+              </div>
+            ) : null}
+
+            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Detected summary
+              </p>
+              <p className="mt-1 text-sm font-black text-slate-950">
+                {activeSuggestion.time || "No time"}
+                {activeSuggestion.endTime ? ` - ${activeSuggestion.endTime}` : ""}
+                {activeSuggestion.time || activeSuggestion.endTime ? " - " : ""}
+                {activeSuggestion.title || "Suggested entry"}
+              </p>
+              {activeSuggestion.detail ? (
+                <p className="mt-1 text-sm font-semibold text-slate-600">
+                  {activeSuggestion.detail}
+                </p>
               ) : null}
             </div>
 
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 Matching FamilyTrack form
                 <select
                   className={inputClassName}
@@ -14514,7 +14586,7 @@ export default function KaylenCareMonitorDashboard({
                     ))}
                 </select>
               </label>
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 Date
                 <input
                   type="date"
@@ -14525,7 +14597,7 @@ export default function KaylenCareMonitorDashboard({
                   }
                 />
               </label>
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 Start time
                 <input
                   type="time"
@@ -14536,7 +14608,7 @@ export default function KaylenCareMonitorDashboard({
                   }
                 />
               </label>
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 End time
                 <input
                   type="time"
@@ -14547,7 +14619,7 @@ export default function KaylenCareMonitorDashboard({
                   }
                 />
               </label>
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 {selectedRule?.label || "Entry"} title/type
                 <input
                   className={inputClassName}
@@ -14558,7 +14630,7 @@ export default function KaylenCareMonitorDashboard({
                   placeholder="Entry title"
                 />
               </label>
-              <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
                 Key detail
                 <input
                   className={inputClassName}
@@ -14577,7 +14649,7 @@ export default function KaylenCareMonitorDashboard({
               </label>
             </div>
 
-            <label className="mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+            <label className={`${cardClassName} mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
               Notes
               <textarea
                 className={`${inputClassName} min-h-[92px] resize-y`}
@@ -14585,18 +14657,17 @@ export default function KaylenCareMonitorDashboard({
                 onChange={(event) =>
                   updateActiveSuggestion({ notes: event.target.value })
                 }
-                placeholder="Add context before importing"
+                placeholder="Add context before saving"
               />
             </label>
 
             {!activeCanImport ? (
               <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                This suggestion needs a little more detail before it can be
-                imported into the matching FamilyTrack log.
+                This item needs a little more detail before it can be saved as a normal FamilyTrack log.
               </div>
             ) : null}
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-4">
+            <div className="mt-4 grid gap-2 sm:grid-cols-5">
               <button
                 type="button"
                 disabled={!activeCanImport || isSavingScreenshotImport}
@@ -14607,23 +14678,39 @@ export default function KaylenCareMonitorDashboard({
                     label: selectedRule?.label || activeSuggestion.label,
                   })
                 }
-                className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300 sm:col-span-2"
+                className={`rounded-2xl bg-gradient-to-r ${activeSectionPreview.color} px-4 py-3 text-sm font-black text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2`}
               >
-                {isSavingScreenshotImport ? "Importing..." : "Import this entry"}
+                {isSavingScreenshotImport ? "Saving..." : "Approve and save"}
+              </button>
+              <button
+                type="button"
+                onClick={() => moveToPreviousScreenshotSuggestion(activeSuggestion.id)}
+                disabled={activeIndex <= 0}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Back
               </button>
               <button
                 type="button"
                 onClick={() => moveToNextScreenshotSuggestion(activeSuggestion.id)}
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
               >
-                Skip
+                Skip this item
+              </button>
+              <button
+                type="button"
+                onClick={() => moveToNextScreenshotSuggestion(activeSuggestion.id)}
+                disabled={activeIndex >= totalSuggestions - 1}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
               </button>
               <button
                 type="button"
                 onClick={() => removeScreenshotSuggestion(activeSuggestion.id)}
-                className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-700"
+                className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-700 sm:col-span-5"
               >
-                Delete
+                Delete suggestion
               </button>
             </div>
           </div>
@@ -14638,341 +14725,8 @@ export default function KaylenCareMonitorDashboard({
         </button>
       </div>
     );
-
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
-          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
-            Beta admin module
-          </p>
-          <h3 className="mt-1 text-lg font-black text-slate-950">
-            Screenshot Import Helper
-          </h3>
-          <p className="mt-2 text-sm leading-6 text-slate-700">
-            Upload a screenshot, choose the date it relates to, then review
-            suggested entries before anything is saved. The screenshot itself is
-            not stored by default.
-          </p>
-        </div>
-
-        <div className={cardClassName}>
-          <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-            Screenshot date
-            <input
-              type="date"
-              className={inputClassName}
-              value={screenshotImportForm.date}
-              onChange={(event) => {
-                const nextDate = event.target.value;
-                setScreenshotImportForm((current) => ({
-                  ...current,
-                  date: nextDate,
-                  suggestions: current.extractedText
-                    ? extractScreenshotSuggestionsFromText(
-                        current.extractedText,
-                        nextDate,
-                      )
-                    : current.suggestions.map((suggestion) => ({
-                        ...suggestion,
-                        logDate: nextDate,
-                      })),
-                }));
-              }}
-            />
-          </label>
-
-          <label className="mt-4 block text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-            Upload screenshot
-            <input
-              type="file"
-              accept="image/*"
-              className={inputClassName}
-              onChange={handleScreenshotImportFile}
-            />
-          </label>
-
-          {screenshotImportForm.previewUrl ? (
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <img
-                src={screenshotImportForm.previewUrl}
-                alt="Screenshot selected for import review"
-                className="max-h-72 w-full object-contain"
-              />
-            </div>
-          ) : null}
-
-          {isReadingScreenshot ? (
-            <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
-              Reading screenshot...
-            </div>
-          ) : null}
-
-          {!isReadingScreenshot && screenshotImportForm.file && !screenshotImportForm.extractedText ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              We couldn't read this screenshot. You can add suggestions manually
-              below.
-              {screenshotImportForm.ocrError ? (
-                <span className="mt-1 block text-xs font-bold">
-                  {screenshotImportForm.ocrError}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {screenshotImportForm.extractedText ? (
-            <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-                OCR text found
-              </summary>
-              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-50">
-                {screenshotImportForm.extractedText}
-              </pre>
-            </details>
-          ) : null}
-        </div>
-
-        <div className={cardClassName}>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
-                Suggested entries
-              </p>
-              <h3 className="text-lg font-black text-slate-950">
-                Review before saving
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Tick only the entries you want to add. You can edit or remove
-                each suggestion first.
-              </p>
-            </div>
-            <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-700">
-              {confirmedCount} selected
-            </span>
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {screenshotImportRules.map((rule) => (
-              <button
-                key={rule.category}
-                type="button"
-                onClick={() => addScreenshotSuggestion(rule.category)}
-                className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
-              >
-                + {rule.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 space-y-3">
-            {screenshotImportForm.suggestions.length ? (
-              groupedSuggestions.map((group) => (
-                <div key={group.category} className="space-y-2">
-                  <div className="flex items-center justify-between gap-2">
-                    <h4 className="text-sm font-black text-slate-900">
-                      {group.label}
-                    </h4>
-                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black text-slate-600">
-                      {group.suggestions.length}
-                    </span>
-                  </div>
-                  {group.suggestions.map((suggestion) => (
-                    <div
-                      key={suggestion.id}
-                      className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-                    >
-                      <div className="flex items-center gap-3">
-                        <label className="flex shrink-0 items-center">
-                          <input
-                            type="checkbox"
-                            className="h-4 w-4 rounded border-slate-300"
-                            checked={Boolean(suggestion.confirmed)}
-                            onChange={(event) =>
-                              updateScreenshotSuggestion(suggestion.id, {
-                                confirmed: event.target.checked,
-                              })
-                            }
-                          />
-                        </label>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
-                              {suggestion.time || "No time"}
-                              {suggestion.endTime ? `-${suggestion.endTime}` : ""}
-                            </span>
-                            <p className="truncate text-sm font-black text-slate-950">
-                              {suggestion.title || suggestion.label}
-                            </p>
-                          </div>
-                          {suggestion.detail ? (
-                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-600">
-                              {suggestion.detail}
-                            </p>
-                          ) : null}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateScreenshotSuggestion(suggestion.id, {
-                              expanded: !suggestion.expanded,
-                            })
-                          }
-                          className="shrink-0 rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800"
-                        >
-                          {suggestion.expanded ? "Done" : "Edit"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => removeScreenshotSuggestion(suggestion.id)}
-                          className="shrink-0 rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700"
-                        >
-                          Remove
-                        </button>
-                      </div>
-
-                      {suggestion.expanded ? (
-                        <>
-                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              Category
-                              <select
-                                className={inputClassName}
-                                value={suggestion.category}
-                                onChange={(event) => {
-                                  const rule = screenshotImportRules.find(
-                                    (item) => item.category === event.target.value,
-                                  );
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    category: event.target.value,
-                                    label: rule?.label || suggestion.label,
-                                  });
-                                }}
-                              >
-                                {screenshotImportRules.map((rule) => (
-                                  <option key={rule.category} value={rule.category}>
-                                    {rule.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              Date
-                              <input
-                                type="date"
-                                className={inputClassName}
-                                value={suggestion.logDate || screenshotImportForm.date}
-                                onChange={(event) =>
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    logDate: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              Start time
-                              <input
-                                type="time"
-                                className={inputClassName}
-                                value={suggestion.time || ""}
-                                onChange={(event) =>
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    time: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              End time
-                              <input
-                                type="time"
-                                className={inputClassName}
-                                value={suggestion.endTime || ""}
-                                onChange={(event) =>
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    endTime: event.target.value,
-                                  })
-                                }
-                              />
-                            </label>
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              Title
-                              <input
-                                className={inputClassName}
-                                value={suggestion.title || ""}
-                                onChange={(event) =>
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    title: event.target.value,
-                                  })
-                                }
-                                placeholder="Suggested entry title"
-                              />
-                            </label>
-                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                              Detail
-                              <input
-                                className={inputClassName}
-                                value={suggestion.detail || ""}
-                                onChange={(event) =>
-                                  updateScreenshotSuggestion(suggestion.id, {
-                                    detail: event.target.value,
-                                  })
-                                }
-                                placeholder="Key detail"
-                              />
-                            </label>
-                          </div>
-
-                          <label className="mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                            Notes
-                            <textarea
-                              className={`${inputClassName} min-h-[92px] resize-y`}
-                              value={suggestion.notes || ""}
-                              onChange={(event) =>
-                                updateScreenshotSuggestion(suggestion.id, {
-                                  notes: event.target.value,
-                                })
-                              }
-                              placeholder="Add context before saving"
-                            />
-                          </label>
-                        </>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              ))
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-                No suggested entries yet. Upload a screenshot or add a
-                suggestion manually using the buttons above.
-              </div>
-            )}
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              disabled={isReadOnly || isSavingScreenshotImport || !confirmedCount}
-              onClick={saveConfirmedScreenshotSuggestions}
-              className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:bg-slate-300"
-            >
-              {isSavingScreenshotImport
-                ? "Saving..."
-                : `Save ${confirmedCount || ""} confirmed ${
-                    confirmedCount === 1 ? "entry" : "entries"
-                  }`}
-            </button>
-            <button
-              type="button"
-              onClick={resetScreenshotImport}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
-            >
-              Start again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
   };
+
   const renderActiveForm = () => {
     if (!activeSection) return null;
 
