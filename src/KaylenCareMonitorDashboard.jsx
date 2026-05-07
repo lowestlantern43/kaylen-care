@@ -181,6 +181,11 @@ const screenshotImportRules = [
     label: "Appointment",
     keywords: ["appointment", "hospital", "school", "ehcp", "therapy", "gp"],
   },
+  {
+    category: "needs_review",
+    label: "Needs review",
+    keywords: [],
+  },
 ];
 
 const screenshotTimePattern =
@@ -235,11 +240,19 @@ const extractScreenshotTimes = (line = "") => {
 
 const cleanScreenshotLine = (line = "") =>
   cleanFormText(line)
+    .replace(/[®©™]/g, " ")
     .replace(/[•·]/g, " ")
     .replace(/[|]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[-–—*]+\s*/, "")
     .trim();
+
+const normaliseNurserySectionLine = (line = "") =>
+  cleanScreenshotLine(line)
+    .replace(/^\d+\s+/, "")
+    .replace(/\s+\d+$/, "")
+    .trim()
+    .toLowerCase();
 
 const titleFromScreenshotLine = (line = "", fallback = "Suggested entry") => {
   const cleaned = cleanScreenshotLine(line)
@@ -285,20 +298,34 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
   let pendingMeal = "";
   let pendingSleepStart = "";
   let pendingToiletingType = "";
+  let pendingToiletingTime = "";
 
   const sectionForLine = (line) => {
-    const lower = line.toLowerCase();
-    if (/^meals?\b/.test(lower)) return "meals";
-    if (/^sleep\b/.test(lower)) return "sleep";
-    if (/^toilet\s+visit\b/.test(lower)) return "toilet";
-    if (/^nappy\s+change\b/.test(lower)) return "nappy";
-    if (/^sign\s+(in|out)\b/.test(lower)) return "sign";
+    const lower = normaliseNurserySectionLine(line);
+    if (/^meals?$/.test(lower)) return "meals";
+    if (/^sleep$/.test(lower)) return "sleep";
+    if (/^toilet\s+visit$/.test(lower)) return "toilet";
+    if (/^nappy\s+change$/.test(lower)) return "nappy";
+    if (/^sign\s+(in|out)$/.test(lower)) return "sign";
     return "";
   };
 
   const isCounterLine = (line) =>
-    /^(meals?|sleep|toilet\s+visit|nappy\s+change|sign\s+(in|out))\s+\d+\b/i.test(
+    /^(?:\d+\s+)?(?:meals?|sleep|toilet\s+visit|nappy\s+change|sign\s+(?:in|out))(?:\s+\d+)?$/i.test(
+      cleanScreenshotLine(line),
+    );
+
+  const isSignInOutNoise = (line) =>
+    /\b(signed\s+(in|out)|sign\s+(in|out)|explorers|nursery|preschool|school club)\b/i.test(
       line,
+    );
+
+  const isUsefulFoodLine = (line, lineTime) =>
+    Boolean(
+      lineTime ||
+        /\b(breakfast|lunch|dinner|tea|snack|dessert|drink|water|milk|juice|pasta|pie|yoghurt|yogurt|all|some|none)\b/i.test(
+          line,
+        ),
     );
 
   const addSuggestion = (suggestion) => {
@@ -325,6 +352,18 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
   const looksLikeToiletingDetail = (line) =>
     /\b(dry|wet|soiled|bowel|poo|wee|accident|toilet|nappy)\b/i.test(line);
 
+  const addNeedsReview = (line, reason = "Needs review") => {
+    if (!line || isCounterLine(line) || isSignInOutNoise(line)) return;
+    addSuggestion({
+      category: "needs_review",
+      label: "Needs review",
+      time: normaliseScreenshotTime(line),
+      title: reason,
+      detail: stripTime(line),
+      sourceText: line,
+    });
+  };
+
   for (const line of lines) {
     const foundSection = sectionForLine(line);
     if (foundSection) {
@@ -332,10 +371,11 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
       pendingMeal = "";
       pendingSleepStart = "";
       pendingToiletingType = "";
-      if (isCounterLine(line)) continue;
+      pendingToiletingTime = "";
+      continue;
     }
 
-    if (isCounterLine(line) || currentSection === "sign") continue;
+    if (isCounterLine(line) || currentSection === "sign" || isSignInOutNoise(line)) continue;
 
     const time = normaliseScreenshotTime(line);
     const lineWithoutTime = stripTime(line);
@@ -343,7 +383,7 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
     if (currentSection === "meals") {
       if (looksLikeMealContext(lineWithoutTime)) {
         pendingMeal = lineWithoutTime.replace(/[:\-–]+$/, "").trim();
-        if (time) {
+        if (time && isUsefulFoodLine(lineWithoutTime, time)) {
           addSuggestion({
             category: "food",
             label: "Food / Drink",
@@ -356,7 +396,32 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
         continue;
       }
 
-      if (pendingMeal && lineWithoutTime && !/^(all|some|none)$/i.test(lineWithoutTime)) {
+      if (pendingMeal && /^(all|some|none)$/i.test(lineWithoutTime)) {
+        const previous = suggestions
+          .slice()
+          .reverse()
+          .find(
+            (item) =>
+              item.category === "food" &&
+              item.title.toLowerCase().startsWith(pendingMeal.toLowerCase()),
+          );
+        if (previous) {
+          previous.detail = previous.detail
+            ? `${previous.detail} (${lineWithoutTime})`
+            : lineWithoutTime;
+          previous.title = previous.title.includes("(")
+            ? previous.title
+            : `${previous.title} (${lineWithoutTime})`;
+        }
+        continue;
+      }
+
+      if (
+        pendingMeal &&
+        lineWithoutTime &&
+        !/^(all|some|none)$/i.test(lineWithoutTime) &&
+        !isSignInOutNoise(lineWithoutTime)
+      ) {
         const previous = suggestions
           .slice()
           .reverse()
@@ -379,6 +444,11 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
             sourceText: line,
           });
         }
+        continue;
+      }
+
+      if (time && isUsefulFoodLine(lineWithoutTime, time)) {
+        addNeedsReview(line, "Possible food / drink entry");
         continue;
       }
     }
@@ -415,7 +485,7 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
         pendingSleepStart = "";
         continue;
       }
-      if (/nap|sleep/i.test(line)) {
+      if (/nap|sleep/i.test(line) && time) {
         addSuggestion({
           category: "sleep",
           label: "Sleep",
@@ -426,6 +496,7 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
         });
         continue;
       }
+      if (/nap|sleep/i.test(line) && !time) continue;
     }
 
     if (currentSection === "toilet" || currentSection === "nappy") {
@@ -433,7 +504,28 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
         pendingToiletingType = lineWithoutTime;
       }
 
-      if (time || pendingToiletingType) {
+      if (time && !pendingToiletingType) {
+        pendingToiletingTime = time;
+        continue;
+      }
+
+      if (!time && pendingToiletingTime && pendingToiletingType) {
+        const title =
+          currentSection === "nappy" ? "Nappy change" : "Toilet visit";
+        addSuggestion({
+          category: "toileting",
+          label: "Toileting",
+          time: pendingToiletingTime,
+          title,
+          detail: pendingToiletingType,
+          sourceText: line,
+        });
+        pendingToiletingTime = "";
+        pendingToiletingType = "";
+        continue;
+      }
+
+      if (time && (pendingToiletingType || looksLikeToiletingDetail(lineWithoutTime))) {
         const title =
           currentSection === "nappy" ? "Nappy change" : "Toilet visit";
         addSuggestion({
@@ -444,7 +536,10 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
           detail: pendingToiletingType || lineWithoutTime,
           sourceText: line,
         });
-        if (time) pendingToiletingType = "";
+        if (time) {
+          pendingToiletingType = "";
+          pendingToiletingTime = "";
+        }
         continue;
       }
     }
@@ -455,7 +550,23 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
     );
 
     matchedRules.forEach((rule) => {
-      if (isCounterLine(line)) return;
+      if (isCounterLine(line) || isSignInOutNoise(line)) return;
+      if (
+        rule.category === "sleep" &&
+        !time &&
+        extractScreenshotTimes(line).length < 2
+      ) {
+        return;
+      }
+      if (
+        rule.category === "toileting" &&
+        !(time && looksLikeToiletingDetail(lineWithoutTime))
+      ) {
+        return;
+      }
+      if (rule.category === "food" && !isUsefulFoodLine(lineWithoutTime, time)) {
+        return;
+      }
       addSuggestion({
         ...rule,
         sourceText: line,
@@ -2910,10 +3021,7 @@ export default function KaylenCareMonitorDashboard({
       setScreenshotImportForm((current) => ({
         ...current,
         extractedText,
-        suggestions:
-          suggestions.length > 0
-            ? suggestions
-            : extractScreenshotSuggestions(file, current.date),
+        suggestions,
         ocrError: extractedText ? "" : "No readable text was detected.",
       }));
     } catch (error) {
@@ -2921,7 +3029,7 @@ export default function KaylenCareMonitorDashboard({
       setScreenshotImportForm((current) => ({
         ...current,
         extractedText: "",
-        suggestions: extractScreenshotSuggestions(file, current.date),
+        suggestions: [],
         ocrError:
           error.message ||
           "OCR is not available right now. You can add suggestions manually.",
