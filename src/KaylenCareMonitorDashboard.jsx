@@ -3828,28 +3828,6 @@ export default function KaylenCareMonitorDashboard({
     const fluidPercent = fluidTargetMl
       ? Math.min(100, Math.round((fluidMl / fluidTargetMl) * 100))
       : 0;
-    const hydrationCheckpoints = normaliseHydrationCheckpoints(
-      childProfile.hydrationCheckpoints,
-    ).map((checkpoint) => {
-      const expectedMl = fluidTargetMl
-        ? Math.round((fluidTargetMl * checkpoint.percent) / 100)
-        : 0;
-      const met = fluidTargetMl ? fluidMl >= expectedMl : false;
-      const isPast = nowTimeValue() >= checkpoint.time;
-      return {
-        ...checkpoint,
-        expectedMl,
-        met,
-        isPast,
-        statusLabel: met ? "Met" : isPast ? "Below" : "Later",
-      };
-    });
-    const nextHydrationCheckpoint =
-      hydrationCheckpoints.find((checkpoint) => !checkpoint.met && !checkpoint.isPast) ||
-      hydrationCheckpoints.find((checkpoint) => !checkpoint.met) ||
-      hydrationCheckpoints[hydrationCheckpoints.length - 1] ||
-      null;
-
     const getWindowRange = (windowName) => {
       if (windowName === "morning") return { start: 6, end: 12 };
       if (windowName === "afternoon") return { start: 12, end: 18 };
@@ -3999,8 +3977,6 @@ export default function KaylenCareMonitorDashboard({
       fluidMl,
       fluidTargetMl,
       fluidPercent,
-      hydrationCheckpoints,
-      nextHydrationCheckpoint,
       drinkCount: todayDrinkEntries.length,
       toiletingCount: todayToiletingEntries.length,
       medicationTaken: allRequiredMedication.filter((item) => item.status === "taken")
@@ -4012,7 +3988,6 @@ export default function KaylenCareMonitorDashboard({
     };
   }, [
     childProfile.dailyFluidTargetMl,
-    childProfile.hydrationCheckpoints,
     profileMedicationOptions,
     sharedLog,
   ]);
