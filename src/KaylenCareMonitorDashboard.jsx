@@ -6078,7 +6078,7 @@ export default function KaylenCareMonitorDashboard({
     const drawMetricGrid = (items) => {
       const columns = 4;
       const cardWidth = (usableWidth - gap * (columns - 1)) / columns;
-      const cardHeight = 20;
+      const cardHeight = 22;
       items.forEach((item, index) => {
         const tone = item.tone || tones.slate;
         const column = index % columns;
@@ -6088,12 +6088,10 @@ export default function KaylenCareMonitorDashboard({
         pdf.setFillColor(...tone.fill);
         pdf.setDrawColor(...tone.stroke);
         pdf.roundedRect(x, y, cardWidth, cardHeight, 3, 3, "FD");
-        pdf.setFillColor(...tone.accent);
-        pdf.roundedRect(x + 2.5, y + 3, 1.6, cardHeight - 6, 1, 1, "F");
         setText(6.5, tone.accent, "bold");
-        pdf.text(String(item.label || "").toUpperCase(), x + 3, y + 5);
+        pdf.text(String(item.label || "").toUpperCase(), x + 5, y + 6);
         setText(11, [15, 23, 42], "bold");
-        pdf.text(String(item.value ?? ""), x + 6, y + 13);
+        pdf.text(String(item.value ?? ""), x + 5, y + 15);
         if (column === columns - 1 || index === items.length - 1) {
           cursorY += cardHeight + gap;
         }
@@ -6503,13 +6501,41 @@ export default function KaylenCareMonitorDashboard({
 
     const pdfFoodEntries = sortPdfEntriesByDate(groupedReportEntries["Food Diary"] || []);
     const pdfMedicationEntries = sortPdfEntriesByDate(groupedReportEntries.Medication || []);
+    const pdfBehaviourEntries = sortPdfEntriesByDate(groupedReportEntries.Behaviour || []);
     const pdfSleepEntries = sortPdfEntriesByDate(groupedReportEntries.Sleep || []);
     const pdfToiletingEntries = sortPdfEntriesByDate(groupedReportEntries.Toileting || []);
     const pdfHealthEntries = sortPdfEntriesByDate(
       (groupedReportEntries.Health || []).filter((entry) => !isMeasurementEntry(entry)),
     );
     const pdfMeasurementEntries = sortPdfEntriesByDate(recentEntries.filter(isMeasurementEntry));
+    const pdfAppointmentEntries = sortPdfEntriesByDate(groupedReportEntries.Appointments || []);
     const pdfNotesEntries = sortPdfEntriesByDate(groupedReportEntries["General Notes"] || []);
+    const pdfDocumentEntries = sortPdfEntriesByDate(
+      (documents || [])
+        .filter((document) => !document.childId || document.childId === childId)
+        .filter((document) => {
+          const documentDate =
+            parseIsoDate(document.documentDate) ||
+            parseIsoDate(document.createdAt) ||
+            null;
+          if (!documentDate || !reportRangeStart || !reportRangeEnd) return true;
+          return documentDate >= reportRangeStart && documentDate <= reportRangeEnd;
+        })
+        .map((document) => ({
+          id: `document-${document.id}`,
+          date:
+            document.documentDate ||
+            (parseIsoDate(document.createdAt) || new Date()).toISOString().slice(0, 10),
+          time: "",
+          summary: document.title || document.fileName || "Document",
+          details: [
+            document.category ? `Category: ${document.category}` : "",
+            document.childName ? `Child: ${document.childName}` : "",
+            document.fileName ? `File: ${document.fileName}` : "",
+            document.notes ? `Notes: ${professionalText(document.notes)}` : "",
+          ].filter(Boolean),
+        })),
+    );
 
     const drawDetailedPdfSection = ({
       title,
@@ -6671,6 +6697,32 @@ export default function KaylenCareMonitorDashboard({
 
       addSectionTitle("Detailed report");
       drawDetailedPdfSection({
+        title: includeHealthHistory24Months ? "Health history" : "Health",
+        entries: pdfHealthEntries,
+        emptyText: includeHealthHistory24Months
+          ? "No health history entries found for this period."
+          : "No health entries found for this period.",
+        fill: tones.amber.fill,
+        stroke: tones.amber.stroke,
+        titleColor: tones.amber.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Medication",
+        entries: pdfMedicationEntries,
+        emptyText: "No medication records yet - add medication to track consistency.",
+        fill: tones.rose.fill,
+        stroke: tones.rose.stroke,
+        titleColor: tones.rose.accent,
+      });
+      drawDetailedPdfSection({
+        title: "Behaviour",
+        entries: pdfBehaviourEntries,
+        emptyText: "No behaviour data recorded for this period.",
+        fill: tones.violet.fill,
+        stroke: tones.violet.stroke,
+        titleColor: tones.violet.accent,
+      });
+      drawDetailedPdfSection({
         title: "Sleep",
         entries: pdfSleepEntries,
         emptyText: "No sleep recorded yet - log your first night to start tracking patterns.",
@@ -6687,28 +6739,12 @@ export default function KaylenCareMonitorDashboard({
         titleColor: tones.emerald.accent,
       });
       drawDetailedPdfSection({
-        title: "Medication",
-        entries: pdfMedicationEntries,
-        emptyText: "No medication records yet - add medication to track consistency.",
-        fill: tones.rose.fill,
-        stroke: tones.rose.stroke,
-        titleColor: tones.rose.accent,
-      });
-      drawDetailedPdfSection({
         title: "Toileting",
         entries: pdfToiletingEntries,
         emptyText: "No toileting data yet - logging this helps identify patterns.",
         fill: tones.sky.fill,
         stroke: tones.sky.stroke,
         titleColor: tones.sky.accent,
-      });
-      drawDetailedPdfSection({
-        title: "Health",
-        entries: pdfHealthEntries,
-        emptyText: "No health entries found for this period.",
-        fill: tones.amber.fill,
-        stroke: tones.amber.stroke,
-        titleColor: tones.amber.accent,
       });
       if (pdfMeasurementEntries.length) {
         drawDetailedPdfSection({
@@ -6718,6 +6754,24 @@ export default function KaylenCareMonitorDashboard({
           fill: tones.violet.fill,
           stroke: tones.violet.stroke,
           titleColor: tones.violet.accent,
+        });
+      }
+      drawDetailedPdfSection({
+        title: "Appointments",
+        entries: pdfAppointmentEntries,
+        emptyText: "No appointments recorded for this period.",
+        fill: tones.sky.fill,
+        stroke: tones.sky.stroke,
+        titleColor: tones.sky.accent,
+      });
+      if (pdfDocumentEntries.length) {
+        drawDetailedPdfSection({
+          title: "Documents",
+          entries: pdfDocumentEntries,
+          emptyText: "No documents found for this period.",
+          fill: tones.slate.fill,
+          stroke: tones.slate.stroke,
+          titleColor: tones.slate.accent,
         });
       }
       if (pdfNotesEntries.length) {
@@ -9599,7 +9653,7 @@ export default function KaylenCareMonitorDashboard({
         {reportTrendModel.summaryStats.map((stat) => (
           <div
             key={stat.key}
-            className={`min-w-0 rounded-xl border px-3 py-3 shadow-sm ${statToneClass(
+            className={`min-w-0 rounded-xl border px-3 py-3 shadow-sm sm:px-4 ${statToneClass(
               stat.tone,
             )}`}
           >
@@ -13057,7 +13111,7 @@ export default function KaylenCareMonitorDashboard({
               {summaryCards.map((card) => (
                 <div
                   key={card.label}
-                  className={`flex min-h-[8.25rem] min-w-0 flex-col justify-between rounded-[1.35rem] border px-4 py-4 shadow-sm ${card.tone}`}
+                  className={`flex min-h-[8.25rem] min-w-0 flex-col justify-between rounded-[1.35rem] border px-4 py-4 shadow-sm sm:px-5 ${card.tone}`}
                 >
                   <div className="min-w-0">
                     <p className="break-words text-[10px] font-black uppercase leading-4 tracking-[0.16em] text-slate-500">
