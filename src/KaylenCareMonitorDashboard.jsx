@@ -188,6 +188,23 @@ const screenshotTimePattern =
 
 const normaliseScreenshotTime = (line = "") => {
   const text = String(line || "");
+  const fiveDigitOcrTimeMatch = text.match(/\b([012]?\d)[1lI|\/]([0-5]\d)\b/);
+  if (fiveDigitOcrTimeMatch) {
+    return `${fiveDigitOcrTimeMatch[1].padStart(2, "0")}:${fiveDigitOcrTimeMatch[2]}`;
+  }
+  const compactTimeMatch = text.match(/\b([012]?\d)([0-5]\d{2})\b/);
+  if (compactTimeMatch) {
+    const raw = `${compactTimeMatch[1]}${compactTimeMatch[2]}`.padStart(4, "0");
+    const hour = raw.slice(0, 2);
+    const minute = raw.slice(2, 4);
+    if (Number(hour) <= 23 && Number(minute) <= 59) {
+      return `${hour}:${minute}`;
+    }
+  }
+  const ocrSlashTimeMatch = text.match(/\b([012]?\d)[lI|\/]([0-5]\d)\b/);
+  if (ocrSlashTimeMatch) {
+    return `${ocrSlashTimeMatch[1].padStart(2, "0")}:${ocrSlashTimeMatch[2]}`;
+  }
   const clockMatch = text.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
   if (clockMatch) {
     return `${clockMatch[1].padStart(2, "0")}:${clockMatch[2]}`;
@@ -201,9 +218,25 @@ const normaliseScreenshotTime = (line = "") => {
   return `${String(hour).padStart(2, "0")}:00`;
 };
 
+const extractScreenshotTimes = (line = "") => {
+  const text = String(line || "");
+  const matches = [];
+  const timeRegex =
+    /\b([012]?\d)[1lI|\/]([0-5]\d)\b|\b([01]?\d|2[0-3])[:.]([0-5]\d)\b|\b([1-9]|1[0-2])\s?(am|pm)\b/gi;
+  let match;
+  while ((match = timeRegex.exec(text))) {
+    const normalised = normaliseScreenshotTime(match[0]);
+    if (normalised && !matches.includes(normalised)) {
+      matches.push(normalised);
+    }
+  }
+  return matches;
+};
+
 const cleanScreenshotLine = (line = "") =>
   cleanFormText(line)
     .replace(/[•·]/g, " ")
+    .replace(/[|]/g, " ")
     .replace(/\s+/g, " ")
     .replace(/^[-–—*]+\s*/, "")
     .trim();
@@ -225,15 +258,20 @@ const buildScreenshotImportSuggestion = ({
   sourceText,
   title,
   time,
+  endTime,
+  detail,
 }) => ({
   id: safeRandomId(),
   category,
   label,
   logDate: date || todayIsoValue(),
   time: time || normaliseScreenshotTime(sourceText),
+  endTime: endTime || "",
   title: title || titleFromScreenshotLine(sourceText, label),
+  detail: detail || "",
   notes: `Suggested from screenshot${sourceText ? `: ${sourceText}` : ""}`,
   confirmed: false,
+  expanded: false,
 });
 
 const extractScreenshotSuggestionsFromText = (text, date) => {
@@ -243,32 +281,197 @@ const extractScreenshotSuggestionsFromText = (text, date) => {
     .filter((line) => line.length >= 3);
 
   const suggestions = [];
+  let currentSection = "";
+  let pendingMeal = "";
+  let pendingSleepStart = "";
+  let pendingToiletingType = "";
 
-  lines.forEach((line) => {
+  const sectionForLine = (line) => {
+    const lower = line.toLowerCase();
+    if (/^meals?\b/.test(lower)) return "meals";
+    if (/^sleep\b/.test(lower)) return "sleep";
+    if (/^toilet\s+visit\b/.test(lower)) return "toilet";
+    if (/^nappy\s+change\b/.test(lower)) return "nappy";
+    if (/^sign\s+(in|out)\b/.test(lower)) return "sign";
+    return "";
+  };
+
+  const isCounterLine = (line) =>
+    /^(meals?|sleep|toilet\s+visit|nappy\s+change|sign\s+(in|out))\s+\d+\b/i.test(
+      line,
+    );
+
+  const addSuggestion = (suggestion) => {
+    suggestions.push(
+      buildScreenshotImportSuggestion({
+        date,
+        ...suggestion,
+      }),
+    );
+  };
+
+  const stripTime = (line) =>
+    cleanScreenshotLine(line)
+      .replace(/\b([012]?\d)[1lI|\/]([0-5]\d)\b/, "")
+      .replace(/\b([012]?\d)([0-5]\d{2})\b/, "")
+      .replace(/\b([012]?\d)[lI|\/]([0-5]\d)\b/, "")
+      .replace(screenshotTimePattern, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const looksLikeMealContext = (line) =>
+    /^(breakfast|lunch|dinner|tea|snack|dessert|drink)\b/i.test(line);
+
+  const looksLikeToiletingDetail = (line) =>
+    /\b(dry|wet|soiled|bowel|poo|wee|accident|toilet|nappy)\b/i.test(line);
+
+  for (const line of lines) {
+    const foundSection = sectionForLine(line);
+    if (foundSection) {
+      currentSection = foundSection;
+      pendingMeal = "";
+      pendingSleepStart = "";
+      pendingToiletingType = "";
+      if (isCounterLine(line)) continue;
+    }
+
+    if (isCounterLine(line) || currentSection === "sign") continue;
+
+    const time = normaliseScreenshotTime(line);
+    const lineWithoutTime = stripTime(line);
+
+    if (currentSection === "meals") {
+      if (looksLikeMealContext(lineWithoutTime)) {
+        pendingMeal = lineWithoutTime.replace(/[:\-–]+$/, "").trim();
+        if (time) {
+          addSuggestion({
+            category: "food",
+            label: "Food / Drink",
+            time,
+            title: pendingMeal,
+            detail: "",
+            sourceText: line,
+          });
+        }
+        continue;
+      }
+
+      if (pendingMeal && lineWithoutTime && !/^(all|some|none)$/i.test(lineWithoutTime)) {
+        const previous = suggestions
+          .slice()
+          .reverse()
+          .find(
+            (item) =>
+              item.category === "food" &&
+              item.title.toLowerCase() === pendingMeal.toLowerCase() &&
+              !item.detail,
+          );
+        if (previous) {
+          previous.detail = lineWithoutTime;
+          previous.title = `${previous.title} - ${lineWithoutTime}`;
+        } else {
+          addSuggestion({
+            category: "food",
+            label: "Food / Drink",
+            time,
+            title: pendingMeal,
+            detail: lineWithoutTime,
+            sourceText: line,
+          });
+        }
+        continue;
+      }
+    }
+
+    if (currentSection === "sleep") {
+      const times = extractScreenshotTimes(line);
+      if (times.length >= 2) {
+        addSuggestion({
+          category: "sleep",
+          label: "Sleep",
+          time: times[0],
+          endTime: times[1],
+          title: "Nap / sleep",
+          detail: `${times[0]}-${times[1]}`,
+          sourceText: line,
+        });
+        pendingSleepStart = "";
+        continue;
+      }
+      if (time && !pendingSleepStart) {
+        pendingSleepStart = time;
+        continue;
+      }
+      if (time && pendingSleepStart) {
+        addSuggestion({
+          category: "sleep",
+          label: "Sleep",
+          time: pendingSleepStart,
+          endTime: time,
+          title: "Nap / sleep",
+          detail: `${pendingSleepStart}-${time}`,
+          sourceText: line,
+        });
+        pendingSleepStart = "";
+        continue;
+      }
+      if (/nap|sleep/i.test(line)) {
+        addSuggestion({
+          category: "sleep",
+          label: "Sleep",
+          time,
+          title: "Nap / sleep",
+          detail: lineWithoutTime,
+          sourceText: line,
+        });
+        continue;
+      }
+    }
+
+    if (currentSection === "toilet" || currentSection === "nappy") {
+      if (looksLikeToiletingDetail(lineWithoutTime)) {
+        pendingToiletingType = lineWithoutTime;
+      }
+
+      if (time || pendingToiletingType) {
+        const title =
+          currentSection === "nappy" ? "Nappy change" : "Toilet visit";
+        addSuggestion({
+          category: "toileting",
+          label: "Toileting",
+          time,
+          title,
+          detail: pendingToiletingType || lineWithoutTime,
+          sourceText: line,
+        });
+        if (time) pendingToiletingType = "";
+        continue;
+      }
+    }
+
     const haystack = line.toLowerCase();
     const matchedRules = screenshotImportRules.filter((rule) =>
       rule.keywords.some((keyword) => haystack.includes(keyword)),
     );
 
     matchedRules.forEach((rule) => {
-      suggestions.push(
-        buildScreenshotImportSuggestion({
-          ...rule,
-          date,
-          sourceText: line,
-          title: titleFromScreenshotLine(line, rule.label),
-          time: normaliseScreenshotTime(line),
-        }),
-      );
+      if (isCounterLine(line)) return;
+      addSuggestion({
+        ...rule,
+        sourceText: line,
+        title: titleFromScreenshotLine(line, rule.label),
+        time,
+      });
     });
-  });
+  }
 
   return suggestions.filter((suggestion, index, all) => {
-    const key = `${suggestion.category}:${suggestion.title}:${suggestion.time}:${suggestion.logDate}`;
+    const key = `${suggestion.category}:${suggestion.title}:${suggestion.detail}:${suggestion.time}:${suggestion.endTime}:${suggestion.logDate}`;
     return (
       all.findIndex(
         (item) =>
-          `${item.category}:${item.title}:${item.time}:${item.logDate}` === key,
+          `${item.category}:${item.title}:${item.detail}:${item.time}:${item.endTime}:${item.logDate}` ===
+          key,
       ) === index
     );
   });
@@ -2789,12 +2992,12 @@ export default function KaylenCareMonitorDashboard({
         return {
           ...base,
           data: {
-            type: "food",
-            item: title,
+            type: isLikelyDrinkLabel(`${title} ${suggestion.detail}`) ? "drink" : "food",
+            item: suggestion.detail ? `${title} - ${suggestion.detail}` : title,
             meal_context: "",
             amount: "",
             unit: "",
-            description: "",
+            description: suggestion.detail || "",
             intake_status: "normal",
             source,
           },
@@ -2817,7 +3020,7 @@ export default function KaylenCareMonitorDashboard({
           ...base,
           data: {
             bedtime: suggestion.time || "",
-            wake_time: "",
+            wake_time: suggestion.endTime || "",
             wake_date: "",
             quality: "",
             night_wakings: "",
@@ -2829,7 +3032,7 @@ export default function KaylenCareMonitorDashboard({
         return {
           ...base,
           data: {
-            entry: title,
+            entry: suggestion.detail ? `${title} - ${suggestion.detail}` : title,
             source,
           },
         };
@@ -14036,8 +14239,8 @@ export default function KaylenCareMonitorDashboard({
                       key={suggestion.id}
                       className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <label className="flex min-w-0 items-center gap-2 text-sm font-black text-slate-800">
+                      <div className="flex items-center gap-3">
+                        <label className="flex shrink-0 items-center">
                           <input
                             type="checkbox"
                             className="h-4 w-4 rounded border-slate-300"
@@ -14048,94 +14251,150 @@ export default function KaylenCareMonitorDashboard({
                               })
                             }
                           />
-                          Confirm this entry
                         </label>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-600">
+                              {suggestion.time || "No time"}
+                              {suggestion.endTime ? `-${suggestion.endTime}` : ""}
+                            </span>
+                            <p className="truncate text-sm font-black text-slate-950">
+                              {suggestion.title || suggestion.label}
+                            </p>
+                          </div>
+                          {suggestion.detail ? (
+                            <p className="mt-0.5 truncate text-xs font-semibold text-slate-600">
+                              {suggestion.detail}
+                            </p>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateScreenshotSuggestion(suggestion.id, {
+                              expanded: !suggestion.expanded,
+                            })
+                          }
+                          className="shrink-0 rounded-full bg-cyan-50 px-3 py-1 text-xs font-black text-cyan-800"
+                        >
+                          {suggestion.expanded ? "Done" : "Edit"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => removeScreenshotSuggestion(suggestion.id)}
-                          className="rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700"
+                          className="shrink-0 rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700"
                         >
                           Remove
                         </button>
                       </div>
 
-                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                          Category
-                          <select
-                            className={inputClassName}
-                            value={suggestion.category}
-                            onChange={(event) => {
-                              const rule = screenshotImportRules.find(
-                                (item) => item.category === event.target.value,
-                              );
-                              updateScreenshotSuggestion(suggestion.id, {
-                                category: event.target.value,
-                                label: rule?.label || suggestion.label,
-                              });
-                            }}
-                          >
-                            {screenshotImportRules.map((rule) => (
-                              <option key={rule.category} value={rule.category}>
-                                {rule.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                          Date
-                          <input
-                            type="date"
-                            className={inputClassName}
-                            value={suggestion.logDate || screenshotImportForm.date}
-                            onChange={(event) =>
-                              updateScreenshotSuggestion(suggestion.id, {
-                                logDate: event.target.value,
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                          Time
-                          <input
-                            type="time"
-                            className={inputClassName}
-                            value={suggestion.time || ""}
-                            onChange={(event) =>
-                              updateScreenshotSuggestion(suggestion.id, {
-                                time: event.target.value,
-                              })
-                            }
-                          />
-                        </label>
-                        <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                          Title
-                          <input
-                            className={inputClassName}
-                            value={suggestion.title || ""}
-                            onChange={(event) =>
-                              updateScreenshotSuggestion(suggestion.id, {
-                                title: event.target.value,
-                              })
-                            }
-                            placeholder="Suggested entry title"
-                          />
-                        </label>
-                      </div>
+                      {suggestion.expanded ? (
+                        <>
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              Category
+                              <select
+                                className={inputClassName}
+                                value={suggestion.category}
+                                onChange={(event) => {
+                                  const rule = screenshotImportRules.find(
+                                    (item) => item.category === event.target.value,
+                                  );
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    category: event.target.value,
+                                    label: rule?.label || suggestion.label,
+                                  });
+                                }}
+                              >
+                                {screenshotImportRules.map((rule) => (
+                                  <option key={rule.category} value={rule.category}>
+                                    {rule.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              Date
+                              <input
+                                type="date"
+                                className={inputClassName}
+                                value={suggestion.logDate || screenshotImportForm.date}
+                                onChange={(event) =>
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    logDate: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              Start time
+                              <input
+                                type="time"
+                                className={inputClassName}
+                                value={suggestion.time || ""}
+                                onChange={(event) =>
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    time: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              End time
+                              <input
+                                type="time"
+                                className={inputClassName}
+                                value={suggestion.endTime || ""}
+                                onChange={(event) =>
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    endTime: event.target.value,
+                                  })
+                                }
+                              />
+                            </label>
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              Title
+                              <input
+                                className={inputClassName}
+                                value={suggestion.title || ""}
+                                onChange={(event) =>
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    title: event.target.value,
+                                  })
+                                }
+                                placeholder="Suggested entry title"
+                              />
+                            </label>
+                            <label className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                              Detail
+                              <input
+                                className={inputClassName}
+                                value={suggestion.detail || ""}
+                                onChange={(event) =>
+                                  updateScreenshotSuggestion(suggestion.id, {
+                                    detail: event.target.value,
+                                  })
+                                }
+                                placeholder="Key detail"
+                              />
+                            </label>
+                          </div>
 
-                      <label className="mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                        Notes
-                        <textarea
-                          className={`${inputClassName} min-h-[92px] resize-y`}
-                          value={suggestion.notes || ""}
-                          onChange={(event) =>
-                            updateScreenshotSuggestion(suggestion.id, {
-                              notes: event.target.value,
-                            })
-                          }
-                          placeholder="Add context before saving"
-                        />
-                      </label>
+                          <label className="mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            Notes
+                            <textarea
+                              className={`${inputClassName} min-h-[92px] resize-y`}
+                              value={suggestion.notes || ""}
+                              onChange={(event) =>
+                                updateScreenshotSuggestion(suggestion.id, {
+                                  notes: event.target.value,
+                                })
+                              }
+                              placeholder="Add context before saving"
+                            />
+                          </label>
+                        </>
+                      ) : null}
                     </div>
                   ))}
                 </div>
