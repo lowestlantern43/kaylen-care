@@ -28,6 +28,13 @@ export const config = {
   spacesRegion: process.env.DO_SPACES_REGION || "",
   spacesEndpoint: process.env.DO_SPACES_ENDPOINT || "",
   spacesPublicUrl: process.env.DO_SPACES_PUBLIC_URL || "",
+  vapidPublicKey: process.env.VAPID_PUBLIC_KEY || "",
+  vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || "",
+  vapidSubject:
+    process.env.VAPID_SUBJECT ||
+    `mailto:${process.env.SUPPORT_EMAIL || "hello@familytrack.care"}`,
+  notificationSchedulerEnabled:
+    String(process.env.ENABLE_NOTIFICATION_SCHEDULER || "").toLowerCase() === "true",
   nodeEnv: process.env.NODE_ENV || "development",
   isProduction: process.env.NODE_ENV === "production",
 };

@@ -303,6 +303,27 @@ export const api = {
       body: JSON.stringify({ email, role }),
     }),
   getSubscription: (familyId) => request(`/families/${familyId}/subscription`),
+  notificationConfig: () => request("/notifications/config"),
+  notificationSettings: () => request("/notifications/settings"),
+  updateNotificationSettings: (payload) =>
+    request("/notifications/settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  savePushSubscription: (payload) =>
+    request("/notifications/subscriptions", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  disablePushSubscription: (endpoint) =>
+    request("/notifications/subscriptions", {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint }),
+    }),
+  sendTestNotification: () =>
+    request("/notifications/test", {
+      method: "POST",
+    }),
   feedbackConfig: () => request("/feedback/config"),
   submitIssue: (payload) =>
     request("/feedback/issues", {

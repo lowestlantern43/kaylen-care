@@ -91,6 +91,17 @@ const DEFAULT_MODULE_VISIBILITY = MODULE_VISIBILITY_OPTIONS.reduce(
   (settings, option) => ({ ...settings, [option.key]: true }),
   {},
 );
+const DEFAULT_NOTIFICATION_SETTINGS = {
+  pushEnabled: false,
+  emailEnabled: false,
+  types: {
+    medication: true,
+    appointments: true,
+    hydration: false,
+    noLogsToday: false,
+  },
+  childSettings: {},
+};
 
 const MODULE_VISIBILITY_ICONS = {
   food: "Food",
@@ -543,6 +554,47 @@ const isStandaloneDisplay = () => {
     window.matchMedia?.("(display-mode: standalone)")?.matches ||
     window.navigator?.standalone === true
   );
+};
+
+const normaliseNotificationSettings = (value = {}) => ({
+  ...DEFAULT_NOTIFICATION_SETTINGS,
+  ...(value && typeof value === "object" ? value : {}),
+  types: {
+    ...DEFAULT_NOTIFICATION_SETTINGS.types,
+    ...(value?.types && typeof value.types === "object" ? value.types : {}),
+  },
+  childSettings:
+    value?.childSettings && typeof value.childSettings === "object"
+      ? value.childSettings
+      : {},
+});
+
+const urlBase64ToUint8Array = (base64String) => {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  return Uint8Array.from([...rawData].map((char) => char.charCodeAt(0)));
+};
+
+const pushSupportStatus = () => {
+  if (typeof window === "undefined" || typeof navigator === "undefined") {
+    return { supported: false, reason: "Push reminders need a browser session." };
+  }
+  if (!("Notification" in window)) {
+    return { supported: false, reason: "This browser does not support notifications." };
+  }
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    return { supported: false, reason: "This browser does not support web push reminders." };
+  }
+  if (isIosDevice() && !isStandaloneDisplay()) {
+    return {
+      supported: false,
+      reason:
+        "On iPhone, add FamilyTrack to your Home Screen and open it from the icon before enabling push reminders.",
+      iosNeedsPwa: true,
+    };
+  }
+  return { supported: true, reason: "" };
 };
 
 const asSafeDate = (value) => {
@@ -2525,6 +2577,19 @@ function WorkspaceGate({ session, onLogout }) {
   const [moduleVisibility, setModuleVisibility] = useState(
     DEFAULT_MODULE_VISIBILITY,
   );
+  const [notificationSettings, setNotificationSettings] = useState(
+    DEFAULT_NOTIFICATION_SETTINGS,
+  );
+  const [notificationConfig, setNotificationConfig] = useState({
+    enabled: false,
+    publicKey: "",
+    setupRequired: true,
+  });
+  const [notificationPermission, setNotificationPermission] = useState(() =>
+    typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+  );
+  const [isNotificationBusy, setIsNotificationBusy] = useState(false);
+  const [notificationStatusMessage, setNotificationStatusMessage] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isAdminLoading, setIsAdminLoading] = useState(false);
   const [platformData, setPlatformData] = useState({
@@ -2763,6 +2828,175 @@ function WorkspaceGate({ session, onLogout }) {
       moduleVisibilityStorageKey(selectedFamilyId, selectedChildId),
       JSON.stringify(next),
     );
+  };
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadNotificationPreferences() {
+      if (!session?.user?.id) return;
+
+      try {
+        const [config, settings] = await Promise.all([
+          api.notificationConfig(),
+          api.notificationSettings(),
+        ]);
+        if (ignore) return;
+        setNotificationConfig(config || {});
+        setNotificationSettings(normaliseNotificationSettings(settings));
+        setNotificationPermission(
+          typeof Notification === "undefined" ? "unsupported" : Notification.permission,
+        );
+      } catch (loadError) {
+        if (!ignore) {
+          setNotificationStatusMessage(
+            loadError.message || "Notification settings could not be loaded.",
+          );
+        }
+      }
+    }
+
+    loadNotificationPreferences();
+    return () => {
+      ignore = true;
+    };
+  }, [session?.user?.id]);
+
+  const saveNotificationSettings = async (nextSettings) => {
+    const normalised = normaliseNotificationSettings(nextSettings);
+    setNotificationSettings(normalised);
+    try {
+      const saved = await api.updateNotificationSettings(normalised);
+      setNotificationSettings(normaliseNotificationSettings(saved));
+      setNotificationStatusMessage("Reminder settings saved.");
+      showToast({ message: "Reminder settings saved", type: "success" });
+    } catch (saveError) {
+      setNotificationStatusMessage(
+        saveError.message || "Reminder settings could not be saved.",
+      );
+      showToast({
+        message: "Reminder settings could not be saved",
+        type: "error",
+      });
+    }
+  };
+
+  const updateNotificationType = (typeKey, enabled) => {
+    saveNotificationSettings({
+      ...notificationSettings,
+      types: {
+        ...notificationSettings.types,
+        [typeKey]: Boolean(enabled),
+      },
+    });
+  };
+
+  const updateNotificationEmailFallback = (enabled) => {
+    saveNotificationSettings({
+      ...notificationSettings,
+      emailEnabled: Boolean(enabled),
+    });
+  };
+
+  const enablePushNotifications = async () => {
+    setIsNotificationBusy(true);
+    setNotificationStatusMessage("");
+
+    try {
+      const support = pushSupportStatus();
+      if (!support.supported) {
+        setNotificationStatusMessage(support.reason);
+        showToast({ message: support.reason, type: "warning" });
+        return;
+      }
+
+      const latestConfig = await api.notificationConfig();
+      setNotificationConfig(latestConfig || {});
+      if (!latestConfig?.publicKey || latestConfig.setupRequired) {
+        const message =
+          "Push notifications need VAPID keys adding to the backend environment first.";
+        setNotificationStatusMessage(message);
+        showToast({ message, type: "warning" });
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+
+      if (permission !== "granted") {
+        const message =
+          permission === "denied"
+            ? "Notifications are blocked for this browser. You can re-enable them in browser settings."
+            : "Notification permission was dismissed.";
+        setNotificationStatusMessage(message);
+        showToast({ message, type: "info" });
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register("/familytrack-sw.js");
+      const readyRegistration = await navigator.serviceWorker.ready;
+      let subscription = await readyRegistration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await readyRegistration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(latestConfig.publicKey),
+        });
+      }
+
+      await api.savePushSubscription({
+        subscription: subscription.toJSON(),
+        deviceLabel: isIosDevice()
+          ? "iPhone / iPad PWA"
+          : navigator.userAgent.includes("Android")
+            ? "Android browser"
+            : "Browser",
+      });
+
+      const saved = await api.updateNotificationSettings({
+        ...notificationSettings,
+        pushEnabled: true,
+      });
+      setNotificationSettings(normaliseNotificationSettings(saved));
+      setNotificationStatusMessage("Push reminders are enabled on this device.");
+      showToast({ message: "Notifications enabled", type: "success" });
+      api.sendTestNotification().catch(() => null);
+    } catch (pushError) {
+      const message =
+        pushError.message || "Notifications could not be enabled on this device.";
+      setNotificationStatusMessage(message);
+      showToast({ message, type: "error" });
+    } finally {
+      setIsNotificationBusy(false);
+    }
+  };
+
+  const disablePushNotifications = async () => {
+    setIsNotificationBusy(true);
+    try {
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready.catch(() => null);
+        const subscription = await registration?.pushManager?.getSubscription?.();
+        if (subscription) {
+          await api.disablePushSubscription(subscription.endpoint).catch(() => null);
+          await subscription.unsubscribe().catch(() => null);
+        }
+      }
+      const saved = await api.updateNotificationSettings({
+        ...notificationSettings,
+        pushEnabled: false,
+      });
+      setNotificationSettings(normaliseNotificationSettings(saved));
+      setNotificationStatusMessage("Push reminders are off on this device.");
+      showToast({ message: "Notifications turned off", type: "info" });
+    } catch (disableError) {
+      setNotificationStatusMessage(
+        disableError.message || "Notifications could not be turned off.",
+      );
+      showToast({ message: "Notifications could not be turned off", type: "error" });
+    } finally {
+      setIsNotificationBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -5679,6 +5913,7 @@ function WorkspaceGate({ session, onLogout }) {
                   ["family", "Family"],
                   ["children", "Children"],
                   ["preferences", "App Preferences"],
+                  ["notifications", "Notifications"],
                   ["data", "Data & Export"],
                   ["privacy", "Security / Privacy"],
                 ].map(([tabId, label]) => (
@@ -6821,6 +7056,154 @@ function WorkspaceGate({ session, onLogout }) {
                   Export backup JSON
                 </button>
               </section>
+              ) : null}
+
+              {settingsTab === "notifications" ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="font-bold text-slate-900">Notifications</h3>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        Reminders use push notifications first. Email reminders are
+                        optional and can be used as a fallback.
+                      </p>
+                    </div>
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${
+                        notificationSettings.pushEnabled
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {notificationSettings.pushEnabled ? "Push on" : "Push off"}
+                    </span>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-indigo-50 p-4">
+                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
+                      Enable reminders
+                    </p>
+                    <h4 className="mt-1 text-lg font-black text-slate-950">
+                      Medication, appointments and gentle care nudges
+                    </h4>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">
+                      FamilyTrack will only ask the browser for permission after
+                      you tap the button below.
+                    </p>
+
+                    {pushSupportStatus().iosNeedsPwa ? (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-800">
+                        On iPhone, add FamilyTrack to your Home Screen and open it
+                        from the icon before enabling push reminders.
+                      </div>
+                    ) : null}
+
+                    {notificationConfig.setupRequired ? (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-800">
+                        Push is ready in the app, but the backend still needs
+                        VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY environment values.
+                      </div>
+                    ) : null}
+
+                    {notificationStatusMessage ? (
+                      <p className="mt-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold leading-6 text-slate-600">
+                        {notificationStatusMessage}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+                      {notificationSettings.pushEnabled ? (
+                        <button
+                          type="button"
+                          onClick={disablePushNotifications}
+                          disabled={isNotificationBusy}
+                          className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:opacity-60"
+                        >
+                          {isNotificationBusy ? "Updating..." : "Turn push off"}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={enablePushNotifications}
+                          disabled={isNotificationBusy}
+                          className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                        >
+                          {isNotificationBusy ? "Enabling..." : "Enable notifications"}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNotificationStatusMessage(
+                            "No problem. You can enable reminders from here any time.",
+                          )
+                        }
+                        className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
+                      >
+                        Not now
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h4 className="font-bold text-slate-900">Reminder types</h4>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        Keep only the reminders your family actually wants.
+                      </p>
+                      <div className="mt-3 space-y-2">
+                        {[
+                          ["medication", "Medication reminders"],
+                          ["appointments", "Appointment reminders"],
+                          ["hydration", "Hydration reminders"],
+                          ["noLogsToday", "No logs today nudge"],
+                        ].map(([typeKey, label]) => (
+                          <label
+                            key={typeKey}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-2 shadow-sm"
+                          >
+                            <span className="text-sm font-bold text-slate-800">
+                              {label}
+                            </span>
+                            <input
+                              type="checkbox"
+                              className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                              checked={Boolean(notificationSettings.types?.[typeKey])}
+                              onChange={(event) =>
+                                updateNotificationType(typeKey, event.target.checked)
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <h4 className="font-bold text-slate-900">Email fallback</h4>
+                      <p className="mt-1 text-sm leading-6 text-slate-600">
+                        Email reminders use the existing FamilyTrack email system.
+                        Keep this off unless you prefer email or push is not
+                        available on a device.
+                      </p>
+                      <label className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-white bg-white px-3 py-3 shadow-sm">
+                        <span className="text-sm font-bold text-slate-800">
+                          Email reminders
+                        </span>
+                        <input
+                          type="checkbox"
+                          className="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          checked={Boolean(notificationSettings.emailEnabled)}
+                          onChange={(event) =>
+                            updateNotificationEmailFallback(event.target.checked)
+                          }
+                        />
+                      </label>
+                      <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
+                        Current browser permission: {notificationPermission}.
+                      </p>
+                    </div>
+                  </div>
+                </section>
               ) : null}
 
               {settingsTab === "preferences" ? (
