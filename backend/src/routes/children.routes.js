@@ -102,9 +102,9 @@ function optionalInteger(reqBody, key, label) {
 function optionalJson(reqBody, key, fallback) {
   const value = reqBody?.[key];
   if (value === undefined || value === null || value === "") return fallback;
-  if (typeof value === "object") return value;
+  if (typeof value === "object") return JSON.stringify(value);
   try {
-    return JSON.parse(value);
+    return JSON.stringify(JSON.parse(value));
   } catch {
     throw badRequest(`${key} must be valid JSON.`);
   }
