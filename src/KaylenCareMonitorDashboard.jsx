@@ -122,6 +122,16 @@ const safeRandomId = () => {
 };
 
 const medicationTimeWindows = ["morning", "afternoon", "evening"];
+const medicationWeekDays = [
+  ["sun", 0],
+  ["mon", 1],
+  ["tue", 2],
+  ["wed", 3],
+  ["thu", 4],
+  ["fri", 5],
+  ["sat", 6],
+];
+const medicationWeekDayKeys = medicationWeekDays.map(([key]) => key);
 
 const formatTimeWindowLabel = (value) =>
   cleanFormText(value).replace(/^./, (letter) => letter.toUpperCase());
@@ -142,6 +152,47 @@ const normaliseMedicationTimeWindows = (value) => {
   );
 };
 
+const normaliseMedicationScheduleDays = (value, { requiredDaily = false } = {}) => {
+  const rawText = Array.isArray(value)
+    ? value.join(",")
+    : String(value || "").trim().toLowerCase();
+  if (rawText === "prn" || rawText === "as_needed") return ["prn"];
+  if (!rawText || rawText === "every_day" || rawText === "daily") {
+    return requiredDaily ? ["every_day"] : [];
+  }
+
+  const days = Array.from(
+    new Set(
+      rawText
+        .split(",")
+        .map((item) => cleanFormText(item).toLowerCase())
+        .filter((item) => medicationWeekDayKeys.includes(item)),
+    ),
+  );
+
+  return days.length ? days : requiredDaily ? ["every_day"] : [];
+};
+
+const isMedicationScheduledForDate = (medicine, date) => {
+  if (!medicine?.requiredDaily) return false;
+  const days = normaliseMedicationScheduleDays(medicine.scheduleDays, {
+    requiredDaily: medicine.requiredDaily,
+  });
+  if (days.includes("prn")) return false;
+  if (!days.length || days.includes("every_day")) return true;
+  const dayKey = medicationWeekDays.find(([, dayNumber]) => dayNumber === date.getDay())?.[0];
+  return dayKey ? days.includes(dayKey) : false;
+};
+
+const medicationScheduleLabel = (medicine) => {
+  const days = normaliseMedicationScheduleDays(medicine?.scheduleDays, {
+    requiredDaily: medicine?.requiredDaily,
+  });
+  if (days.includes("prn")) return "PRN";
+  if (!days.length || days.includes("every_day")) return "Every day";
+  return days.map((day) => day.toUpperCase()).join(", ");
+};
+
 const parseMedicationProfile = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -160,11 +211,13 @@ const parseMedicationProfile = (value = "") => {
           notes = "",
           requiredDaily = "",
           timeWindow = "",
+          scheduleDays = "",
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
         const dose = [doseAmount, doseUnit].filter(Boolean).join(" ");
         const timeWindows = normaliseMedicationTimeWindows(timeWindow);
+        const isRequiredDaily = requiredDaily === "required";
         return {
           name,
           doseAmount,
@@ -176,9 +229,12 @@ const parseMedicationProfile = (value = "") => {
             .filter(Boolean),
           active: active !== "inactive",
           notes,
-          requiredDaily: requiredDaily === "required",
+          requiredDaily: isRequiredDaily,
           timeWindow: timeWindows[0] || "",
           timeWindows,
+          scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
+            requiredDaily: isRequiredDaily,
+          }),
         };
       }
 
@@ -186,7 +242,7 @@ const parseMedicationProfile = (value = "") => {
         line.includes(item),
       );
       if (!separator) {
-        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "", timeWindows: [] };
+        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "", timeWindows: [], scheduleDays: [] };
       }
       const [name, ...doseParts] = line.split(separator);
       const dose = cleanFormText(doseParts.join(separator));
@@ -201,6 +257,7 @@ const parseMedicationProfile = (value = "") => {
         requiredDaily: false,
         timeWindow: "",
         timeWindows: [],
+        scheduleDays: [],
       };
     })
     .filter((item) => item.name && item.active !== false);
@@ -726,6 +783,8 @@ export default function KaylenCareMonitorDashboard({
     givenBy: "",
     otherGivenBy: "",
     date: todayValue(),
+    scheduledWindow: "",
+    scheduledDay: "",
     notes: "",
   });
   const medicationScheduleStorageKey = `familytrack:medication-schedules:${
@@ -2024,6 +2083,8 @@ export default function KaylenCareMonitorDashboard({
       givenBy: "",
       otherGivenBy: "",
       date: todayValue(),
+      scheduledWindow: "",
+      scheduledDay: "",
       notes: "",
     });
     setMedicationValue("");
@@ -2394,6 +2455,10 @@ export default function KaylenCareMonitorDashboard({
       row.data?.status && row.data.status !== "given"
         ? `Medication status: ${medicationStatusLabel(row.data.status)}`
         : null,
+      row.data?.scheduled_window
+        ? `Scheduled dose: ${formatTimeWindowLabel(row.data.scheduled_window)}`
+        : null,
+      row.data?.scheduled_day ? `Scheduled day: ${row.data.scheduled_day}` : null,
       `Given by: ${row.data?.given_by || "Not set"}`,
       row.notes ? `Notes: ${row.notes}` : null,
       row.createdByName ? `Logged by: ${row.createdByName}` : null,
@@ -3188,15 +3253,23 @@ export default function KaylenCareMonitorDashboard({
     const average = (values) =>
       values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
 
-    const requiredMedicationPerDay = profileMedicationOptions
-      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
-      .reduce((sum, medicine) => {
-        const windows = normaliseMedicationTimeWindows(
-          medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
-        );
-        return sum + Math.max(1, windows.length || medicine.times?.length || 0);
-      }, 0);
-    const expectedMedicationDoses = requiredMedicationPerDay * 3;
+    const expectedMedicationDoses = Array.from({ length: 3 }, (_, index) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (2 - index));
+      return profileMedicationOptions
+        .filter(
+          (medicine) =>
+            medicine.active !== false &&
+            medicine.requiredDaily &&
+            isMedicationScheduledForDate(medicine, date),
+        )
+        .reduce((sum, medicine) => {
+          const windows = normaliseMedicationTimeWindows(
+            medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+          );
+          return sum + Math.max(1, windows.length || medicine.times?.length || 0);
+        }, 0);
+    }).reduce((sum, value) => sum + value, 0);
     const medicationLogged = snapshotBySection.medication.length;
     const sleepAverageMinutes = average(Array.from(sleepByDay.values()));
     const fluidAverageMl = average(Array.from(fluidByDay.values()));
@@ -3775,7 +3848,12 @@ export default function KaylenCareMonitorDashboard({
     };
 
     const allRequiredMedication = profileMedicationOptions
-      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
+      .filter(
+        (medicine) =>
+          medicine.active !== false &&
+          medicine.requiredDaily &&
+          isMedicationScheduledForDate(medicine, now),
+      )
       .flatMap((medicine) => {
         const windows = normaliseMedicationTimeWindows(
           medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
@@ -4090,27 +4168,45 @@ export default function KaylenCareMonitorDashboard({
       1,
       Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1,
     );
-    const dailyMedicationRequired = profileMedicationOptions
-      .filter((medicine) => medicine.active !== false && medicine.requiredDaily)
-      .reduce((sum, medicine) => {
-        const windows = normaliseMedicationTimeWindows(
-          medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
-        );
-        return sum + Math.max(1, windows.length || medicine.times?.length || 0);
-      }, 0);
-    const expectedMedicationDoses = dailyMedicationRequired * rangeDays;
-
     const makeDayKey = (date) =>
       `${String(date.getDate()).padStart(2, "0")}/${String(date.getMonth() + 1).padStart(2, "0")}/${date.getFullYear()}`;
     const dayMap = new Map();
+    let expectedMedicationDoses = 0;
     for (let day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) {
       const key = makeDayKey(day);
+      expectedMedicationDoses += profileMedicationOptions
+        .filter(
+          (medicine) =>
+            medicine.active !== false &&
+            medicine.requiredDaily &&
+            isMedicationScheduledForDate(medicine, day),
+        )
+        .reduce((sum, medicine) => {
+          const windows = normaliseMedicationTimeWindows(
+            medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+          );
+          return sum + Math.max(1, windows.length || medicine.times?.length || 0);
+        }, 0);
+      const medicationExpectedForDay = profileMedicationOptions
+        .filter(
+          (medicine) =>
+            medicine.active !== false &&
+            medicine.requiredDaily &&
+            isMedicationScheduledForDate(medicine, day),
+        )
+        .reduce((sum, medicine) => {
+          const windows = normaliseMedicationTimeWindows(
+            medicine.timeWindows?.length ? medicine.timeWindows : medicine.timeWindow,
+          );
+          return sum + Math.max(1, windows.length || medicine.times?.length || 0);
+        }, 0);
       dayMap.set(key, {
         date: key,
         label: key.slice(0, 5),
         fluidMl: null,
         sleepHours: null,
         medicationLogged: 0,
+        medicationExpected: medicationExpectedForDay,
         toiletingCount: null,
         wet: 0,
         soiled: 0,
@@ -4451,8 +4547,9 @@ export default function KaylenCareMonitorDashboard({
           typical: expectedMedicationDoses,
           daily: daily.map((day) => ({
             label: day.label,
-            value: expectedMedicationDoses ? day.medicationLogged : null,
-            hasData: day.medicationLogged > 0,
+            value: day.medicationExpected ? day.medicationLogged : null,
+            expected: day.medicationExpected,
+            hasData: day.medicationExpected > 0 || day.medicationLogged > 0,
           })),
         },
         sleep: daily
@@ -5430,6 +5527,8 @@ export default function KaylenCareMonitorDashboard({
             dose: medicationForm.dose || "",
             status: medicationForm.status || "given",
             given_by: selectedGivenBy || "Not set",
+            scheduled_window: medicationForm.scheduledWindow || "",
+            scheduled_day: medicationForm.scheduledDay || "",
           },
           notes: medicationForm.notes || "",
         });
@@ -8797,6 +8896,8 @@ export default function KaylenCareMonitorDashboard({
       status: "given",
       date: todayValue(),
       time: nowTimeValue(),
+      scheduledWindow: medicine.timeWindow || "",
+      scheduledDay: medicationScheduleLabel(medicine),
       givenBy: "",
       otherGivenBy: "",
       notes: "",
@@ -11101,7 +11202,10 @@ export default function KaylenCareMonitorDashboard({
                       <p>Times: {medicine.times.join(", ")}</p>
                     ) : null}
                     {medicine.requiredDaily ? (
-                      <p>Required daily{medicine.timeWindow ? ` - ${medicine.timeWindow}` : ""}</p>
+                      <p>
+                        Required {medicationScheduleLabel(medicine)}
+                        {medicine.timeWindow ? ` - ${medicine.timeWindow}` : ""}
+                      </p>
                     ) : null}
                     {medicine.notes ? <p>Notes: {medicine.notes}</p> : null}
                   </div>
@@ -13641,7 +13745,13 @@ export default function KaylenCareMonitorDashboard({
                           {medicine.name}
                         </p>
                         <p className="truncate text-xs font-bold text-slate-500">
-                          {[medicine.dose, formatTimeWindowLabel(medicine.timeWindow)]
+                          {[
+                            medicine.dose,
+                            formatTimeWindowLabel(medicine.timeWindow),
+                            medicationScheduleLabel(medicine) === "Every day"
+                              ? ""
+                              : medicationScheduleLabel(medicine),
+                          ]
                             .filter(Boolean)
                             .join(" - ") ||
                             "Daily medication"}

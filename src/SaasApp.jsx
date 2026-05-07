@@ -812,6 +812,16 @@ const issueSeverityLabels = {
 };
 
 const medicationTimeWindows = ["morning", "afternoon", "evening"];
+const medicationWeekDays = [
+  ["mon", "Monday"],
+  ["tue", "Tuesday"],
+  ["wed", "Wednesday"],
+  ["thu", "Thursday"],
+  ["fri", "Friday"],
+  ["sat", "Saturday"],
+  ["sun", "Sunday"],
+];
+const medicationWeekDayKeys = medicationWeekDays.map(([key]) => key);
 
 const formatTimeWindowLabel = (value) =>
   cleanFormText(value).replace(/^./, (letter) => letter.toUpperCase());
@@ -832,6 +842,38 @@ const normaliseMedicationTimeWindows = (value) => {
   );
 };
 
+const normaliseMedicationScheduleDays = (value, { requiredDaily = false } = {}) => {
+  const rawText = Array.isArray(value)
+    ? value.join(",")
+    : String(value || "").trim().toLowerCase();
+
+  if (rawText === "prn" || rawText === "as_needed") return ["prn"];
+  if (!rawText || rawText === "every_day" || rawText === "daily") {
+    return requiredDaily ? ["every_day"] : [];
+  }
+
+  const days = Array.from(
+    new Set(
+      rawText
+        .split(",")
+        .map((item) => cleanFormText(item).toLowerCase())
+        .filter((item) => medicationWeekDayKeys.includes(item)),
+    ),
+  );
+
+  return days.length ? days : requiredDaily ? ["every_day"] : [];
+};
+
+const medicationScheduleLabel = (days = [], requiredDaily = false) => {
+  const normalised = normaliseMedicationScheduleDays(days, { requiredDaily });
+  if (normalised.includes("prn")) return "As needed / PRN";
+  if (!normalised.length || normalised.includes("every_day")) return "Every day";
+  return medicationWeekDays
+    .filter(([key]) => normalised.includes(key))
+    .map(([, label]) => label.slice(0, 3))
+    .join(", ");
+};
+
 const parseCareMedicationRows = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -850,10 +892,12 @@ const parseCareMedicationRows = (value = "") => {
           notes = "",
           requiredDaily = "",
           timeWindow = "",
+          scheduleDays = "",
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
         const timeWindows = normaliseMedicationTimeWindows(timeWindow);
+        const isRequiredDaily = requiredDaily === "required";
         return {
           name,
           doseAmount,
@@ -864,9 +908,12 @@ const parseCareMedicationRows = (value = "") => {
             .filter(Boolean),
           active: active !== "inactive",
           notes,
-          requiredDaily: requiredDaily === "required",
+          requiredDaily: isRequiredDaily,
           timeWindow: timeWindows[0] || "",
           timeWindows,
+          scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
+            requiredDaily: isRequiredDaily,
+          }),
         };
       }
 
@@ -884,6 +931,7 @@ const parseCareMedicationRows = (value = "") => {
           requiredDaily: false,
           timeWindow: "",
           timeWindows: [],
+          scheduleDays: [],
         };
       }
 
@@ -898,6 +946,7 @@ const parseCareMedicationRows = (value = "") => {
         requiredDaily: false,
         timeWindow: "",
         timeWindows: [],
+        scheduleDays: [],
       };
     })
     .filter((item) => item.name || item.doseAmount || item.notes);
@@ -918,6 +967,9 @@ const serializeCareMedicationRows = (rows) =>
       timeWindow: normaliseMedicationTimeWindows(
         row.timeWindows?.length ? row.timeWindows : row.timeWindow,
       ).join(","),
+      scheduleDays: normaliseMedicationScheduleDays(row.scheduleDays, {
+        requiredDaily: row.requiredDaily,
+      }).join(","),
     }))
     .filter((row) => row.name || row.doseAmount || row.notes)
     .map((row) =>
@@ -930,6 +982,7 @@ const serializeCareMedicationRows = (rows) =>
         row.notes,
         row.requiredDaily,
         row.timeWindow,
+        row.scheduleDays,
       ].join(" | "),
     )
     .join("\n");
@@ -944,6 +997,7 @@ const emptyCareMedicationRow = () => ({
   requiredDaily: false,
   timeWindow: "",
   timeWindows: [],
+  scheduleDays: [],
 });
 
 const careMedicationRowsFromProfile = (value = "") => {
@@ -3884,6 +3938,12 @@ function WorkspaceGate({ session, onLogout }) {
           ? regularMedicationDraft.timeWindows
           : regularMedicationDraft.timeWindow,
       ),
+      scheduleDays: normaliseMedicationScheduleDays(
+        regularMedicationDraft.scheduleDays,
+        {
+          requiredDaily: regularMedicationDraft.requiredDaily,
+        },
+      ),
       active: regularMedicationDraft.active !== false,
       notes: cleanFormText(regularMedicationDraft.notes),
     };
@@ -3909,6 +3969,9 @@ function WorkspaceGate({ session, onLogout }) {
       timeWindows: normaliseMedicationTimeWindows(
         row.timeWindows?.length ? row.timeWindows : row.timeWindow,
       ),
+      scheduleDays: normaliseMedicationScheduleDays(row.scheduleDays, {
+        requiredDaily: row.requiredDaily,
+      }),
     });
     setEditingCareMedicationIndex(index);
   };
@@ -3945,6 +4008,7 @@ function WorkspaceGate({ session, onLogout }) {
         requiredDaily: false,
         timeWindow: "",
         timeWindows: [],
+        scheduleDays: [],
       },
     ];
     const nextProfile = {
@@ -6741,8 +6805,114 @@ function WorkspaceGate({ session, onLogout }) {
                               )
                             }
                           />
-                          Required daily
+                          Required medication
                         </label>
+                        <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 md:col-span-4">
+                          <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                            Schedule days
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                            {[
+                              ["every_day", "Every day"],
+                              ["specific", "Specific days"],
+                              ["prn", "As needed / PRN"],
+                            ].map(([mode, label]) => {
+                              const selectedDays = normaliseMedicationScheduleDays(
+                                regularMedicationDraft.scheduleDays,
+                                {
+                                  requiredDaily:
+                                    regularMedicationDraft.requiredDaily,
+                                },
+                              );
+                              const currentMode = selectedDays.includes("prn")
+                                ? "prn"
+                                : selectedDays.includes("every_day") ||
+                                    !selectedDays.length
+                                  ? "every_day"
+                                  : "specific";
+                              return (
+                                <label
+                                  key={mode}
+                                  className={`flex min-h-[40px] items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${
+                                    currentMode === mode
+                                      ? "border-rose-300 bg-rose-50 text-rose-800"
+                                      : "border-slate-200 bg-slate-50 text-slate-600"
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name="regular-medication-schedule-days"
+                                    checked={currentMode === mode}
+                                    onChange={() => {
+                                      setRegularMedicationDraft((current) => ({
+                                        ...current,
+                                        requiredDaily: mode !== "prn",
+                                        scheduleDays:
+                                          mode === "specific"
+                                            ? medicationWeekDayKeys.slice(0, 1)
+                                            : [mode],
+                                      }));
+                                    }}
+                                  />
+                                  {label}
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {normaliseMedicationScheduleDays(
+                            regularMedicationDraft.scheduleDays,
+                            {
+                              requiredDaily: regularMedicationDraft.requiredDaily,
+                            },
+                          ).some((day) => medicationWeekDayKeys.includes(day)) ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {medicationWeekDays.map(([dayKey, label]) => {
+                                const selectedDays =
+                                  normaliseMedicationScheduleDays(
+                                    regularMedicationDraft.scheduleDays,
+                                    {
+                                      requiredDaily:
+                                        regularMedicationDraft.requiredDaily,
+                                    },
+                                  );
+                                const checked = selectedDays.includes(dayKey);
+                                return (
+                                  <label
+                                    key={dayKey}
+                                    className={`flex min-h-[38px] items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold ${
+                                      checked
+                                        ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                                        : "border-slate-200 bg-slate-50 text-slate-600"
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) => {
+                                        const nextDays = event.target.checked
+                                          ? [...selectedDays, dayKey]
+                                          : selectedDays.filter(
+                                              (item) => item !== dayKey,
+                                            );
+                                        setRegularMedicationDraft((current) => ({
+                                          ...current,
+                                          requiredDaily: true,
+                                          scheduleDays: nextDays.length
+                                            ? nextDays
+                                            : medicationWeekDayKeys.slice(0, 1),
+                                        }));
+                                      }}
+                                    />
+                                    {label.slice(0, 3)}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          <p className="mt-2 text-xs font-semibold text-slate-500">
+                            Existing required medicines default to every day.
+                          </p>
+                        </div>
                         <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 md:col-span-3">
                           <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                             Required dose windows
@@ -6911,7 +7081,14 @@ function WorkspaceGate({ session, onLogout }) {
                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                       {row.requiredDaily ? (
                                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
-                                          Required daily
+                                          {medicationScheduleLabel(
+                                            row.scheduleDays,
+                                            row.requiredDaily,
+                                          )}
+                                        </span>
+                                      ) : normaliseMedicationScheduleDays(row.scheduleDays).includes("prn") ? (
+                                        <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
+                                          As needed / PRN
                                         </span>
                                       ) : null}
                                       {row.timeWindow ? (

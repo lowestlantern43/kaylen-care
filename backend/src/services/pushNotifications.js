@@ -181,6 +181,49 @@ const cleanText = (value) => {
   return ["null", "undefined"].includes(text.toLowerCase()) ? "" : text;
 };
 
+const medicationWeekDays = [
+  ["sun", 0],
+  ["mon", 1],
+  ["tue", 2],
+  ["wed", 3],
+  ["thu", 4],
+  ["fri", 5],
+  ["sat", 6],
+];
+const medicationWeekDayKeys = medicationWeekDays.map(([key]) => key);
+
+const normaliseMedicationScheduleDays = (value, { requiredDaily = false } = {}) => {
+  const rawText = Array.isArray(value)
+    ? value.join(",")
+    : String(value || "").trim().toLowerCase();
+  if (rawText === "prn" || rawText === "as_needed") return ["prn"];
+  if (!rawText || rawText === "every_day" || rawText === "daily") {
+    return requiredDaily ? ["every_day"] : [];
+  }
+
+  const days = Array.from(
+    new Set(
+      rawText
+        .split(",")
+        .map((item) => cleanText(item).toLowerCase())
+        .filter((item) => medicationWeekDayKeys.includes(item)),
+    ),
+  );
+
+  return days.length ? days : requiredDaily ? ["every_day"] : [];
+};
+
+const isMedicineScheduledForDate = (medicine, date) => {
+  if (!medicine?.requiredDaily) return false;
+  const days = normaliseMedicationScheduleDays(medicine.scheduleDays, {
+    requiredDaily: medicine.requiredDaily,
+  });
+  if (days.includes("prn")) return false;
+  if (!days.length || days.includes("every_day")) return true;
+  const dayKey = medicationWeekDays.find(([, dayNumber]) => dayNumber === date.getDay())?.[0];
+  return dayKey ? days.includes(dayKey) : false;
+};
+
 const parseMedicationProfile = (value = "") =>
   String(value || "")
     .split(/\n|;/)
@@ -195,7 +238,10 @@ const parseMedicationProfile = (value = "") =>
         active = "active",
         notes = "",
         requiredDaily = "",
+        timeWindow = "",
+        scheduleDays = "",
       ] = line.split("|").map(cleanText);
+      const isRequiredDaily = requiredDaily === "required";
 
       return {
         name,
@@ -206,7 +252,11 @@ const parseMedicationProfile = (value = "") =>
           .filter((time) => /^\d{2}:\d{2}$/.test(time)),
         active: active !== "inactive",
         notes,
-        requiredDaily: requiredDaily === "required",
+        requiredDaily: isRequiredDaily,
+        timeWindow,
+        scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
+          requiredDaily: isRequiredDaily,
+        }),
       };
     })
     .filter((medicine) => medicine.name && medicine.active && medicine.requiredDaily);
@@ -346,6 +396,7 @@ export async function runDueReminderScan(now = new Date()) {
 
   const current = londonParts(now);
   const currentMinutes = minutesFromTime(current.time);
+  const currentDate = new Date(`${current.date}T12:00:00`);
   const results = { medication: 0, appointments: 0, duplicates: 0 };
 
   const { rows: medicationRows } = await query(
@@ -362,6 +413,7 @@ export async function runDueReminderScan(now = new Date()) {
   for (const row of medicationRows) {
     const medicines = parseMedicationProfile(row.current_medications);
     for (const medicine of medicines) {
+      if (!isMedicineScheduledForDate(medicine, currentDate)) continue;
       for (const time of medicine.times) {
         const dueMinutes = minutesFromTime(time);
         if (Math.abs(currentMinutes - dueMinutes) > 5) continue;
