@@ -16,6 +16,8 @@ const DEFAULT_MODULE_VISIBILITY = {
   reports: true,
   snapshot: true,
   documents: true,
+  appointments: true,
+  timeline: true,
   calendar: true,
 };
 
@@ -53,6 +55,17 @@ const BEHAVIOUR_TRIGGERS = [
   "Communication frustration",
   "Pain/discomfort",
   "Unknown",
+  "Other",
+];
+
+const APPOINTMENT_CATEGORIES = [
+  "Hospital",
+  "GP",
+  "School",
+  "EHCP",
+  "Therapy",
+  "Medication review",
+  "Dentist",
   "Other",
 ];
 
@@ -497,6 +510,11 @@ const sectionTheme = {
     badge: "bg-purple-100 text-purple-700",
     solidHeader: "bg-purple-600 text-white border-purple-700",
   },
+  Appointments: {
+    report: "border-blue-200 bg-blue-50",
+    badge: "bg-blue-100 text-blue-700",
+    solidHeader: "bg-blue-600 text-white border-blue-700",
+  },
   "Growth / Measurements": {
     report: "border-teal-200 bg-teal-50",
     badge: "bg-teal-100 text-teal-700",
@@ -623,6 +641,17 @@ export default function KaylenCareMonitorDashboard({
     childId: "",
     category: "All",
   });
+  const [timelineFilters, setTimelineFilters] = useState({
+    search: "",
+    childId: "all",
+    range: "30",
+    category: "All",
+    severity: "All",
+  });
+  const [timelineLogs, setTimelineLogs] = useState([]);
+  const [timelineDocuments, setTimelineDocuments] = useState([]);
+  const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
+  const [expandedTimelineItem, setExpandedTimelineItem] = useState("");
   const [documentForm, setDocumentForm] = useState({
     title: "",
     category: "EHCP",
@@ -763,6 +792,16 @@ export default function KaylenCareMonitorDashboard({
     notes: "",
     attachment: null,
   });
+  const [appointmentForm, setAppointmentForm] = useState({
+    title: "",
+    date: todayValue(),
+    time: "",
+    location: "",
+    professional: "",
+    category: "Hospital",
+    notes: "",
+    outcome: "",
+  });
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
@@ -873,6 +912,22 @@ export default function KaylenCareMonitorDashboard({
       soft: "bg-slate-50 border-slate-300",
     },
     {
+      title: "Appointments",
+      subtitle: "Hospital, school, EHCP and care dates",
+      button: "Open Calendar",
+      emoji: "APPT",
+      color: "from-blue-400 to-indigo-500",
+      soft: "bg-blue-50 border-blue-300",
+    },
+    {
+      title: "Timeline",
+      subtitle: "Search logs, documents, appointments and care history",
+      button: "Open Timeline",
+      emoji: "TL",
+      color: "from-slate-500 to-indigo-600",
+      soft: "bg-slate-50 border-slate-300",
+    },
+    {
       title: "Calendar",
       subtitle: "Monthly log overview",
       button: "Open Calendar",
@@ -914,6 +969,10 @@ export default function KaylenCareMonitorDashboard({
         return "snapshot";
       case "Document Vault":
         return "documents";
+      case "Appointments":
+        return "appointments";
+      case "Timeline":
+        return "timeline";
       case "Calendar":
         return "calendar";
       default:
@@ -943,6 +1002,7 @@ export default function KaylenCareMonitorDashboard({
         { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
         { label: "Health", title: "Health", preset: "", icon: "Health", module: "health" },
         { label: "Behaviour", title: "Behaviour", preset: "", icon: "Mood", module: "behaviour" },
+        { label: "Appointment", title: "Appointments", preset: "", icon: "Date", module: "appointments" },
       ].filter((item) => isModuleEnabled(item.module)),
     [visibleModules],
   );
@@ -968,6 +1028,8 @@ export default function KaylenCareMonitorDashboard({
         return "health";
       case "Behaviour":
         return "behaviour";
+      case "Appointments":
+        return "appointments";
       case "Sleep":
         return "sleep";
       default:
@@ -1001,6 +1063,8 @@ export default function KaylenCareMonitorDashboard({
         return { healthForm };
       case "behaviour":
         return { behaviourForm };
+      case "appointments":
+        return { appointmentForm };
       case "sleep":
         return { sleepForm };
       default:
@@ -1015,6 +1079,7 @@ export default function KaylenCareMonitorDashboard({
       toileting: JSON.stringify(getDraftPayload("toileting")),
       health: JSON.stringify(getDraftPayload("health")),
       behaviour: JSON.stringify(getDraftPayload("behaviour")),
+      appointments: JSON.stringify(getDraftPayload("appointments")),
       sleep: JSON.stringify(getDraftPayload("sleep")),
     };
   }
@@ -1080,6 +1145,16 @@ export default function KaylenCareMonitorDashboard({
             payload.behaviourForm?.notes ||
             payload.behaviourForm?.attachment,
         );
+      case "appointments":
+        return Boolean(
+          payload.appointmentForm?.title ||
+            payload.appointmentForm?.time ||
+            payload.appointmentForm?.location ||
+            payload.appointmentForm?.professional ||
+            payload.appointmentForm?.category !== "Hospital" ||
+            payload.appointmentForm?.notes ||
+            payload.appointmentForm?.outcome,
+        );
       case "sleep":
         return (
           JSON.stringify(payload) !== initialDraftSnapshotRef.current.sleep &&
@@ -1139,6 +1214,10 @@ export default function KaylenCareMonitorDashboard({
 
     if (kind === "behaviour") {
       setBehaviourForm({ ...behaviourForm, ...(draft.behaviourForm || {}) });
+    }
+
+    if (kind === "appointments") {
+      setAppointmentForm({ ...appointmentForm, ...(draft.appointmentForm || {}) });
     }
 
     if (kind === "sleep") {
@@ -1377,6 +1456,17 @@ export default function KaylenCareMonitorDashboard({
   }, [documentFilters, familyId, isUnlocked, useSaasApi]);
 
   useEffect(() => {
+    if (!isUnlocked || activeSection?.title !== "Timeline") return;
+    loadUnifiedTimelineData();
+  }, [
+    activeSection?.title,
+    familyId,
+    isUnlocked,
+    timelineFilters.childId,
+    useSaasApi,
+  ]);
+
+  useEffect(() => {
     let ignore = false;
 
     async function loadCareSnapshotPreference() {
@@ -1429,6 +1519,7 @@ export default function KaylenCareMonitorDashboard({
     foodValue,
     healthForm,
     behaviourForm,
+    appointmentForm,
     medicationForm,
     medicationValue,
     saveFoodForFuture,
@@ -1472,7 +1563,7 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const usesAddedSvgIcon = (sectionTitle) =>
-    ["Growth / Measurements", "Care Snapshot", "Calendar"].includes(sectionTitle);
+    ["Growth / Measurements", "Care Snapshot", "Timeline", "Calendar"].includes(sectionTitle);
 
   const renderSectionIcon = (sectionTitle, className = "h-8 w-8") => {
     const common = {
@@ -1558,15 +1649,28 @@ export default function KaylenCareMonitorDashboard({
           </svg>
         );
       case "Calendar":
+      case "Timeline":
         return (
           <svg {...common}>
-            <rect x="3" y="4" width="18" height="18" rx="2" />
-            <path d="M16 2v4" />
-            <path d="M8 2v4" />
-            <path d="M3 10h18" />
-            <path d="M8 14h.01" />
-            <path d="M12 14h.01" />
-            <path d="M16 14h.01" />
+            {sectionTitle === "Timeline" ? (
+              <>
+                <path d="M4 6h16" />
+                <path d="M4 12h10" />
+                <path d="M4 18h7" />
+                <circle cx="18" cy="17" r="3" />
+                <path d="m20.5 19.5 1.5 1.5" />
+              </>
+            ) : (
+              <>
+                <rect x="3" y="4" width="18" height="18" rx="2" />
+                <path d="M16 2v4" />
+                <path d="M8 2v4" />
+                <path d="M3 10h18" />
+                <path d="M8 14h.01" />
+                <path d="M12 14h.01" />
+                <path d="M16 14h.01" />
+              </>
+            )}
           </svg>
         );
       default:
@@ -1751,6 +1855,7 @@ export default function KaylenCareMonitorDashboard({
     if (title === "Toileting") resetToiletingForm();
     if (title === "Health" || title === "Growth / Measurements") resetHealthForm();
     if (title === "Behaviour") resetBehaviourForm();
+    if (title === "Appointments") resetAppointmentForm();
     if (title === "Sleep") resetSleepForm();
   };
 
@@ -2332,6 +2437,36 @@ export default function KaylenCareMonitorDashboard({
     };
   };
 
+  const mapSaasAppointmentEntry = (row) => {
+    const title = row.data?.title || "Appointment";
+    const category = row.data?.category || "Other";
+    const professional = row.data?.professional || "";
+    const location = row.data?.location || "";
+    const outcome = row.data?.outcome || "";
+
+    return {
+      id: `care-${row.id}`,
+      createdAt: row.createdAt || new Date().toISOString(),
+      section: "Appointments",
+      date: formatDisplayDateFromIso(row.logDate) || todayValue(),
+      time: row.logTime || "",
+      appointmentCategory: category,
+      appointmentTitle: title,
+      professional,
+      location,
+      outcome,
+      summary: `${title} - ${category}`,
+      details: [
+        professional ? `Professional/service: ${professional}` : null,
+        location ? `Location: ${location}` : null,
+        row.notes ? `Notes: ${row.notes}` : null,
+        outcome ? `Outcome/follow-up: ${outcome}` : null,
+        row.createdByName ? `Logged by: ${row.createdByName}` : null,
+      ].filter(Boolean),
+      notes: row.notes || "",
+    };
+  };
+
   const mapSaasSleepEntry = (row) => {
     const entryDate = formatDisplayDateFromIso(row.logDate) || todayValue();
     const wakeDate = formatDisplayDateFromIso(row.data?.wake_date) || entryDate;
@@ -2406,6 +2541,36 @@ export default function KaylenCareMonitorDashboard({
     };
   };
 
+  const mapSaasCareLogEntry = (row) => {
+    const mapped =
+      row.category === "food"
+        ? mapSaasFoodEntry(row)
+        : row.category === "medication"
+          ? mapSaasMedicationEntry(row)
+          : row.category === "toileting"
+            ? mapSaasToiletingEntry(row)
+            : row.category === "behaviour"
+              ? mapSaasBehaviourEntry(row)
+              : row.category === "appointment"
+                ? mapSaasAppointmentEntry(row)
+                : row.category === "sleep"
+                  ? mapSaasSleepEntry(row)
+                  : row.category === "health"
+                    ? mapSaasHealthEntry(row)
+                    : null;
+
+    if (!mapped) return null;
+
+    return {
+      ...mapped,
+      childId: row.childId || row.child_id || "",
+      childName: row.childFirstName || row.childName || "",
+      rawCategory: row.category || "",
+      rawData: row.data || {},
+      rawNotes: row.notes || "",
+    };
+  };
+
   const loadEntriesFromSaasApi = async () => {
     if (!familyId || !childId) return false;
 
@@ -2415,27 +2580,45 @@ export default function KaylenCareMonitorDashboard({
 
     setSharedLog(
       logs
-        .map((row) => {
-          switch (row.category) {
-            case "food":
-              return mapSaasFoodEntry(row);
-            case "medication":
-              return mapSaasMedicationEntry(row);
-            case "toileting":
-              return mapSaasToiletingEntry(row);
-            case "behaviour":
-              return mapSaasBehaviourEntry(row);
-            case "sleep":
-              return mapSaasSleepEntry(row);
-            case "health":
-              return mapSaasHealthEntry(row);
-            default:
-              return null;
-          }
-        })
+        .map(mapSaasCareLogEntry)
         .filter(Boolean),
     );
     return true;
+  };
+
+  const loadUnifiedTimelineData = async () => {
+    if (!familyId) {
+      setTimelineLogs(sharedLog);
+      setTimelineDocuments(documents);
+      return;
+    }
+
+    setIsLoadingTimeline(true);
+    try {
+      if (useSaasApi) {
+        const childQuery =
+          timelineFilters.childId && timelineFilters.childId !== "all"
+            ? { childId: timelineFilters.childId }
+            : {};
+        const [logRows, documentRows] = await Promise.all([
+          api.listCareLogs(familyId, childQuery),
+          api.listDocuments(familyId, childQuery),
+        ]);
+        setTimelineLogs((logRows || []).map(mapSaasCareLogEntry).filter(Boolean));
+        setTimelineDocuments(documentRows || []);
+      } else {
+        setTimelineLogs(sharedLog);
+        setTimelineDocuments(documents);
+      }
+    } catch (error) {
+      console.error("Error loading unified timeline:", error);
+      showToast?.({
+        message: "Timeline could not be loaded. Please try again.",
+        type: "error",
+      });
+    } finally {
+      setIsLoadingTimeline(false);
+    }
   };
 
   const loadEntriesFromSupabase = async () => {
@@ -2839,6 +3022,10 @@ export default function KaylenCareMonitorDashboard({
         return "A compact 72-hour summary for urgent handovers and appointments.";
       case "Document Vault":
         return "Store and download private family documents for school, medical and care use.";
+      case "Appointments":
+        return "Record hospital, school, EHCP and care appointments with follow-up notes.";
+      case "Timeline":
+        return "Search across logs, documents, appointments and care history.";
       case "Calendar":
         return "Tap a date to review that day's logs.";
       default:
@@ -3146,6 +3333,297 @@ export default function KaylenCareMonitorDashboard({
     return sharedLog.filter((entry) => entry.date === selectedDisplay);
   }, [calendarSelectedDate, sharedLog]);
 
+  const timelineCategoryOptions = [
+    "All",
+    "Food Diary",
+    "Medication",
+    "Sleep",
+    "Toileting",
+    "Health",
+    "Behaviour",
+    "Appointments",
+    "Documents",
+    "Reports / Snapshot",
+  ];
+
+  const getChildNameById = (value, fallback = "Child") => {
+    const found = children.find(
+      (child) => String(child.id) === String(value || ""),
+    );
+    return (
+      found?.firstName ||
+      found?.first_name ||
+      found?.name ||
+      fallback ||
+      childName ||
+      "Child"
+    );
+  };
+
+  const getTimelineTheme = (category) => {
+    switch (category) {
+      case "Food Diary":
+        return {
+          label: "Food / Drink",
+          icon: "Food",
+          dot: "bg-amber-500",
+          card: "border-amber-100 bg-amber-50/80",
+          text: "text-amber-800",
+        };
+      case "Medication":
+        return {
+          label: "Medication",
+          icon: "Med",
+          dot: "bg-rose-500",
+          card: "border-rose-100 bg-rose-50/80",
+          text: "text-rose-800",
+        };
+      case "Sleep":
+        return {
+          label: "Sleep",
+          icon: "Sleep",
+          dot: "bg-indigo-500",
+          card: "border-indigo-100 bg-indigo-50/80",
+          text: "text-indigo-800",
+        };
+      case "Toileting":
+        return {
+          label: "Toileting",
+          icon: "Care",
+          dot: "bg-cyan-500",
+          card: "border-cyan-100 bg-cyan-50/80",
+          text: "text-cyan-800",
+        };
+      case "Health":
+        return {
+          label: "Health",
+          icon: "Health",
+          dot: "bg-emerald-500",
+          card: "border-emerald-100 bg-emerald-50/80",
+          text: "text-emerald-800",
+        };
+      case "Behaviour":
+        return {
+          label: "Behaviour",
+          icon: "Mood",
+          dot: "bg-purple-500",
+          card: "border-purple-100 bg-purple-50/80",
+          text: "text-purple-800",
+        };
+      case "Appointments":
+        return {
+          label: "Appointment",
+          icon: "Date",
+          dot: "bg-blue-500",
+          card: "border-blue-100 bg-blue-50/80",
+          text: "text-blue-800",
+        };
+      case "Documents":
+        return {
+          label: "Document",
+          icon: "File",
+          dot: "bg-slate-500",
+          card: "border-slate-200 bg-slate-50/90",
+          text: "text-slate-800",
+        };
+      default:
+        return {
+          label: category || "Timeline",
+          icon: "Note",
+          dot: "bg-slate-400",
+          card: "border-slate-200 bg-white",
+          text: "text-slate-800",
+        };
+    }
+  };
+
+  const getTimelineDate = (item) => {
+    if (item.dateObject) return item.dateObject;
+    if (item.kind === "document") {
+      return parseIsoDate(item.documentDate) || new Date(item.createdAt || Date.now());
+    }
+    return getEntryDateTime(item.entry || item) || new Date(item.createdAt || Date.now());
+  };
+
+  const unifiedTimelineItems = useMemo(() => {
+    const logItems = timelineLogs.map((entry) => {
+      const dateObject = getEntryDateTime(entry) || new Date(entry.createdAt || Date.now());
+      const rawText = [
+        entry.section,
+        entry.summary,
+        ...(entry.details || []),
+        entry.rawNotes,
+        entry.behaviourType,
+        entry.appointmentTitle,
+        entry.appointmentCategory,
+        entry.severity ? `severity ${entry.severity}` : "",
+        Array.isArray(entry.triggers) ? entry.triggers.join(" ") : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        id: entry.id,
+        kind: "log",
+        category: entry.section,
+        childId: entry.childId || childId,
+        childName: entry.childName || getChildNameById(entry.childId, childName),
+        dateObject,
+        title: entry.summary || entry.section,
+        summary: entry.summary || "Diary entry",
+        details: entry.details || [],
+        searchText: rawText,
+        severity: entry.severity || "",
+        type:
+          entry.behaviourType ||
+          entry.appointmentCategory ||
+          entry.medicationStatus ||
+          entry.rawData?.entry ||
+          "",
+        entry,
+      };
+    });
+
+    const documentItems = timelineDocuments.map((document) => {
+      const dateObject =
+        parseIsoDate(document.documentDate) ||
+        new Date(document.createdAt || Date.now());
+      const rawText = [
+        document.title,
+        document.category,
+        document.notes,
+        document.fileName,
+        document.childName,
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return {
+        id: `document-${document.id}`,
+        kind: "document",
+        category: "Documents",
+        childId: document.childId || "",
+        childName:
+          document.childName ||
+          getChildNameById(document.childId, document.childId ? "Child" : "Family"),
+        dateObject,
+        title: document.title || document.fileName || "Document",
+        summary: `${document.category || "Document"}${
+          document.fileName ? ` - ${document.fileName}` : ""
+        }`,
+        details: [
+          document.documentDate ? `Document date: ${document.documentDate}` : null,
+          document.notes ? `Notes: ${document.notes}` : null,
+          document.fileType ? `File type: ${document.fileType}` : null,
+        ].filter(Boolean),
+        searchText: rawText,
+        type: document.category || "",
+        document,
+      };
+    });
+
+    const actionItems = [
+      {
+        id: "timeline-care-snapshot",
+        kind: "action",
+        category: "Reports / Snapshot",
+        childId,
+        childName,
+        dateObject: new Date(),
+        title: "Care Snapshot",
+        summary: "Open the latest 72-hour emergency handover summary.",
+        details: ["Useful for hospital, school, carer and professional handovers."],
+        searchText: "care snapshot 72 hour emergency handover report",
+        type: "Snapshot",
+      },
+      {
+        id: "timeline-full-report",
+        kind: "action",
+        category: "Reports / Snapshot",
+        childId,
+        childName,
+        dateObject: new Date(),
+        title: "Full Care Report",
+        summary: "Open the reports area for trends, summaries and PDF export.",
+        details: ["Useful for EHCP, GP, dietitian, school and hospital reports."],
+        searchText: "full care report trends pdf export ehcp school hospital",
+        type: "Report",
+      },
+    ];
+
+    const allItems = [...logItems, ...documentItems, ...actionItems];
+    const now = new Date();
+    const rangeDays = Number(timelineFilters.range);
+    const rangeStart =
+      timelineFilters.range === "all" || !rangeDays
+        ? null
+        : (() => {
+            const start = new Date(now);
+            start.setHours(0, 0, 0, 0);
+            start.setDate(start.getDate() - (rangeDays - 1));
+            return start;
+          })();
+    const search = timelineFilters.search.trim().toLowerCase();
+
+    return allItems
+      .filter((item) => {
+        if (
+          timelineFilters.childId !== "all" &&
+          item.childId &&
+          String(item.childId) !== String(timelineFilters.childId)
+        ) {
+          return false;
+        }
+
+        const itemDate = getTimelineDate(item);
+        if (rangeStart && itemDate < rangeStart) return false;
+
+        if (
+          timelineFilters.category !== "All" &&
+          item.category !== timelineFilters.category
+        ) {
+          return false;
+        }
+
+        if (timelineFilters.severity === "high-behaviour") {
+          if (item.category !== "Behaviour" || Number(item.severity || 0) < 4) {
+            return false;
+          }
+        } else if (timelineFilters.severity !== "All") {
+          const text = `${item.type || ""} ${item.searchText || ""}`.toLowerCase();
+          if (!text.includes(timelineFilters.severity.toLowerCase())) {
+            return false;
+          }
+        }
+
+        if (search) {
+          const text = [
+            item.title,
+            item.summary,
+            item.childName,
+            item.category,
+            item.type,
+            item.searchText,
+            ...(item.details || []),
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+          if (!text.includes(search)) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => getTimelineDate(b).getTime() - getTimelineDate(a).getTime());
+  }, [
+    childId,
+    childName,
+    children,
+    timelineDocuments,
+    timelineFilters,
+    timelineLogs,
+  ]);
+
   const latestTwoBySection = useMemo(() => {
     const findLatestTwo = (sectionTitle) =>
       sharedLog.filter((entry) => entry.section === sectionTitle).slice(0, 2);
@@ -3361,6 +3839,7 @@ export default function KaylenCareMonitorDashboard({
     "Sleep",
     "Toileting",
     "Behaviour",
+    "Appointments",
     "Health",
     "General Notes",
   ];
@@ -3378,6 +3857,7 @@ export default function KaylenCareMonitorDashboard({
         if (section === "Sleep") return isModuleEnabled("sleep");
         if (section === "Toileting") return isModuleEnabled("toileting");
         if (section === "Behaviour") return isModuleEnabled("behaviour");
+        if (section === "Appointments") return isModuleEnabled("appointments");
         if (section === "Health") return isModuleEnabled("health");
         return true;
       }),
@@ -3521,6 +4001,7 @@ export default function KaylenCareMonitorDashboard({
       toileting: countBySection("Toileting"),
       behaviour: countBySection("Behaviour"),
       health: countBySection("Health"),
+      appointments: countBySection("Appointments"),
       averageSleepMinutes: sleepDurations.length
         ? Math.round(
             sleepDurations.reduce((sum, minutes) => sum + minutes, 0) /
@@ -4064,6 +4545,221 @@ export default function KaylenCareMonitorDashboard({
 
     return observations.length ? observations : ["No major trends found."];
   }, [dailyReportGroups, quickReportSummary]);
+
+  const patternInsights = useMemo(() => {
+    const countBySection = (entries, section) =>
+      entries.filter((entry) => entry.section === section).length;
+    const getAverageSleepHours = (entries) => {
+      const durations = entries
+        .filter((entry) => entry.section === "Sleep")
+        .map((entry) => Number(entry.durationMinutes || 0))
+        .filter((minutes) => minutes > 0);
+      if (durations.length < 2) return null;
+      return (
+        durations.reduce((sum, minutes) => sum + minutes / 60, 0) /
+        durations.length
+      );
+    };
+    const getAverageFluidMl = (entries) => {
+      const byDay = new Map();
+      entries
+        .filter((entry) => entry.section === "Food Diary")
+        .forEach((entry) => {
+          const fluidMl = getFluidMlFromEntry(entry);
+          if (fluidMl <= 0) return;
+          byDay.set(entry.date, (byDay.get(entry.date) || 0) + fluidMl);
+        });
+      const values = Array.from(byDay.values()).filter((value) => value > 0);
+      if (values.length < 2) return null;
+      return values.reduce((sum, value) => sum + value, 0) / values.length;
+    };
+    const compareDirection = (current, previous, tolerance = 0) => {
+      if (!Number.isFinite(current) || !Number.isFinite(previous)) return null;
+      const delta = current - previous;
+      if (Math.abs(delta) <= tolerance) return { label: "broadly stable", delta };
+      return {
+        label: delta > 0 ? "higher" : "lower",
+        delta,
+      };
+    };
+    const getBehaviourTimeBucket = (entry) => {
+      const hour = Number.parseInt(String(entry.time || "").split(":")[0], 10);
+      if (!Number.isFinite(hour)) return "";
+      if (hour >= 6 && hour < 12) return "morning";
+      if (hour >= 12 && hour < 18) return "afternoon";
+      if (hour >= 18 && hour < 24) return "evening";
+      return "night";
+    };
+
+    const insights = [];
+    const behaviourEntries = recentEntries.filter(
+      (entry) => entry.section === "Behaviour",
+    );
+    const previousBehaviourEntries = previousReportEntries.filter(
+      (entry) => entry.section === "Behaviour",
+    );
+
+    if (isModuleEnabled("behaviour") && behaviourEntries.length >= 3) {
+      const triggerCounts = new Map();
+      behaviourEntries.forEach((entry) => {
+        (entry.triggers || []).forEach((trigger) => {
+          triggerCounts.set(trigger, (triggerCounts.get(trigger) || 0) + 1);
+        });
+      });
+      const topTrigger = Array.from(triggerCounts.entries()).sort(
+        (a, b) => b[1] - a[1],
+      )[0];
+      if (topTrigger) {
+        insights.push({
+          id: "behaviour-trigger",
+          title: "Possible pattern",
+          message: `${topTrigger[0]} is the most common behaviour trigger in this period.`,
+          detail: `${topTrigger[1]} of ${behaviourEntries.length} behaviour entries mention this trigger.`,
+          section: "Behaviour",
+          relatedCount: behaviourEntries.filter((entry) =>
+            (entry.triggers || []).includes(topTrigger[0]),
+          ).length,
+          tone: "border-purple-100 bg-purple-50/80 text-purple-900",
+        });
+      }
+
+      const bucketCounts = new Map();
+      behaviourEntries.forEach((entry) => {
+        const bucket = getBehaviourTimeBucket(entry);
+        if (bucket) bucketCounts.set(bucket, (bucketCounts.get(bucket) || 0) + 1);
+      });
+      const topBucket = Array.from(bucketCounts.entries()).sort(
+        (a, b) => b[1] - a[1],
+      )[0];
+      if (topBucket && topBucket[1] >= 2) {
+        insights.push({
+          id: "behaviour-time",
+          title: "Worth noting",
+          message: `Behaviour entries happen most often in the ${topBucket[0]}.`,
+          detail: `${topBucket[1]} behaviour entr${topBucket[1] === 1 ? "y" : "ies"} were logged in this time window.`,
+          section: "Behaviour",
+          relatedCount: topBucket[1],
+          tone: "border-violet-100 bg-violet-50/80 text-violet-900",
+        });
+      }
+    }
+
+    if (
+      isModuleEnabled("behaviour") &&
+      behaviourEntries.length >= 2 &&
+      previousBehaviourEntries.length >= 2
+    ) {
+      const direction = compareDirection(
+        behaviourEntries.length,
+        previousBehaviourEntries.length,
+      );
+      if (direction && direction.label !== "broadly stable") {
+        insights.push({
+          id: "behaviour-frequency",
+          title: "Worth noting",
+          message: `Behaviour frequency is ${direction.label} than the previous matching period.`,
+          detail: `${behaviourEntries.length} entries now, compared with ${previousBehaviourEntries.length} previously.`,
+          section: "Behaviour",
+          relatedCount: behaviourEntries.length,
+          tone:
+            direction.delta > 0
+              ? "border-amber-100 bg-amber-50/80 text-amber-900"
+              : "border-emerald-100 bg-emerald-50/80 text-emerald-900",
+        });
+      }
+    }
+
+    if (isModuleEnabled("sleep")) {
+      const currentSleep = getAverageSleepHours(recentEntries);
+      const previousSleep = getAverageSleepHours(previousReportEntries);
+      const direction = compareDirection(currentSleep, previousSleep, 0.25);
+      if (direction) {
+        insights.push({
+          id: "sleep-duration",
+          title: "Possible pattern",
+          message:
+            direction.label === "broadly stable"
+              ? "Average sleep looks broadly stable compared with the previous period."
+              : `Average sleep is ${direction.label} than the previous period.`,
+          detail:
+            direction.label === "broadly stable"
+              ? "Only completed sleep entries are included."
+              : `Change is about ${roundTo(Math.abs(direction.delta))} hours on logged nights.`,
+          section: "Sleep",
+          relatedCount: countBySection(recentEntries, "Sleep"),
+          tone: "border-indigo-100 bg-indigo-50/80 text-indigo-900",
+        });
+      }
+    }
+
+    if (isModuleEnabled("drink") || isModuleEnabled("food")) {
+      const currentFluid = getAverageFluidMl(recentEntries);
+      const previousFluid = getAverageFluidMl(previousReportEntries);
+      const direction = compareDirection(currentFluid, previousFluid, 75);
+      if (direction) {
+        insights.push({
+          id: "fluid-intake",
+          title: "Worth noting",
+          message:
+            direction.label === "broadly stable"
+              ? "Fluid intake looks broadly stable on logged days."
+              : `Fluid intake is ${direction.label} than the previous period on logged days.`,
+          detail:
+            direction.label === "broadly stable"
+              ? "Missing drink amounts are not counted."
+              : `Average difference is about ${Math.round(Math.abs(direction.delta))}ml.`,
+          section: "Food Diary",
+          relatedCount: recentEntries.filter(
+            (entry) => entry.section === "Food Diary" && getFluidMlFromEntry(entry) > 0,
+          ).length,
+          tone: "border-sky-100 bg-sky-50/80 text-sky-900",
+        });
+      }
+    }
+
+    if (isModuleEnabled("medication")) {
+      const medicationEntries = recentEntries.filter(
+        (entry) => entry.section === "Medication",
+      );
+      const statusCounts = medicationEntries.reduce(
+        (counts, entry) => {
+          const status = String(entry.medicationStatus || "given").toLowerCase();
+          if (["missed", "late", "refused"].includes(status)) {
+            counts[status] += 1;
+          } else {
+            counts.given += 1;
+          }
+          return counts;
+        },
+        { given: 0, missed: 0, late: 0, refused: 0 },
+      );
+      const concernCount =
+        statusCounts.missed + statusCounts.late + statusCounts.refused;
+      if (medicationEntries.length >= 3) {
+        insights.push({
+          id: "medication-summary",
+          title: concernCount ? "Worth noting" : "Possible pattern",
+          message: concernCount
+            ? "Medication records include missed, late or refused doses."
+            : "Medication entries in this period are logged as completed.",
+          detail: concernCount
+            ? `${statusCounts.missed} missed, ${statusCounts.late} late, ${statusCounts.refused} refused.`
+            : `${statusCounts.given} medication entr${statusCounts.given === 1 ? "y" : "ies"} logged as given.`,
+          section: "Medication",
+          relatedCount: medicationEntries.length,
+          tone: concernCount
+            ? "border-rose-100 bg-rose-50/80 text-rose-900"
+            : "border-emerald-100 bg-emerald-50/80 text-emerald-900",
+        });
+      }
+    }
+
+    return insights.slice(0, 5);
+  }, [
+    previousReportEntries,
+    recentEntries,
+    visibleModules,
+  ]);
 
   const reportImportantEvents = useMemo(() => {
     const legacyEvents = importantEvents
@@ -5122,6 +5818,47 @@ export default function KaylenCareMonitorDashboard({
     }
   };
 
+  const saveAppointmentEntryToSupabase = async () => {
+    if (!useSaasApi) {
+      alert("Appointments are available in the FamilyTrack account version.");
+      return false;
+    }
+
+    if (!familyId || !childId) {
+      alert("Choose a family and child before saving.");
+      return false;
+    }
+
+    const logDate = parseDateToIso(appointmentForm.date);
+    if (!logDate) {
+      alert("Use date format DD/MM/YYYY.");
+      return false;
+    }
+
+    try {
+      const saved = await createCareLogWithOfflineQueue({
+        childId,
+        category: "appointment",
+        logDate,
+        logTime: appointmentForm.time,
+        data: {
+          title: appointmentForm.title.trim() || "Appointment",
+          location: appointmentForm.location || "",
+          professional: appointmentForm.professional || "",
+          category: appointmentForm.category || "Other",
+          outcome: appointmentForm.outcome || "",
+        },
+        notes: appointmentForm.notes || "",
+      });
+
+      return saved || true;
+    } catch (error) {
+      console.error("SaaS appointment save failed:", error);
+      alert(error.message || "Appointment save failed");
+      return false;
+    }
+  };
+
   const toastSavedForChild = (saved) => {
     if (!showToast) return;
     const rawId = saved?.id ? String(saved.id).replace(/^care-/, "") : "";
@@ -5155,6 +5892,19 @@ export default function KaylenCareMonitorDashboard({
       whatHelped: "",
       notes: "",
       attachment: null,
+    });
+  };
+
+  const resetAppointmentForm = () => {
+    setAppointmentForm({
+      title: "",
+      date: todayValue(),
+      time: "",
+      location: "",
+      professional: "",
+      category: "Hospital",
+      notes: "",
+      outcome: "",
     });
   };
 
@@ -7597,6 +8347,254 @@ export default function KaylenCareMonitorDashboard({
               : "Save behaviour entry"}
           </button>
         </div>
+      </div>
+    );
+  };
+
+  const renderAppointmentsForm = () => {
+    const sortAppointmentEntries = (entries = []) =>
+      [...entries].sort((entryA, entryB) => {
+        const dateA = getEntryDateTime(entryA)?.getTime() || 0;
+        const dateB = getEntryDateTime(entryB)?.getTime() || 0;
+        return dateA - dateB;
+      });
+    const appointmentEntries = sortAppointmentEntries(
+      sharedLog.filter((entry) => entry.section === "Appointments"),
+    );
+    const now = new Date();
+    const upcomingAppointments = appointmentEntries.filter((entry) => {
+      const date = getEntryDateTime(entry);
+      return date && date >= now;
+    });
+    const pastAppointments = appointmentEntries
+      .filter((entry) => {
+        const date = getEntryDateTime(entry);
+        return date && date < now;
+      })
+      .reverse();
+    const canSaveAppointment =
+      !!appointmentForm.title.trim() &&
+      !!appointmentForm.date.trim() &&
+      !activeSaveAction;
+
+    const renderAppointmentList = (title, entries, emptyText) => (
+      <div className={`${cardClassName} md:col-span-2`}>
+        <div className="flex items-center justify-between gap-3">
+          <h4 className="text-sm font-black text-slate-900">{title}</h4>
+          <span className="rounded-full bg-white px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+            {entries.length}
+          </span>
+        </div>
+        {entries.length ? (
+          <div className="mt-3 space-y-2">
+            {entries.slice(0, 6).map((entry) => (
+              <article
+                key={entry.id}
+                className="rounded-2xl border border-white bg-white/85 px-3 py-3 shadow-sm"
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-black text-slate-950">
+                      {entry.appointmentTitle || entry.summary}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-500">
+                      {entry.date} {entry.time ? `at ${entry.time}` : ""}
+                    </p>
+                  </div>
+                  <span className="w-fit rounded-full bg-blue-50 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-blue-700">
+                    {entry.appointmentCategory || "Other"}
+                  </span>
+                </div>
+                {entry.details?.length ? (
+                  <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
+                    {entry.details.slice(0, 2).join(" · ")}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-white/70 px-4 py-5 text-center text-sm font-semibold text-slate-500">
+            {emptyText}
+          </p>
+        )}
+      </div>
+    );
+
+    return (
+      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {renderDraftRecoveryPrompt("appointments")}
+
+        <div className="md:col-span-2 rounded-2xl border border-blue-100 bg-blue-50/80 px-4 py-3 text-sm font-semibold leading-6 text-blue-900 shadow-sm">
+          Use this for upcoming appointments, school meetings, EHCP reviews and
+          follow-up notes after the appointment.
+        </div>
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">Title</label>
+          <input
+            type="text"
+            placeholder="e.g. Paediatrician appointment"
+            className={`${inputClassName} min-h-[48px]`}
+            value={appointmentForm.title}
+            onChange={(e) =>
+              setAppointmentForm({ ...appointmentForm, title: e.target.value })
+            }
+          />
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">Child</label>
+          <div className="mt-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-800">
+            {childName}
+          </div>
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Category
+          </label>
+          <select
+            className={`${inputClassName} min-h-[48px]`}
+            value={appointmentForm.category}
+            onChange={(e) =>
+              setAppointmentForm({
+                ...appointmentForm,
+                category: e.target.value,
+              })
+            }
+          >
+            {APPOINTMENT_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {category}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">Date</label>
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="DD/MM/YYYY"
+            className={dateTimeInputClass}
+            value={appointmentForm.date}
+            onChange={(e) =>
+              setAppointmentForm({ ...appointmentForm, date: e.target.value })
+            }
+          />
+        </div>
+
+        {renderTimeInput({
+          label: "Time",
+          value: appointmentForm.time,
+          onChange: (time) => setAppointmentForm({ ...appointmentForm, time }),
+          onNow: () => setAppointmentForm({ ...appointmentForm, time: nowTimeValue() }),
+        })}
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Location
+          </label>
+          <input
+            type="text"
+            placeholder="Hospital, school, clinic, online..."
+            className={`${inputClassName} min-h-[48px]`}
+            value={appointmentForm.location}
+            onChange={(e) =>
+              setAppointmentForm({
+                ...appointmentForm,
+                location: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className={cardClassName}>
+          <label className="text-sm font-semibold text-slate-700">
+            Professional/service
+          </label>
+          <input
+            type="text"
+            placeholder="e.g. SALT, school SENCO, GP"
+            className={`${inputClassName} min-h-[48px]`}
+            value={appointmentForm.professional}
+            onChange={(e) =>
+              setAppointmentForm({
+                ...appointmentForm,
+                professional: e.target.value,
+              })
+            }
+          />
+        </div>
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">Notes</label>
+          <textarea
+            rows={4}
+            placeholder="Questions to ask, things to remember, documents to bring..."
+            className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`appointment-notes-${childId || "child"}-${activeSection?.title || "new"}`}
+            value={appointmentForm.notes}
+            onChange={(e) =>
+              setAppointmentForm({ ...appointmentForm, notes: e.target.value })
+            }
+          />
+        </div>
+
+        <div className={`${cardClassName} md:col-span-2`}>
+          <label className="text-sm font-semibold text-slate-700">
+            Outcome / follow-up notes
+          </label>
+          <textarea
+            rows={4}
+            placeholder="What was agreed, next steps, follow-up date..."
+            className={`${inputClassName} min-h-[48px]`}
+            autoComplete="off"
+            name={`appointment-outcome-${childId || "child"}-${activeSection?.title || "new"}`}
+            value={appointmentForm.outcome}
+            onChange={(e) =>
+              setAppointmentForm({ ...appointmentForm, outcome: e.target.value })
+            }
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <button
+            type="button"
+            disabled={!canSaveAppointment}
+            onClick={() =>
+              runLockedSave("appointments", async () => {
+                const saved = await saveAppointmentEntryToSupabase();
+
+                if (!saved) return;
+
+                await loadEntriesFromSupabase();
+                toastSavedForChild(saved);
+                clearLogDraft("appointments");
+                resetAppointmentForm();
+              })
+            }
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            {activeSaveAction === "appointments"
+              ? "Saving..."
+              : "Save appointment"}
+          </button>
+        </div>
+
+        {renderAppointmentList(
+          "Upcoming appointments",
+          upcomingAppointments,
+          "No upcoming appointments recorded yet.",
+        )}
+        {renderAppointmentList(
+          "Past appointments",
+          pastAppointments,
+          "Past appointment notes will appear here after dates pass.",
+        )}
       </div>
     );
   };
@@ -10116,6 +11114,300 @@ export default function KaylenCareMonitorDashboard({
     </>
   );
 
+  const openTimelineLinkedSection = (item) => {
+    if (item.id === "timeline-care-snapshot") {
+      openSection(sections.find((section) => section.title === "Care Snapshot"), {
+        reset: false,
+      });
+      return;
+    }
+    if (item.id === "timeline-full-report") {
+      openSection(sections.find((section) => section.title === "Reports"), {
+        reset: false,
+      });
+      return;
+    }
+
+    const targetTitle =
+      item.category === "Documents"
+        ? "Document Vault"
+        : item.category === "Reports / Snapshot"
+          ? "Reports"
+          : item.category;
+    openSection(sections.find((section) => section.title === targetTitle), {
+      reset: false,
+    });
+  };
+
+  const renderUnifiedTimelineForm = () => (
+    <div className="mt-6 space-y-4">
+      <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
+              Unified Timeline
+            </p>
+            <h3 className="mt-1 text-lg font-extrabold text-slate-950">
+              Search everything for this family
+            </h3>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+              One chronological view for logs, appointments, documents and
+              report shortcuts. Results stay family-specific and use the same
+              secure app data as the rest of FamilyTrack.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={loadUnifiedTimelineData}
+            disabled={isLoadingTimeline}
+            className="w-fit rounded-2xl border border-indigo-100 bg-white px-4 py-2.5 text-sm font-black text-indigo-700 shadow-sm disabled:opacity-60"
+          >
+            {isLoadingTimeline ? "Loading..." : "Refresh timeline"}
+          </button>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr]">
+          <label className="min-w-0 text-sm font-bold text-slate-700">
+            Global search
+            <input
+              type="search"
+              value={timelineFilters.search}
+              onChange={(event) =>
+                setTimelineFilters((current) => ({
+                  ...current,
+                  search: event.target.value,
+                }))
+              }
+              placeholder="Search notes, triggers, documents, medicines..."
+              className={inputClassName}
+            />
+          </label>
+          <label className="min-w-0 text-sm font-bold text-slate-700">
+            Child
+            <select
+              value={timelineFilters.childId}
+              onChange={(event) =>
+                setTimelineFilters((current) => ({
+                  ...current,
+                  childId: event.target.value,
+                }))
+              }
+              className={inputClassName}
+            >
+              <option value="all">All children</option>
+              {children.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.firstName || child.first_name || "Child"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="min-w-0 text-sm font-bold text-slate-700">
+            Date range
+            <select
+              value={timelineFilters.range}
+              onChange={(event) =>
+                setTimelineFilters((current) => ({
+                  ...current,
+                  range: event.target.value,
+                }))
+              }
+              className={inputClassName}
+            >
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+              <option value="all">All history</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="min-w-0 text-sm font-bold text-slate-700">
+            Module / category
+            <select
+              value={timelineFilters.category}
+              onChange={(event) =>
+                setTimelineFilters((current) => ({
+                  ...current,
+                  category: event.target.value,
+                }))
+              }
+              className={inputClassName}
+            >
+              {timelineCategoryOptions
+                .filter((category) => {
+                  if (category === "All" || category === "Reports / Snapshot") {
+                    return true;
+                  }
+                  if (category === "Documents") return isModuleEnabled("documents");
+                  return reportCategoryOptions.includes(category);
+                })
+                .map((category) => (
+                  <option key={category} value={category}>
+                    {category === "Food Diary" ? "Food and drink" : category}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="min-w-0 text-sm font-bold text-slate-700">
+            Severity / type
+            <select
+              value={timelineFilters.severity}
+              onChange={(event) =>
+                setTimelineFilters((current) => ({
+                  ...current,
+                  severity: event.target.value,
+                }))
+              }
+              className={inputClassName}
+            >
+              <option value="All">All types</option>
+              <option value="high-behaviour">Behaviour severity 4-5</option>
+              <option value="meltdown">Meltdown</option>
+              <option value="shutdown">Shutdown</option>
+              <option value="missed">Missed medication</option>
+              <option value="hospital">Hospital</option>
+              <option value="school">School</option>
+              <option value="ehcp">EHCP</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 className="text-base font-black text-slate-950">
+              Timeline results
+            </h4>
+            <p className="mt-1 text-sm font-medium text-slate-500">
+              {isLoadingTimeline
+                ? "Loading family timeline..."
+                : `${unifiedTimelineItems.length} item${
+                    unifiedTimelineItems.length === 1 ? "" : "s"
+                  } found`}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {["Food Diary", "Medication", "Behaviour", "Documents"].map((category) => {
+              const theme = getTimelineTheme(category);
+              const count = unifiedTimelineItems.filter(
+                (item) => item.category === category,
+              ).length;
+              return (
+                <span
+                  key={category}
+                  className={`rounded-full border bg-white px-3 py-1 text-xs font-black ${theme.text}`}
+                >
+                  {theme.label}: {count}
+                </span>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {unifiedTimelineItems.length ? (
+            unifiedTimelineItems.map((item) => {
+              const theme = getTimelineTheme(item.category);
+              const itemDate = getTimelineDate(item);
+              const isExpanded = expandedTimelineItem === item.id;
+              return (
+                <article
+                  key={item.id}
+                  className={`rounded-2xl border p-3 shadow-sm ${theme.card}`}
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setExpandedTimelineItem((current) =>
+                        current === item.id ? "" : item.id,
+                      )
+                    }
+                    className="flex w-full min-w-0 items-start gap-3 text-left"
+                  >
+                    <span
+                      className={`mt-1 h-3 w-3 flex-none rounded-full ${theme.dot}`}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className={`text-[11px] font-black uppercase tracking-[0.16em] ${theme.text}`}>
+                          {theme.label}
+                        </span>
+                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                          {item.childName || childName}
+                        </span>
+                      </span>
+                      <span className="mt-1 block break-words text-sm font-black text-slate-950">
+                        {item.title}
+                      </span>
+                      <span className="mt-1 block text-xs font-semibold text-slate-500">
+                        {itemDate.toLocaleString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </span>
+                    <span className="rounded-full border border-white/80 bg-white/80 px-2 py-1 text-xs font-black text-slate-500">
+                      {isExpanded ? "Hide" : "Details"}
+                    </span>
+                  </button>
+
+                  {isExpanded ? (
+                    <div className="mt-3 rounded-xl border border-white/80 bg-white/80 p-3">
+                      <p className="text-sm font-semibold leading-6 text-slate-700">
+                        {item.summary}
+                      </p>
+                      {item.details?.length ? (
+                        <ul className="mt-2 space-y-1 text-sm font-medium leading-6 text-slate-600">
+                          {item.details.map((detail, index) => (
+                            <li key={`${item.id}-detail-${index}`}>{detail}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openTimelineLinkedSection(item)}
+                          className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm"
+                        >
+                          Open related section
+                        </button>
+                        {item.kind === "document" && item.document?.downloadUrl ? (
+                          <a
+                            href={item.document.downloadUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
+                          >
+                            View / download document
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
+              <p className="text-sm font-black text-slate-800">
+                No timeline items match these filters.
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-500">
+                Try widening the date range or clearing the search term.
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+
   const renderCalendarForm = () => (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
@@ -10966,6 +12258,7 @@ export default function KaylenCareMonitorDashboard({
     const sleepEntries = sortEntriesByDate(groupedReportEntries.Sleep || []);
     const toiletingEntries = sortEntriesByDate(groupedReportEntries.Toileting || []);
     const behaviourEntries = sortEntriesByDate(groupedReportEntries.Behaviour || []);
+    const appointmentEntries = sortEntriesByDate(groupedReportEntries.Appointments || []);
     const healthEntries = sortEntriesByDate(
       (groupedReportEntries.Health || []).filter((entry) => !isMeasurementEntry(entry)),
     );
@@ -11052,6 +12345,12 @@ export default function KaylenCareMonitorDashboard({
         tone: "border-purple-100 bg-purple-50/80 text-purple-900",
       },
       {
+        label: "Appointments",
+        value: appointmentEntries.length || "No entries",
+        meta: `${appointmentEntries.length} appointment${appointmentEntries.length === 1 ? "" : "s"}`,
+        tone: "border-blue-100 bg-blue-50/80 text-blue-900",
+      },
+      {
         label: "Health",
         value: healthEntries.length || "No entries",
         meta: `${healthEntries.length} health entr${healthEntries.length === 1 ? "y" : "ies"}`,
@@ -11075,6 +12374,9 @@ export default function KaylenCareMonitorDashboard({
         : "",
       behaviourEntries.length
         ? `${behaviourEntries.length} behaviour entr${behaviourEntries.length === 1 ? "y was" : "ies were"} logged, including triggers and recovery notes where available.`
+        : "",
+      appointmentEntries.length
+        ? `${appointmentEntries.length} appointment${appointmentEntries.length === 1 ? " was" : "s were"} recorded in this period.`
         : "",
       healthEntries.length
         ? `${healthEntries.length} health entr${healthEntries.length === 1 ? "y was" : "ies were"} logged in this period.`
@@ -11113,6 +12415,70 @@ export default function KaylenCareMonitorDashboard({
           </p>
         ) : null}
       </div>
+    );
+
+    const renderPatternInsightsSection = () => (
+      <section className="rounded-[1.75rem] border border-purple-100 bg-gradient-to-br from-purple-50/80 via-white to-sky-50/70 p-4 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-purple-700">
+              Pattern Insights
+            </p>
+            <h3 className="mt-1 text-xl font-black text-slate-950">
+              Worth noting from the logs
+            </h3>
+          </div>
+          <p className="text-xs font-bold leading-5 text-slate-500">
+            Factual summaries only, not diagnosis.
+          </p>
+        </div>
+
+        {patternInsights.length ? (
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            {patternInsights.map((insight) => (
+              <article
+                key={insight.id}
+                className={`rounded-[1.35rem] border p-4 shadow-sm ${insight.tone}`}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                      {insight.title}
+                    </p>
+                    <p className="mt-2 text-sm font-black leading-6 text-slate-950">
+                      {insight.message}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                      {insight.detail}
+                    </p>
+                  </div>
+                  <span className="w-fit shrink-0 rounded-full bg-white/75 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+                    {insight.relatedCount} log{insight.relatedCount === 1 ? "" : "s"}
+                  </span>
+                </div>
+                {insight.section ? (
+                  <button
+                    type="button"
+                    onClick={() => setReportCategoryFilter(insight.section)}
+                    className="mt-3 rounded-xl border border-white/80 bg-white/85 px-3 py-2 text-xs font-black text-slate-700 shadow-sm transition hover:bg-white"
+                  >
+                    View related {reportCategoryLabel(insight.section).toLowerCase()} logs
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-4 rounded-[1.35rem] border border-dashed border-purple-200 bg-white/75 px-4 py-6 text-center">
+            <p className="text-sm font-black text-slate-800">
+              Not enough data to show reliable patterns yet.
+            </p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
+              Keep logging sleep, fluids, medication and behaviour entries. FamilyTrack will show simple patterns once there is enough to compare.
+            </p>
+          </div>
+        )}
+      </section>
     );
 
     const getEntrySearchText = (entry) =>
@@ -11173,6 +12539,15 @@ export default function KaylenCareMonitorDashboard({
         }
         if (entry.triggers?.length) {
           badges.push(makeEntryBadge(`${entry.triggers.length} trigger${entry.triggers.length === 1 ? "" : "s"}`, "bg-amber-100 text-amber-700"));
+        }
+      }
+
+      if (sectionTitle === "Appointments") {
+        if (entry.appointmentCategory) {
+          badges.push(makeEntryBadge(entry.appointmentCategory, "bg-blue-100 text-blue-700"));
+        }
+        if (entry.outcome) {
+          badges.push(makeEntryBadge("Follow-up noted", "bg-emerald-100 text-emerald-700"));
         }
       }
 
@@ -11388,6 +12763,14 @@ export default function KaylenCareMonitorDashboard({
           : "No behaviour data",
         emptyText: "No behaviour data recorded for this period.",
         tone: "border-purple-100 bg-purple-50/70",
+      },
+      {
+        title: "Appointments",
+        module: "appointments",
+        entries: appointmentEntries,
+        summary: `${appointmentEntries.length} recorded`,
+        emptyText: "No appointments recorded for this period.",
+        tone: "border-blue-100 bg-blue-50/70",
       },
       {
         title: "Health",
@@ -11619,6 +13002,8 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </section>
 
+          {renderPatternInsightsSection()}
+
           <section className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-slate-50 via-white to-sky-50/70 p-4 shadow-sm">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
@@ -11763,6 +13148,10 @@ export default function KaylenCareMonitorDashboard({
         return renderCareSnapshotForm();
       case "Document Vault":
         return renderDocumentVaultForm();
+      case "Appointments":
+        return renderAppointmentsForm();
+      case "Timeline":
+        return renderUnifiedTimelineForm();
       case "Calendar":
         return renderCalendarForm();
       default:
@@ -11867,7 +13256,7 @@ export default function KaylenCareMonitorDashboard({
     );
   }
 
-  const isReportsOpen = ["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(
+  const isReportsOpen = ["Reports", "Care Snapshot", "Document Vault", "Timeline", "Calendar"].includes(
     activeSection?.title,
   );
 
@@ -12218,7 +13607,7 @@ export default function KaylenCareMonitorDashboard({
                     {renderDashboardIcon(section)}
                   </div>
                   <div className="rounded-full border border-white/70 bg-white/80 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-slate-700">
-                    {["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(section.title)
+                    {["Reports", "Care Snapshot", "Document Vault", "Timeline", "Calendar"].includes(section.title)
                       ? "View"
                       : "Log"}
                   </div>
@@ -12270,7 +13659,7 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   ) : null}
 
-                  {!["Reports", "Care Snapshot", "Document Vault", "Calendar"].includes(section.title) ? (
+                  {!["Reports", "Care Snapshot", "Document Vault", "Timeline", "Calendar"].includes(section.title) ? (
                   <div className="mt-4 rounded-2xl border border-white/70 bg-white/80 px-4 py-3 text-left shadow-sm">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
                       Latest
@@ -12358,6 +13747,7 @@ export default function KaylenCareMonitorDashboard({
               ["Toileting", "Toileting", "", "🚽"],
               ["Health", "Health", "", "✚"],
               ["Behaviour", "Behaviour", "", "BT"],
+              ["Appointment", "Appointments", "", "AP"],
             ].map(([label, title, preset, icon]) => {
               const moduleKey =
                 label === "Food"
@@ -12374,6 +13764,8 @@ export default function KaylenCareMonitorDashboard({
                             ? "health"
                             : label === "Behaviour"
                               ? "behaviour"
+                              : label === "Appointment"
+                                ? "appointments"
                               : "";
               if (moduleKey && !isModuleEnabled(moduleKey)) return null;
               return (

@@ -72,6 +72,16 @@ const MODULE_VISIBILITY_OPTIONS = [
     description: "Private family documents for school, EHCP, medical and care.",
   },
   {
+    key: "appointments",
+    label: "Appointments",
+    description: "Hospital, school, EHCP and care dates.",
+  },
+  {
+    key: "timeline",
+    label: "Timeline / Search",
+    description: "A searchable family timeline across logs, documents and appointments.",
+  },
+  {
     key: "calendar",
     label: "Calendar",
     description: "The monthly log overview card.",

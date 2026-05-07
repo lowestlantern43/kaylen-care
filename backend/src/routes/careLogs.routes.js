@@ -21,6 +21,7 @@ const categories = new Set([
   "toileting",
   "health",
   "behaviour",
+  "appointment",
   "general",
 ]);
 
