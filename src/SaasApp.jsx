@@ -91,6 +91,23 @@ const DEFAULT_MODULE_VISIBILITY = MODULE_VISIBILITY_OPTIONS.reduce(
   (settings, option) => ({ ...settings, [option.key]: true }),
   {},
 );
+
+const MODULE_VISIBILITY_ICONS = {
+  food: "Food",
+  drink: "Drink",
+  medication: "Med",
+  sleep: "Sleep",
+  toileting: "Care",
+  health: "Health",
+  behaviour: "Mood",
+  measurements: "Growth",
+  reports: "Report",
+  snapshot: "Snap",
+  documents: "File",
+  appointments: "Date",
+  timeline: "Search",
+  calendar: "Cal",
+};
 const screenshotAssets = {
   "/screenshots/dashboard.png": dashboardScreenshot,
   "/screenshots/logging-food.png": foodScreenshot,
@@ -6852,12 +6869,17 @@ function WorkspaceGate({ session, onLogout }) {
                                   : "border-slate-200 bg-slate-50"
                               }`}
                             >
-                              <span className="min-w-0">
-                                <span className="block text-sm font-black text-slate-900">
-                                  {moduleOption.label}
+                              <span className="flex min-w-0 items-start gap-3">
+                                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-indigo-100 bg-indigo-50 text-[10px] font-black uppercase tracking-tight text-indigo-700">
+                                  {MODULE_VISIBILITY_ICONS[moduleOption.key] || "App"}
                                 </span>
-                                <span className="mt-0.5 block text-xs font-semibold leading-5 text-slate-500">
-                                  {moduleOption.description}
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-black text-slate-900">
+                                    {moduleOption.label}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs font-semibold leading-5 text-slate-500">
+                                    {moduleOption.description}
+                                  </span>
                                 </span>
                               </span>
                               <input

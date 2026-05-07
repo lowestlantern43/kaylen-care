@@ -91,8 +91,8 @@ authRouter.post(
 
       const createdUser = await client.query(
         `
-          INSERT INTO users (email, password_hash, full_name)
-          VALUES ($1, $2, $3)
+          INSERT INTO users (email, password_hash, full_name, last_login_at)
+          VALUES ($1, $2, $3, now())
           RETURNING
             id,
             email,
@@ -212,13 +212,29 @@ authRouter.post(
       throw unauthorized("This account is currently suspended.");
     }
 
-    await query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]);
-    setSessionCookie(res, createSessionToken(user));
+    const updatedUser = await query(
+      `
+        UPDATE users
+        SET last_login_at = now()
+        WHERE id = $1
+        RETURNING
+          id,
+          email,
+          full_name,
+          is_platform_admin,
+          platform_status,
+          created_at,
+          last_login_at
+      `,
+      [user.id],
+    );
+    const loggedInUser = updatedUser.rows[0] || user;
+    setSessionCookie(res, createSessionToken(loggedInUser));
 
     res.json({
       data: {
-        user: publicUser(user),
-        memberships: await loadMemberships(user.id),
+        user: publicUser(loggedInUser),
+        memberships: await loadMemberships(loggedInUser.id),
       },
       error: null,
     });
@@ -234,10 +250,31 @@ authRouter.get(
   "/me",
   requireAuth,
   asyncHandler(async (req, res) => {
+    let currentUser = req.user;
+    if (!currentUser.last_login_at) {
+      const updatedUser = await query(
+        `
+          UPDATE users
+          SET last_login_at = now()
+          WHERE id = $1
+          RETURNING
+            id,
+            email,
+            full_name,
+            is_platform_admin,
+            platform_status,
+            created_at,
+            last_login_at
+        `,
+        [currentUser.id],
+      );
+      currentUser = updatedUser.rows[0] || currentUser;
+    }
+
     res.json({
       data: {
-        user: publicUser(req.user),
-        memberships: await loadMemberships(req.user.id),
+        user: publicUser(currentUser),
+        memberships: await loadMemberships(currentUser.id),
       },
       error: null,
     });

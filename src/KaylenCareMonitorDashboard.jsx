@@ -601,6 +601,8 @@ export default function KaylenCareMonitorDashboard({
   const [professionalLanguage, setProfessionalLanguage] = useState(false);
   const [reportTemplate, setReportTemplate] = useState("hospital");
   const [showReportCharts, setShowReportCharts] = useState(true);
+  const [includeHealthHistory24Months, setIncludeHealthHistory24Months] =
+    useState(false);
   const [snapshotIncludeSensitive, setSnapshotIncludeSensitive] = useState(false);
   const [shareSections, setShareSections] = useState({
     emergency: true,
@@ -948,9 +950,7 @@ export default function KaylenCareMonitorDashboard({
   const sectionModuleKey = (title) => {
     switch (title) {
       case "Food Diary":
-        return isModuleEnabled("food") || isModuleEnabled("drink")
-          ? "foodDiary"
-          : "hidden";
+        return "food";
       case "Medication":
         return "medication";
       case "Toileting":
@@ -982,7 +982,6 @@ export default function KaylenCareMonitorDashboard({
 
   const isSectionVisible = (section) => {
     const moduleKey = sectionModuleKey(section.title);
-    if (moduleKey === "foodDiary") return true;
     if (moduleKey === "hidden") return false;
     return moduleKey ? isModuleEnabled(moduleKey) : true;
   };
@@ -1563,7 +1562,14 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const usesAddedSvgIcon = (sectionTitle) =>
-    ["Growth / Measurements", "Care Snapshot", "Timeline", "Calendar"].includes(sectionTitle);
+    [
+      "Growth / Measurements",
+      "Care Snapshot",
+      "Document Vault",
+      "Appointments",
+      "Timeline",
+      "Calendar",
+    ].includes(sectionTitle);
 
   const renderSectionIcon = (sectionTitle, className = "h-8 w-8") => {
     const common = {
@@ -1646,6 +1652,26 @@ export default function KaylenCareMonitorDashboard({
             <path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z" />
             <path d="M12 8v6" />
             <path d="M9 11h6" />
+          </svg>
+        );
+      case "Document Vault":
+        return (
+          <svg {...common}>
+            <path d="M14 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7Z" />
+            <path d="M14 2v5h5" />
+            <path d="M9 13h6" />
+            <path d="M9 17h4" />
+          </svg>
+        );
+      case "Appointments":
+        return (
+          <svg {...common}>
+            <rect x="3" y="5" width="18" height="16" rx="2" />
+            <path d="M16 3v4" />
+            <path d="M8 3v4" />
+            <path d="M3 11h18" />
+            <path d="M9 16h.01" />
+            <path d="M13 16h.01" />
           </svg>
         );
       case "Calendar":
@@ -3034,6 +3060,10 @@ export default function KaylenCareMonitorDashboard({
   }, [activeSection]);
 
   const recentEntries = useMemo(() => {
+    const healthHistoryStart = new Date();
+    healthHistoryStart.setMonth(healthHistoryStart.getMonth() - 24);
+    healthHistoryStart.setHours(0, 0, 0, 0);
+
     return sharedLog
       .filter((entry) => {
       const entryDate =
@@ -3041,7 +3071,13 @@ export default function KaylenCareMonitorDashboard({
           ? getCareSnapshotEntryDate(entry)
           : parseDisplayDate(entry.date);
       if (!entryDate || !reportRangeStart || !reportRangeEnd) return false;
-      if (entryDate < reportRangeStart || entryDate > reportRangeEnd) return false;
+      const inSelectedRange = entryDate >= reportRangeStart && entryDate <= reportRangeEnd;
+      const inExtendedHealthRange =
+        includeHealthHistory24Months &&
+        entry.section === "Health" &&
+        entryDate >= healthHistoryStart &&
+        entryDate <= reportRangeEnd;
+      if (!inSelectedRange && !inExtendedHealthRange) return false;
 
       if (
         reportCategoryFilter !== "All" &&
@@ -3058,7 +3094,14 @@ export default function KaylenCareMonitorDashboard({
         if (dateA !== dateB) return dateB - dateA;
         return (a.time || "99:99").localeCompare(b.time || "99:99");
       });
-  }, [reportCategoryFilter, reportDays, reportRangeEnd, reportRangeStart, sharedLog]);
+  }, [
+    includeHealthHistory24Months,
+    reportCategoryFilter,
+    reportDays,
+    reportRangeEnd,
+    reportRangeStart,
+    sharedLog,
+  ]);
 
   const childDob = childDetails?.dateOfBirth || childDetails?.date_of_birth || "";
   const childAge = calculateAge(childDob);
@@ -3445,6 +3488,23 @@ export default function KaylenCareMonitorDashboard({
     return getEntryDateTime(item.entry || item) || new Date(item.createdAt || Date.now());
   };
 
+  const isTimelineItemVisibleByModule = (item) => {
+    if (item.category === "Food Diary") {
+      return item.entry?.isMilk ? isModuleEnabled("drink") : isModuleEnabled("food");
+    }
+    if (item.category === "Medication") return isModuleEnabled("medication");
+    if (item.category === "Sleep") return isModuleEnabled("sleep");
+    if (item.category === "Toileting") return isModuleEnabled("toileting");
+    if (item.category === "Health") return isModuleEnabled("health");
+    if (item.category === "Behaviour") return isModuleEnabled("behaviour");
+    if (item.category === "Appointments") return isModuleEnabled("appointments");
+    if (item.category === "Documents") return isModuleEnabled("documents");
+    if (item.category === "Reports / Snapshot") {
+      return isModuleEnabled("reports") || isModuleEnabled("snapshot");
+    }
+    return true;
+  };
+
   const unifiedTimelineItems = useMemo(() => {
     const logItems = timelineLogs.map((entry) => {
       const dateObject = getEntryDateTime(entry) || new Date(entry.createdAt || Date.now());
@@ -3567,6 +3627,8 @@ export default function KaylenCareMonitorDashboard({
 
     return allItems
       .filter((item) => {
+        if (!isTimelineItemVisibleByModule(item)) return false;
+
         if (
           timelineFilters.childId !== "all" &&
           item.childId &&
@@ -3851,7 +3913,7 @@ export default function KaylenCareMonitorDashboard({
     () =>
       reportCategoryOrder.filter((section) => {
         if (section === "Food Diary") {
-          return isModuleEnabled("food") || isModuleEnabled("drink");
+          return isModuleEnabled("food");
         }
         if (section === "Medication") return isModuleEnabled("medication");
         if (section === "Sleep") return isModuleEnabled("sleep");
@@ -4990,7 +5052,7 @@ export default function KaylenCareMonitorDashboard({
     return items.filter((item) => {
       if (item.module === "core") return true;
       if (item.module === "foodDiary") {
-        return isModuleEnabled("food") || isModuleEnabled("drink");
+        return isModuleEnabled("food");
       }
       return isModuleEnabled(item.module);
     });
@@ -9537,15 +9599,17 @@ export default function KaylenCareMonitorDashboard({
         {reportTrendModel.summaryStats.map((stat) => (
           <div
             key={stat.key}
-            className={`min-w-0 rounded-xl border px-3 py-2.5 shadow-sm ${statToneClass(
+            className={`min-w-0 rounded-xl border px-3 py-3 shadow-sm ${statToneClass(
               stat.tone,
             )}`}
           >
-            <p className="truncate text-[10px] font-black uppercase tracking-[0.1em] text-slate-500">
+            <p className="break-words text-[10px] font-black uppercase leading-4 tracking-[0.1em] text-slate-500">
               {stat.label}
             </p>
-            <p className="mt-1 truncate text-lg font-black text-slate-950">{stat.value}</p>
-            <p className="mt-1.5 text-[11px] font-bold leading-4 text-slate-600">
+            <p className="mt-1 break-words text-lg font-black leading-6 text-slate-950">
+              {stat.value}
+            </p>
+            <p className="mt-2 break-words text-[11px] font-bold leading-5 text-slate-600">
               {stat.meta}
             </p>
           </div>
@@ -11327,9 +11391,12 @@ export default function KaylenCareMonitorDashboard({
                     }
                     className="flex w-full min-w-0 items-start gap-3 text-left"
                   >
-                    <span
-                      className={`mt-1 h-3 w-3 flex-none rounded-full ${theme.dot}`}
-                    />
+                    <span className="flex flex-none flex-col items-center gap-1">
+                      <span className={`h-3 w-3 rounded-full ${theme.dot}`} />
+                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-tight text-slate-500">
+                        {theme.icon}
+                      </span>
+                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className={`text-[11px] font-black uppercase tracking-[0.16em] ${theme.text}`}>
@@ -12794,7 +12861,7 @@ export default function KaylenCareMonitorDashboard({
         : []),
     ].filter((section) => {
       if (section.module === "foodDiary") {
-        return isModuleEnabled("food") || isModuleEnabled("drink");
+        return isModuleEnabled("food");
       }
       return isModuleEnabled(section.module);
     });
@@ -12943,6 +13010,28 @@ export default function KaylenCareMonitorDashboard({
               </div>
             ) : null}
 
+            {isModuleEnabled("health") ? (
+              <div className="border-t border-slate-100 px-4 pb-4">
+                <label className="flex items-start gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-3 py-3 text-sm font-bold text-amber-900">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 shrink-0 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                    checked={includeHealthHistory24Months}
+                    onChange={(event) =>
+                      setIncludeHealthHistory24Months(event.target.checked)
+                    }
+                  />
+                  <span>
+                    Include health history from last 24 months
+                    <span className="mt-1 block text-xs font-semibold leading-5 text-amber-800/80">
+                      Only Health entries are extended. Other report sections keep
+                      the selected date range.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            ) : null}
+
             {invalidCustomRange ? (
               <div className="mx-4 mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
                 End date must be on or after the start date.
@@ -12971,7 +13060,7 @@ export default function KaylenCareMonitorDashboard({
                   className={`flex min-h-[8.25rem] min-w-0 flex-col justify-between rounded-[1.35rem] border px-4 py-4 shadow-sm ${card.tone}`}
                 >
                   <div className="min-w-0">
-                    <p className="text-[10px] font-black uppercase tracking-[0.16em] text-slate-500">
+                    <p className="break-words text-[10px] font-black uppercase leading-4 tracking-[0.16em] text-slate-500">
                       {card.label}
                     </p>
                     <p className="mt-2 break-words text-2xl font-black leading-tight text-slate-950">
