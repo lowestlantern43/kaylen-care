@@ -145,456 +145,6 @@ const safeRandomId = () => {
   return randomUuid || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-const screenshotImportRules = [
-  {
-    category: "medication",
-    label: "Medication",
-    keywords: ["med", "medicine", "tablet", "dose", "keppra", "calpol"],
-  },
-  {
-    category: "food",
-    label: "Food / Drink",
-    keywords: ["food", "meal", "drink", "milk", "water", "fluid", "breakfast", "lunch", "dinner"],
-  },
-  {
-    category: "sleep",
-    label: "Sleep",
-    keywords: ["sleep", "bed", "wake", "night", "nap"],
-  },
-  {
-    category: "toileting",
-    label: "Toileting",
-    keywords: ["toilet", "toileting", "wet", "bowel", "poo", "wee"],
-  },
-  {
-    category: "health",
-    label: "Health",
-    keywords: ["health", "pain", "temperature", "seizure", "illness", "sick"],
-  },
-  {
-    category: "behaviour",
-    label: "Behaviour",
-    keywords: ["behaviour", "meltdown", "distress", "trigger", "shutdown"],
-  },
-  {
-    category: "appointment",
-    label: "Appointment",
-    keywords: ["appointment", "hospital", "school", "ehcp", "therapy", "gp"],
-  },
-  {
-    category: "needs_review",
-    label: "Needs review",
-    keywords: [],
-  },
-];
-
-const screenshotTimePattern =
-  /\b([01]?\d|2[0-3])[:.]([0-5]\d)\b|\b([1-9]|1[0-2])\s?(am|pm)\b/i;
-
-const normaliseScreenshotTime = (line = "") => {
-  const text = String(line || "");
-  const fiveDigitOcrTimeMatch = text.match(/\b([012]?\d)[1lI|\/]([0-5]\d)\b/);
-  if (fiveDigitOcrTimeMatch) {
-    return `${fiveDigitOcrTimeMatch[1].padStart(2, "0")}:${fiveDigitOcrTimeMatch[2]}`;
-  }
-  const compactTimeMatch = text.match(/\b([012]?\d)([0-5]\d{2})\b/);
-  if (compactTimeMatch) {
-    const raw = `${compactTimeMatch[1]}${compactTimeMatch[2]}`.padStart(4, "0");
-    const hour = raw.slice(0, 2);
-    const minute = raw.slice(2, 4);
-    if (Number(hour) <= 23 && Number(minute) <= 59) {
-      return `${hour}:${minute}`;
-    }
-  }
-  const ocrSlashTimeMatch = text.match(/\b([012]?\d)[lI|\/]([0-5]\d)\b/);
-  if (ocrSlashTimeMatch) {
-    return `${ocrSlashTimeMatch[1].padStart(2, "0")}:${ocrSlashTimeMatch[2]}`;
-  }
-  const clockMatch = text.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\b/);
-  if (clockMatch) {
-    return `${clockMatch[1].padStart(2, "0")}:${clockMatch[2]}`;
-  }
-  const amPmMatch = text.match(/\b([1-9]|1[0-2])\s?(am|pm)\b/i);
-  if (!amPmMatch) return "";
-  let hour = Number(amPmMatch[1]);
-  const suffix = amPmMatch[2].toLowerCase();
-  if (suffix === "pm" && hour < 12) hour += 12;
-  if (suffix === "am" && hour === 12) hour = 0;
-  return `${String(hour).padStart(2, "0")}:00`;
-};
-
-const extractScreenshotTimes = (line = "") => {
-  const text = String(line || "");
-  const matches = [];
-  const timeRegex =
-    /\b([012]?\d)[1lI|\/]([0-5]\d)\b|\b([01]?\d|2[0-3])[:.]([0-5]\d)\b|\b([1-9]|1[0-2])\s?(am|pm)\b/gi;
-  let match;
-  while ((match = timeRegex.exec(text))) {
-    const normalised = normaliseScreenshotTime(match[0]);
-    if (normalised && !matches.includes(normalised)) {
-      matches.push(normalised);
-    }
-  }
-  return matches;
-};
-
-const cleanScreenshotLine = (line = "") =>
-  cleanFormText(line)
-    .replace(/[®©™]/g, " ")
-    .replace(/[•·]/g, " ")
-    .replace(/[|]/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/^[-–—*]+\s*/, "")
-    .trim();
-
-const normaliseNurserySectionLine = (line = "") =>
-  cleanScreenshotLine(line)
-    .replace(/^\d+\s+/, "")
-    .replace(/\s+\d+$/, "")
-    .trim()
-    .toLowerCase();
-
-const titleFromScreenshotLine = (line = "", fallback = "Suggested entry") => {
-  const cleaned = cleanScreenshotLine(line)
-    .replace(screenshotTimePattern, "")
-    .replace(/^(breakfast|lunch|dinner|tea|snack|drink|fluid|medication|medicine|meds|nap|sleep|toilet|nappy|health|behaviour|appointment)\s*[:\-–]\s*/i, "")
-    .replace(/\b(given|logged|recorded|changed|used|taken|at|from|to)\b/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return cleaned || fallback;
-};
-
-const buildScreenshotImportSuggestion = ({
-  category,
-  label,
-  date,
-  sourceText,
-  title,
-  time,
-  endTime,
-  detail,
-}) => ({
-  id: safeRandomId(),
-  category,
-  label,
-  logDate: date || todayIsoValue(),
-  time: time || normaliseScreenshotTime(sourceText),
-  endTime: endTime || "",
-  title: title || titleFromScreenshotLine(sourceText, label),
-  detail: detail || "",
-  notes: `Suggested from screenshot${sourceText ? `: ${sourceText}` : ""}`,
-  confirmed: false,
-  expanded: false,
-});
-
-const extractScreenshotSuggestionsFromText = (text, date) => {
-  const lines = String(text || "")
-    .split(/\r?\n/)
-    .map(cleanScreenshotLine)
-    .filter((line) => line.length >= 3);
-
-  const suggestions = [];
-  let currentSection = "";
-  let pendingMeal = "";
-  let pendingSleepStart = "";
-  let pendingToiletingType = "";
-  let pendingToiletingTime = "";
-
-  const sectionForLine = (line) => {
-    const lower = normaliseNurserySectionLine(line);
-    if (/^meals?$/.test(lower)) return "meals";
-    if (/^sleep$/.test(lower)) return "sleep";
-    if (/^toilet\s+visit$/.test(lower)) return "toilet";
-    if (/^nappy\s+change$/.test(lower)) return "nappy";
-    if (/^sign\s+(in|out)$/.test(lower)) return "sign";
-    return "";
-  };
-
-  const isCounterLine = (line) =>
-    /^(?:\d+\s+)?(?:meals?|sleep|toilet\s+visit|nappy\s+change|sign\s+(?:in|out))(?:\s+\d+)?$/i.test(
-      cleanScreenshotLine(line),
-    );
-
-  const isSignInOutNoise = (line) =>
-    /\b(signed\s+(in|out)|sign\s+(in|out)|explorers|nursery|preschool|school club)\b/i.test(
-      line,
-    );
-
-  const isUsefulFoodLine = (line, lineTime) =>
-    Boolean(
-      lineTime ||
-        /\b(breakfast|lunch|dinner|tea|snack|dessert|drink|water|milk|juice|pasta|pie|yoghurt|yogurt|all|some|none)\b/i.test(
-          line,
-        ),
-    );
-
-  const addSuggestion = (suggestion) => {
-    suggestions.push(
-      buildScreenshotImportSuggestion({
-        date,
-        ...suggestion,
-      }),
-    );
-  };
-
-  const stripTime = (line) =>
-    cleanScreenshotLine(line)
-      .replace(/\b([012]?\d)[1lI|\/]([0-5]\d)\b/, "")
-      .replace(/\b([012]?\d)([0-5]\d{2})\b/, "")
-      .replace(/\b([012]?\d)[lI|\/]([0-5]\d)\b/, "")
-      .replace(screenshotTimePattern, "")
-      .replace(/\s+/g, " ")
-      .trim();
-
-  const looksLikeMealContext = (line) =>
-    /^(breakfast|lunch|dinner|tea|snack|dessert|drink)\b/i.test(line);
-
-  const looksLikeToiletingDetail = (line) =>
-    /\b(dry|wet|soiled|bowel|poo|wee|accident|toilet|nappy)\b/i.test(line);
-
-  const addNeedsReview = (line, reason = "Needs review") => {
-    if (!line || isCounterLine(line) || isSignInOutNoise(line)) return;
-    addSuggestion({
-      category: "needs_review",
-      label: "Needs review",
-      time: normaliseScreenshotTime(line),
-      title: reason,
-      detail: stripTime(line),
-      sourceText: line,
-    });
-  };
-
-  for (const line of lines) {
-    const foundSection = sectionForLine(line);
-    if (foundSection) {
-      currentSection = foundSection;
-      pendingMeal = "";
-      pendingSleepStart = "";
-      pendingToiletingType = "";
-      pendingToiletingTime = "";
-      continue;
-    }
-
-    if (isCounterLine(line) || currentSection === "sign" || isSignInOutNoise(line)) continue;
-
-    const time = normaliseScreenshotTime(line);
-    const lineWithoutTime = stripTime(line);
-
-    if (currentSection === "meals") {
-      if (looksLikeMealContext(lineWithoutTime)) {
-        pendingMeal = lineWithoutTime.replace(/[:\-–]+$/, "").trim();
-        if (time && isUsefulFoodLine(lineWithoutTime, time)) {
-          addSuggestion({
-            category: "food",
-            label: "Food / Drink",
-            time,
-            title: pendingMeal,
-            detail: "",
-            sourceText: line,
-          });
-        }
-        continue;
-      }
-
-      if (pendingMeal && /^(all|some|none)$/i.test(lineWithoutTime)) {
-        const previous = suggestions
-          .slice()
-          .reverse()
-          .find(
-            (item) =>
-              item.category === "food" &&
-              item.title.toLowerCase().startsWith(pendingMeal.toLowerCase()),
-          );
-        if (previous) {
-          previous.detail = previous.detail
-            ? `${previous.detail} (${lineWithoutTime})`
-            : lineWithoutTime;
-          previous.title = previous.title.includes("(")
-            ? previous.title
-            : `${previous.title} (${lineWithoutTime})`;
-        }
-        continue;
-      }
-
-      if (
-        pendingMeal &&
-        lineWithoutTime &&
-        !/^(all|some|none)$/i.test(lineWithoutTime) &&
-        !isSignInOutNoise(lineWithoutTime)
-      ) {
-        const previous = suggestions
-          .slice()
-          .reverse()
-          .find(
-            (item) =>
-              item.category === "food" &&
-              item.title.toLowerCase() === pendingMeal.toLowerCase() &&
-              !item.detail,
-          );
-        if (previous) {
-          previous.detail = lineWithoutTime;
-          previous.title = `${previous.title} - ${lineWithoutTime}`;
-        } else {
-          addSuggestion({
-            category: "food",
-            label: "Food / Drink",
-            time,
-            title: pendingMeal,
-            detail: lineWithoutTime,
-            sourceText: line,
-          });
-        }
-        continue;
-      }
-
-      if (time && isUsefulFoodLine(lineWithoutTime, time)) {
-        addNeedsReview(line, "Possible food / drink entry");
-        continue;
-      }
-    }
-
-    if (currentSection === "sleep") {
-      const times = extractScreenshotTimes(line);
-      if (times.length >= 2) {
-        addSuggestion({
-          category: "sleep",
-          label: "Sleep",
-          time: times[0],
-          endTime: times[1],
-          title: "Nap / sleep",
-          detail: `${times[0]}-${times[1]}`,
-          sourceText: line,
-        });
-        pendingSleepStart = "";
-        continue;
-      }
-      if (time && !pendingSleepStart) {
-        pendingSleepStart = time;
-        continue;
-      }
-      if (time && pendingSleepStart) {
-        addSuggestion({
-          category: "sleep",
-          label: "Sleep",
-          time: pendingSleepStart,
-          endTime: time,
-          title: "Nap / sleep",
-          detail: `${pendingSleepStart}-${time}`,
-          sourceText: line,
-        });
-        pendingSleepStart = "";
-        continue;
-      }
-      if (/nap|sleep/i.test(line) && time) {
-        addSuggestion({
-          category: "sleep",
-          label: "Sleep",
-          time,
-          title: "Nap / sleep",
-          detail: lineWithoutTime,
-          sourceText: line,
-        });
-        continue;
-      }
-      if (/nap|sleep/i.test(line) && !time) continue;
-    }
-
-    if (currentSection === "toilet" || currentSection === "nappy") {
-      if (looksLikeToiletingDetail(lineWithoutTime)) {
-        pendingToiletingType = lineWithoutTime;
-      }
-
-      if (time && !pendingToiletingType) {
-        pendingToiletingTime = time;
-        continue;
-      }
-
-      if (!time && pendingToiletingTime && pendingToiletingType) {
-        const title =
-          currentSection === "nappy" ? "Nappy change" : "Toilet visit";
-        addSuggestion({
-          category: "toileting",
-          label: "Toileting",
-          time: pendingToiletingTime,
-          title,
-          detail: pendingToiletingType,
-          sourceText: line,
-        });
-        pendingToiletingTime = "";
-        pendingToiletingType = "";
-        continue;
-      }
-
-      if (time && (pendingToiletingType || looksLikeToiletingDetail(lineWithoutTime))) {
-        const title =
-          currentSection === "nappy" ? "Nappy change" : "Toilet visit";
-        addSuggestion({
-          category: "toileting",
-          label: "Toileting",
-          time,
-          title,
-          detail: pendingToiletingType || lineWithoutTime,
-          sourceText: line,
-        });
-        if (time) {
-          pendingToiletingType = "";
-          pendingToiletingTime = "";
-        }
-        continue;
-      }
-    }
-
-    const haystack = line.toLowerCase();
-    const matchedRules = screenshotImportRules.filter((rule) =>
-      rule.keywords.some((keyword) => haystack.includes(keyword)),
-    );
-
-    matchedRules.forEach((rule) => {
-      if (isCounterLine(line) || isSignInOutNoise(line)) return;
-      if (
-        rule.category === "sleep" &&
-        !time &&
-        extractScreenshotTimes(line).length < 2
-      ) {
-        return;
-      }
-      if (
-        rule.category === "toileting" &&
-        !(time && looksLikeToiletingDetail(lineWithoutTime))
-      ) {
-        return;
-      }
-      if (rule.category === "food" && !isUsefulFoodLine(lineWithoutTime, time)) {
-        return;
-      }
-      addSuggestion({
-        ...rule,
-        sourceText: line,
-        title: titleFromScreenshotLine(line, rule.label),
-        time,
-      });
-    });
-  }
-
-  return suggestions.filter((suggestion, index, all) => {
-    const key = `${suggestion.category}:${suggestion.title}:${suggestion.detail}:${suggestion.time}:${suggestion.endTime}:${suggestion.logDate}`;
-    return (
-      all.findIndex(
-        (item) =>
-          `${item.category}:${item.title}:${item.detail}:${item.time}:${item.endTime}:${item.logDate}` ===
-          key,
-      ) === index
-    );
-  });
-};
-
-const extractScreenshotSuggestions = (file, date) => {
-  const sourceText = cleanFormText(file?.name || "")
-    .replace(/\.[^.]+$/, "")
-    .replace(/[_-]+/g, " ");
-  return extractScreenshotSuggestionsFromText(sourceText, date);
-};
-
 const medicationTimeWindows = ["morning", "afternoon", "evening"];
 const medicationWeekDays = [
   ["sun", 0],
@@ -1100,7 +650,6 @@ export default function KaylenCareMonitorDashboard({
   accountAccess = null,
   moduleVisibility = DEFAULT_MODULE_VISIBILITY,
   showToast,
-  isScreenshotImportEnabled = false,
   useSaasApi = false,
 } = {}) {
   const childProfile = childProfileProp || {};
@@ -1338,18 +887,6 @@ export default function KaylenCareMonitorDashboard({
     notes: "",
     outcome: "",
   });
-  const [screenshotImportForm, setScreenshotImportForm] = useState({
-    file: null,
-    previewUrl: "",
-    date: todayIsoValue(),
-    suggestions: [],
-    extractedText: "",
-    ocrError: "",
-    activeSuggestionId: "",
-    reviewedCount: 0,
-  });
-  const [isReadingScreenshot, setIsReadingScreenshot] = useState(false);
-  const [isSavingScreenshotImport, setIsSavingScreenshotImport] = useState(false);
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
@@ -1475,18 +1012,6 @@ export default function KaylenCareMonitorDashboard({
       color: "from-slate-500 to-indigo-600",
       soft: "bg-slate-50 border-slate-300",
     },
-    ...(isScreenshotImportEnabled
-      ? [
-          {
-            title: "Screenshot Import",
-            subtitle: "Hidden beta helper to review screenshots before saving logs",
-            button: "Open Import",
-            emoji: "IMG",
-            color: "from-cyan-500 to-slate-600",
-            soft: "bg-cyan-50 border-cyan-300",
-          },
-        ]
-      : []),
     {
       title: "Calendar",
       subtitle: "Monthly log overview",
@@ -1539,7 +1064,6 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const isSectionVisible = (section) => {
-    if (section.title === "Screenshot Import") return Boolean(isScreenshotImportEnabled);
     const moduleKey = sectionModuleKey(section.title);
     if (moduleKey === "hidden") return false;
     return moduleKey ? isModuleEnabled(moduleKey) : true;
@@ -2127,7 +1651,6 @@ export default function KaylenCareMonitorDashboard({
       "Document Vault",
       "Appointments",
       "Timeline",
-      "Screenshot Import",
       "Calendar",
     ].includes(sectionTitle);
 
@@ -2236,18 +1759,9 @@ export default function KaylenCareMonitorDashboard({
         );
       case "Calendar":
       case "Timeline":
-      case "Screenshot Import":
         return (
           <svg {...common}>
-            {sectionTitle === "Screenshot Import" ? (
-              <>
-                <rect x="3" y="5" width="18" height="14" rx="2" />
-                <circle cx="8" cy="10" r="1.5" />
-                <path d="m5 17 4.5-4.5 3 3 2-2L19 18" />
-                <path d="M12 3v4" />
-                <path d="m9.5 5.5 2.5 2.5 2.5-2.5" />
-              </>
-            ) : sectionTitle === "Timeline" ? (
+            {sectionTitle === "Timeline" ? (
               <>
                 <path d="M4 6h16" />
                 <path d="M4 12h10" />
@@ -2387,14 +1901,6 @@ export default function KaylenCareMonitorDashboard({
       setMedicationSchedules([]);
     }
   }, [medicationScheduleStorageKey]);
-
-  useEffect(() => {
-    return () => {
-      if (screenshotImportForm.previewUrl) {
-        URL.revokeObjectURL(screenshotImportForm.previewUrl);
-      }
-    };
-  }, [screenshotImportForm.previewUrl]);
 
   const inputClassName =
     "mt-2 block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -2957,367 +2463,6 @@ export default function KaylenCareMonitorDashboard({
     setSyncState(failed.length ? "Failed" : "Synced");
     if (!failed.length) {
       await loadEntriesFromSupabase();
-    }
-  };
-
-  const resetScreenshotImport = () => {
-    setScreenshotImportForm((current) => {
-      if (current.previewUrl) {
-        URL.revokeObjectURL(current.previewUrl);
-      }
-      return {
-        file: null,
-        previewUrl: "",
-        date: todayIsoValue(),
-        suggestions: [],
-        extractedText: "",
-        ocrError: "",
-        activeSuggestionId: "",
-        reviewedCount: 0,
-      };
-    });
-  };
-
-  const readScreenshotText = async (file) => {
-    const { recognize } = await import("tesseract.js");
-    const result = await recognize(file, "eng");
-    return cleanFormText(result?.data?.text || "");
-  };
-
-  const handleScreenshotImportFile = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      showToast?.({
-        message: "Upload a screenshot image file.",
-        type: "warning",
-      });
-      event.target.value = "";
-      return;
-    }
-
-    const previewUrl = URL.createObjectURL(file);
-    setScreenshotImportForm((current) => {
-      if (current.previewUrl) {
-        URL.revokeObjectURL(current.previewUrl);
-      }
-      return {
-        ...current,
-        file,
-        previewUrl,
-        suggestions: [],
-        extractedText: "",
-        ocrError: "",
-        activeSuggestionId: "",
-      };
-    });
-
-    setIsReadingScreenshot(true);
-    try {
-      const extractedText = await readScreenshotText(file);
-      const suggestions = extractedText
-        ? extractScreenshotSuggestionsFromText(
-            extractedText,
-            screenshotImportForm.date || todayIsoValue(),
-          )
-        : [];
-
-      setScreenshotImportForm((current) => ({
-        ...current,
-        extractedText,
-        suggestions,
-        activeSuggestionId: suggestions[0]?.id || "",
-        ocrError: extractedText ? "" : "No readable text was detected.",
-      }));
-    } catch (error) {
-      console.error("Screenshot OCR failed:", error);
-      setScreenshotImportForm((current) => ({
-        ...current,
-        extractedText: "",
-        suggestions: [],
-        activeSuggestionId: "",
-        ocrError:
-          error.message ||
-          "OCR is not available right now. You can add suggestions manually.",
-      }));
-      showToast?.({
-        message: "Screenshot text could not be read. Add suggestions manually.",
-        type: "warning",
-      });
-    } finally {
-      setIsReadingScreenshot(false);
-    }
-  };
-
-  const addScreenshotSuggestion = (category = "health") => {
-    const rule =
-      screenshotImportRules.find((item) => item.category === category) ||
-      screenshotImportRules.find((item) => item.category === "health") ||
-      screenshotImportRules[0];
-
-    setScreenshotImportForm((current) => {
-      const suggestion = buildScreenshotImportSuggestion({
-          ...rule,
-          date: current.date,
-          sourceText: "manual review",
-        });
-      return {
-        ...current,
-        suggestions: [...current.suggestions, suggestion],
-        activeSuggestionId: current.activeSuggestionId || suggestion.id,
-      };
-    });
-  };
-
-  const updateScreenshotSuggestion = (id, updates) => {
-    setScreenshotImportForm((current) => ({
-      ...current,
-      suggestions: current.suggestions.map((suggestion) =>
-        suggestion.id === id ? { ...suggestion, ...updates } : suggestion,
-      ),
-    }));
-  };
-
-  const removeScreenshotSuggestion = (id) => {
-    setScreenshotImportForm((current) => ({
-      ...current,
-      suggestions: current.suggestions.filter((suggestion) => suggestion.id !== id),
-      activeSuggestionId:
-        current.activeSuggestionId === id
-          ? current.suggestions.find((suggestion) => suggestion.id !== id)?.id || ""
-          : current.activeSuggestionId,
-    }));
-  };
-
-  const moveToNextScreenshotSuggestion = (currentId) => {
-    setScreenshotImportForm((current) => {
-      const index = current.suggestions.findIndex(
-        (suggestion) => suggestion.id === currentId,
-      );
-      const next =
-        current.suggestions[index + 1] ||
-        current.suggestions.find((suggestion) => suggestion.id !== currentId);
-      return {
-        ...current,
-        activeSuggestionId: next?.id || "",
-        reviewedCount: Math.min(
-          current.suggestions.length,
-          Number(current.reviewedCount || 0) + 1,
-        ),
-      };
-    });
-  };
-
-  const moveToPreviousScreenshotSuggestion = (currentId) => {
-    setScreenshotImportForm((current) => {
-      const index = current.suggestions.findIndex(
-        (suggestion) => suggestion.id === currentId,
-      );
-      const previous =
-        index > 0 ? current.suggestions[index - 1] : current.suggestions[0];
-      return {
-        ...current,
-        activeSuggestionId: previous?.id || current.activeSuggestionId,
-      };
-    });
-  };
-
-  const buildScreenshotSuggestionPayload = (suggestion) => {
-    const normalizeIsoDate = (value) =>
-      /^\d{4}-\d{2}-\d{2}$/.test(value || "") ? value : parseDateToIso(value);
-    const logDate =
-      normalizeIsoDate(suggestion.logDate) ||
-      normalizeIsoDate(screenshotImportForm.date) ||
-      todayIsoValue();
-    const base = {
-      childId,
-      category: suggestion.category,
-      logDate,
-      logTime: suggestion.time || "",
-      notes: suggestion.notes || "",
-    };
-    const source = "screenshot_import";
-    const title = suggestion.title || suggestion.label || "Suggested entry";
-
-    switch (suggestion.category) {
-      case "food":
-        return {
-          ...base,
-          data: {
-            type: isLikelyDrinkLabel(`${title} ${suggestion.detail}`) ? "drink" : "food",
-            item: suggestion.detail ? `${title} - ${suggestion.detail}` : title,
-            meal_context: "",
-            amount: "",
-            unit: "",
-            description: suggestion.detail || "",
-            intake_status: "normal",
-            source,
-          },
-        };
-      case "medication":
-        return {
-          ...base,
-          data: {
-            medicine: title,
-            dose: "",
-            status: "given",
-            given_by: "",
-            scheduled_window: "",
-            scheduled_day: "",
-            source,
-          },
-        };
-      case "sleep":
-        return {
-          ...base,
-          data: {
-            bedtime: suggestion.time || "",
-            wake_time: suggestion.endTime || "",
-            wake_date: "",
-            quality: "",
-            night_wakings: "",
-            nap: "",
-            source,
-          },
-        };
-      case "toileting":
-        return {
-          ...base,
-          data: {
-            entry: suggestion.detail ? `${title} - ${suggestion.detail}` : title,
-            source,
-          },
-        };
-      case "behaviour":
-        return {
-          ...base,
-          data: {
-            behaviour_type: title,
-            severity: "",
-            duration: "",
-            triggers: [],
-            recovery_time: "",
-            what_helped: "",
-            source,
-          },
-        };
-      case "appointment":
-        return {
-          ...base,
-          data: {
-            title,
-            location: "",
-            professional: "",
-            category: "Other",
-            outcome: "",
-            source,
-          },
-        };
-      case "health":
-      default:
-        return {
-          ...base,
-          category: "health",
-          data: {
-            event: title,
-            duration: "",
-            happened: "",
-            action: "",
-            outcome: "",
-            source,
-          },
-        };
-    }
-  };
-
-  const saveConfirmedScreenshotSuggestions = async () => {
-    if (isReadOnly) return;
-    if (!familyId || !childId) {
-      showToast?.({
-        message: "Choose a child before saving suggested entries.",
-        type: "warning",
-      });
-      return;
-    }
-
-    const confirmedSuggestions = screenshotImportForm.suggestions.filter(
-      (suggestion) => suggestion.confirmed,
-    );
-
-    if (!confirmedSuggestions.length) {
-      showToast?.({
-        message: "Select at least one suggested entry to save.",
-        type: "info",
-      });
-      return;
-    }
-
-    setIsSavingScreenshotImport(true);
-    try {
-      for (const suggestion of confirmedSuggestions) {
-        await createCareLogWithOfflineQueue(
-          buildScreenshotSuggestionPayload(suggestion),
-        );
-      }
-      await loadEntriesFromSupabase();
-      resetScreenshotImport();
-      showToast?.({
-        message: `${confirmedSuggestions.length} suggested ${
-          confirmedSuggestions.length === 1 ? "entry" : "entries"
-        } saved for ${childName}`,
-        type: "success",
-      });
-    } catch (error) {
-      console.error("Screenshot import save failed:", error);
-      showToast?.({
-        message: error.message || "Suggested entries could not be saved.",
-        type: "error",
-      });
-    } finally {
-      setIsSavingScreenshotImport(false);
-    }
-  };
-
-  const saveScreenshotSuggestion = async (suggestion) => {
-    if (!suggestion || isReadOnly) return;
-    if (!familyId || !childId) {
-      showToast?.({
-        message: "Choose a child before importing this entry.",
-        type: "warning",
-      });
-      return;
-    }
-
-    setIsSavingScreenshotImport(true);
-    try {
-      await createCareLogWithOfflineQueue(
-        buildScreenshotSuggestionPayload(suggestion),
-      );
-      await loadEntriesFromSupabase();
-      setScreenshotImportForm((current) => {
-        const remaining = current.suggestions.filter(
-          (item) => item.id !== suggestion.id,
-        );
-        return {
-          ...current,
-          suggestions: remaining,
-          activeSuggestionId: remaining[0]?.id || "",
-          reviewedCount: Number(current.reviewedCount || 0) + 1,
-        };
-      });
-      showToast?.({
-        message: `Imported ${suggestion.label || "entry"} for ${childName}`,
-        type: "success",
-      });
-    } catch (error) {
-      console.error("Screenshot suggestion import failed:", error);
-      showToast?.({
-        message: error.message || "This suggested entry could not be imported.",
-        type: "error",
-      });
-    } finally {
-      setIsSavingScreenshotImport(false);
     }
   };
 
@@ -3996,8 +3141,6 @@ export default function KaylenCareMonitorDashboard({
         return "Record hospital, school, EHCP and care appointments with follow-up notes.";
       case "Timeline":
         return "Search across logs, documents, appointments and care history.";
-      case "Screenshot Import":
-        return "Hidden beta helper. Upload a screenshot, review suggested entries, then choose exactly what to save.";
       case "Calendar":
         return "Tap a date to review that day's logs.";
       default:
@@ -12616,7 +11759,18 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 
-  const renderDocumentVaultForm = () => (
+  const renderDocumentVaultForm = () => {
+    const documentStorageBytes = documents.reduce(
+      (total, document) => total + Number(document.fileSizeBytes || 0),
+      0,
+    );
+    const largestDocumentBytes = documents.reduce(
+      (largest, document) =>
+        Math.max(largest, Number(document.fileSizeBytes || 0)),
+      0,
+    );
+
+    return (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -12636,6 +11790,32 @@ export default function KaylenCareMonitorDashboard({
           <span className="w-fit rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-black text-slate-600">
             {documents.length} document{documents.length === 1 ? "" : "s"}
           </span>
+        </div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl border border-cyan-100 bg-cyan-50 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-cyan-700">
+              Storage used
+            </p>
+            <p className="mt-1 text-xl font-black text-slate-950">
+              {formatFileSize(documentStorageBytes)}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+              Files stored
+            </p>
+            <p className="mt-1 text-xl font-black text-slate-950">
+              {documents.length}
+            </p>
+          </div>
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 px-3 py-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.14em] text-indigo-700">
+              Largest file
+            </p>
+            <p className="mt-1 text-xl font-black text-slate-950">
+              {formatFileSize(largestDocumentBytes)}
+            </p>
+          </div>
         </div>
       </section>
 
@@ -12881,7 +12061,8 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </section>
     </div>
-  );
+    );
+  };
 
   const renderReportsForm = () => {
     const filtersLabel =
@@ -14270,463 +13451,6 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
-  const renderScreenshotImportForm = () => {
-    if (!isScreenshotImportEnabled) {
-      return (
-        <div className={cardClassName}>
-          <p className="text-sm font-bold text-slate-700">
-            Screenshot Import is currently hidden for this account.
-          </p>
-        </div>
-      );
-    }
-
-    const groupedSuggestions = screenshotImportRules
-      .map((rule) => ({
-        ...rule,
-        suggestions: screenshotImportForm.suggestions.filter(
-          (suggestion) => suggestion.category === rule.category,
-        ),
-      }))
-      .filter((group) => group.suggestions.length > 0);
-    const activeSuggestion =
-      screenshotImportForm.suggestions.find(
-        (suggestion) => suggestion.id === screenshotImportForm.activeSuggestionId,
-      ) || screenshotImportForm.suggestions[0];
-    const activeIndex = activeSuggestion
-      ? screenshotImportForm.suggestions.findIndex(
-          (suggestion) => suggestion.id === activeSuggestion.id,
-        )
-      : -1;
-    const reviewedCount = Number(screenshotImportForm.reviewedCount || 0);
-    const totalSuggestions = screenshotImportForm.suggestions.length;
-    const categoryLabel =
-      screenshotImportRules.find((rule) => rule.category === activeSuggestion?.category)
-        ?.label ||
-      activeSuggestion?.label ||
-      "Suggested entry";
-    const activeNeedsReview = activeSuggestion?.category === "needs_review";
-    const selectedCategory = activeNeedsReview ? "health" : activeSuggestion?.category || "health";
-    const selectedRule =
-      screenshotImportRules.find((rule) => rule.category === selectedCategory) ||
-      screenshotImportRules.find((rule) => rule.category === "health");
-    const activeSectionPreview = {
-      title: selectedRule?.label || "Suggested entry",
-      color:
-        selectedCategory === "food"
-          ? "from-amber-400 to-orange-500"
-          : selectedCategory === "medication"
-            ? "from-rose-400 to-pink-500"
-            : selectedCategory === "sleep"
-              ? "from-indigo-400 to-purple-500"
-              : selectedCategory === "toileting"
-                ? "from-sky-400 to-blue-500"
-                : selectedCategory === "behaviour"
-                  ? "from-purple-400 to-fuchsia-500"
-                  : selectedCategory === "appointment"
-                    ? "from-blue-400 to-indigo-500"
-                    : "from-emerald-400 to-green-500",
-    };
-    const activeCanImport =
-      Boolean(activeSuggestion?.title?.trim()) &&
-      Boolean(activeSuggestion?.logDate) &&
-      (selectedCategory !== "sleep" ||
-        Boolean(activeSuggestion.time || activeSuggestion.endTime)) &&
-      (selectedCategory !== "toileting" ||
-        Boolean(activeSuggestion.time && activeSuggestion.detail));
-
-    const updateActiveSuggestion = (updates) => {
-      if (!activeSuggestion) return;
-      updateScreenshotSuggestion(activeSuggestion.id, updates);
-    };
-
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-cyan-200 bg-cyan-50/80 p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
-                Beta admin module
-              </p>
-              <h3 className="mt-1 text-lg font-black text-slate-950">
-                Screenshot Import Helper
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-slate-700">
-                Upload a screenshot, then approve each detected item using a normal
-                FamilyTrack-style form.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={closeSection}
-              className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-700 shadow-sm"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-
-        <div className={cardClassName}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-              Screenshot date
-              <input
-                type="date"
-                className={inputClassName}
-                value={screenshotImportForm.date}
-                onChange={(event) => {
-                  const nextDate = event.target.value;
-                  setScreenshotImportForm((current) => ({
-                    ...current,
-                    date: nextDate,
-                    suggestions: current.extractedText
-                      ? extractScreenshotSuggestionsFromText(
-                          current.extractedText,
-                          nextDate,
-                        )
-                      : current.suggestions.map((suggestion) => ({
-                          ...suggestion,
-                          logDate: nextDate,
-                        })),
-                  }));
-                }}
-              />
-            </label>
-
-            <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-              Upload screenshot
-              <input
-                type="file"
-                accept="image/*"
-                className={inputClassName}
-                onChange={handleScreenshotImportFile}
-              />
-            </label>
-          </div>
-
-          {screenshotImportForm.previewUrl ? (
-            <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
-              <img
-                src={screenshotImportForm.previewUrl}
-                alt="Screenshot selected for import review"
-                className="max-h-52 w-full object-contain"
-              />
-            </div>
-          ) : null}
-
-          {isReadingScreenshot ? (
-            <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50 px-4 py-3 text-sm font-bold text-cyan-800">
-              Reading screenshot...
-            </div>
-          ) : null}
-
-          {!isReadingScreenshot &&
-          screenshotImportForm.file &&
-          !screenshotImportForm.extractedText ? (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              We couldn't read this screenshot. You can add suggestions manually below.
-              {screenshotImportForm.ocrError ? (
-                <span className="mt-1 block text-xs font-bold">
-                  {screenshotImportForm.ocrError}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-
-          {screenshotImportForm.extractedText ? (
-            <details className="mt-4 rounded-2xl border border-slate-200 bg-white p-3">
-              <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.14em] text-slate-600">
-                Show OCR details
-              </summary>
-              <pre className="mt-3 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-950 p-3 text-xs leading-5 text-slate-50">
-                {screenshotImportForm.extractedText}
-              </pre>
-            </details>
-          ) : null}
-        </div>
-
-        <div className={cardClassName}>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
-                Review queue
-              </p>
-              <h3 className="text-lg font-black text-slate-950">
-                {totalSuggestions
-                  ? `Item ${activeIndex + 1} of ${totalSuggestions}`
-                  : "No detected items yet"}
-              </h3>
-              <p className="mt-1 text-sm font-semibold text-slate-600">
-                {reviewedCount} reviewed
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => addScreenshotSuggestion("needs_review")}
-              className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
-            >
-              + Add item
-            </button>
-          </div>
-
-          {groupedSuggestions.length ? (
-            <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-              {screenshotImportForm.suggestions.map((suggestion, index) => (
-                <button
-                  key={suggestion.id}
-                  type="button"
-                  onClick={() =>
-                    setScreenshotImportForm((current) => ({
-                      ...current,
-                      activeSuggestionId: suggestion.id,
-                    }))
-                  }
-                  className={`shrink-0 rounded-2xl border px-3 py-2 text-left text-xs font-black shadow-sm ${
-                    activeSuggestion?.id === suggestion.id
-                      ? "border-cyan-300 bg-cyan-50 text-cyan-900"
-                      : "border-slate-200 bg-white text-slate-600"
-                  }`}
-                >
-                  <span className="block">#{index + 1}</span>
-                  <span className="block max-w-36 truncate">
-                    {suggestion.time || "No time"} {suggestion.title}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm leading-6 text-slate-600">
-              Upload a screenshot or add an item manually.
-            </div>
-          )}
-        </div>
-
-        {activeSuggestion ? (
-          <div className="relative rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="absolute -top-3 right-5 flex h-12 w-12 items-center justify-center rounded-full border-4 border-white bg-sky-100 text-sm font-black text-sky-800 shadow-md">
-              {childName?.slice(0, 1) || "C"}
-            </div>
-            <div className="flex items-start gap-3 pr-12">
-              <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${activeSectionPreview.color} text-white shadow-md`}>
-                {renderSectionIcon(
-                  selectedCategory === "food"
-                    ? "Food Diary"
-                    : selectedCategory === "medication"
-                      ? "Medication"
-                      : selectedCategory === "sleep"
-                        ? "Sleep"
-                        : selectedCategory === "toileting"
-                          ? "Toileting"
-                          : selectedCategory === "behaviour"
-                            ? "Behaviour"
-                            : selectedCategory === "appointment"
-                              ? "Appointments"
-                              : "Health",
-                  "h-7 w-7",
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
-                  Item {activeIndex + 1} of {totalSuggestions}
-                </p>
-                <h3 className="mt-1 text-xl font-black text-slate-950">
-                  Review {categoryLabel}
-                </h3>
-                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
-                  OCR pre-filled this FamilyTrack form. Edit anything needed before saving.
-                </p>
-              </div>
-            </div>
-
-            {activeNeedsReview ? (
-              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                This item needs review. Choose the matching form before saving.
-              </div>
-            ) : null}
-
-            <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                Detected summary
-              </p>
-              <p className="mt-1 text-sm font-black text-slate-950">
-                {activeSuggestion.time || "No time"}
-                {activeSuggestion.endTime ? ` - ${activeSuggestion.endTime}` : ""}
-                {activeSuggestion.time || activeSuggestion.endTime ? " - " : ""}
-                {activeSuggestion.title || "Suggested entry"}
-              </p>
-              {activeSuggestion.detail ? (
-                <p className="mt-1 text-sm font-semibold text-slate-600">
-                  {activeSuggestion.detail}
-                </p>
-              ) : null}
-            </div>
-
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                Matching FamilyTrack form
-                <select
-                  className={inputClassName}
-                  value={selectedCategory}
-                  onChange={(event) => {
-                    const rule = screenshotImportRules.find(
-                      (item) => item.category === event.target.value,
-                    );
-                    updateActiveSuggestion({
-                      category: event.target.value,
-                      label: rule?.label || activeSuggestion.label,
-                    });
-                  }}
-                >
-                  {screenshotImportRules
-                    .filter((rule) => rule.category !== "needs_review")
-                    .map((rule) => (
-                      <option key={rule.category} value={rule.category}>
-                        {rule.label}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                Date
-                <input
-                  type="date"
-                  className={inputClassName}
-                  value={activeSuggestion.logDate || screenshotImportForm.date}
-                  onChange={(event) =>
-                    updateActiveSuggestion({ logDate: event.target.value })
-                  }
-                />
-              </label>
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                Start time
-                <input
-                  type="time"
-                  className={inputClassName}
-                  value={activeSuggestion.time || ""}
-                  onChange={(event) =>
-                    updateActiveSuggestion({ time: event.target.value })
-                  }
-                />
-              </label>
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                End time
-                <input
-                  type="time"
-                  className={inputClassName}
-                  value={activeSuggestion.endTime || ""}
-                  onChange={(event) =>
-                    updateActiveSuggestion({ endTime: event.target.value })
-                  }
-                />
-              </label>
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                {selectedRule?.label || "Entry"} title/type
-                <input
-                  className={inputClassName}
-                  value={activeSuggestion.title || ""}
-                  onChange={(event) =>
-                    updateActiveSuggestion({ title: event.target.value })
-                  }
-                  placeholder="Entry title"
-                />
-              </label>
-              <label className={`${cardClassName} text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-                Key detail
-                <input
-                  className={inputClassName}
-                  value={activeSuggestion.detail || ""}
-                  onChange={(event) =>
-                    updateActiveSuggestion({ detail: event.target.value })
-                  }
-                  placeholder={
-                    selectedCategory === "toileting"
-                      ? "Wet, dry, bowel, accident"
-                      : selectedCategory === "food"
-                        ? "Food/drink detail or amount"
-                        : "Extra detail"
-                  }
-                />
-              </label>
-            </div>
-
-            <label className={`${cardClassName} mt-3 block text-xs font-black uppercase tracking-[0.12em] text-slate-500`}>
-              Notes
-              <textarea
-                className={`${inputClassName} min-h-[92px] resize-y`}
-                value={activeSuggestion.notes || ""}
-                onChange={(event) =>
-                  updateActiveSuggestion({ notes: event.target.value })
-                }
-                placeholder="Add context before saving"
-              />
-            </label>
-
-            {!activeCanImport ? (
-              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">
-                This item needs a little more detail before it can be saved as a normal FamilyTrack log.
-              </div>
-            ) : null}
-
-            <div className="mt-4 grid gap-2 sm:grid-cols-5">
-              <button
-                type="button"
-                disabled={!activeCanImport || isSavingScreenshotImport}
-                onClick={() =>
-                  saveScreenshotSuggestion({
-                    ...activeSuggestion,
-                    category: selectedCategory,
-                    label: selectedRule?.label || activeSuggestion.label,
-                  })
-                }
-                className={`rounded-2xl bg-gradient-to-r ${activeSectionPreview.color} px-4 py-3 text-sm font-black text-white shadow-md disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-2`}
-              >
-                {isSavingScreenshotImport ? "Saving..." : "Approve and save"}
-              </button>
-              <button
-                type="button"
-                onClick={() => moveToPreviousScreenshotSuggestion(activeSuggestion.id)}
-                disabled={activeIndex <= 0}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                onClick={() => moveToNextScreenshotSuggestion(activeSuggestion.id)}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
-              >
-                Skip this item
-              </button>
-              <button
-                type="button"
-                onClick={() => moveToNextScreenshotSuggestion(activeSuggestion.id)}
-                disabled={activeIndex >= totalSuggestions - 1}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Next
-              </button>
-              <button
-                type="button"
-                onClick={() => removeScreenshotSuggestion(activeSuggestion.id)}
-                className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-black text-rose-700 sm:col-span-5"
-              >
-                Delete suggestion
-              </button>
-            </div>
-          </div>
-        ) : null}
-
-        <button
-          type="button"
-          onClick={resetScreenshotImport}
-          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
-        >
-          Start again
-        </button>
-      </div>
-    );
-  };
-
   const renderActiveForm = () => {
     if (!activeSection) return null;
 
@@ -14755,8 +13479,6 @@ export default function KaylenCareMonitorDashboard({
         return renderAppointmentsForm();
       case "Timeline":
         return renderUnifiedTimelineForm();
-      case "Screenshot Import":
-        return renderScreenshotImportForm();
       case "Calendar":
         return renderCalendarForm();
       default:

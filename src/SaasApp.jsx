@@ -5366,6 +5366,18 @@ function WorkspaceGate({ session, onLogout }) {
       maximumFractionDigits: 2,
     }).format(Number(value || 0));
 
+  const formatStorageSize = (bytes) => {
+    const size = Number(bytes || 0);
+    if (!size) return "0 KB";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    const index = Math.min(
+      Math.floor(Math.log(size) / Math.log(1024)),
+      units.length - 1,
+    );
+    const value = size / 1024 ** index;
+    return `${value >= 10 || index === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[index]}`;
+  };
+
   const accountHealthForUser = (user) => {
     const lastSeenAt = safeDate(user?.lastSeenAt || user?.lastLoginAt);
     if (!lastSeenAt && !Number(user?.logCount || 0)) {
@@ -5559,6 +5571,15 @@ function WorkspaceGate({ session, onLogout }) {
       },
     },
   ].filter((item) => item.count > 0);
+  const documentStorageUsage = platformData.overview?.storageUsage || {
+    totalBytes: 0,
+    documentCount: 0,
+    familyCount: 0,
+    largestFamilyBytes: 0,
+    families: [],
+    setupRequired: false,
+  };
+
   const adminStatsCards = [
     {
       id: "active-families",
@@ -5631,6 +5652,16 @@ function WorkspaceGate({ session, onLogout }) {
       detail: "Latest 30 days from Stripe invoices",
       tone: "border-emerald-100 bg-emerald-50 text-emerald-800",
       onClick: () => setPlatformAdminTab("revenue"),
+    },
+    {
+      id: "document-storage",
+      label: "Document storage",
+      value: formatStorageSize(documentStorageUsage.totalBytes),
+      detail: `${documentStorageUsage.documentCount || 0} files across ${
+        documentStorageUsage.familyCount || 0
+      } families`,
+      tone: "border-cyan-100 bg-cyan-50 text-cyan-800",
+      onClick: () => setPlatformAdminTab("storage"),
     },
   ];
   const adminStatsSummaryText = needsAttentionItems.length
@@ -8312,6 +8343,7 @@ function WorkspaceGate({ session, onLogout }) {
                       ["Invite user", "families", "bg-sky-50 text-sky-800"],
                       ["View issues", "issues", "bg-purple-50 text-purple-800"],
                       ["Revenue", "revenue", "bg-emerald-50 text-emerald-800"],
+                      ["Storage", "storage", "bg-cyan-50 text-cyan-800"],
                       ["Subscriptions", "billing", "bg-amber-50 text-amber-800"],
                     ].map(([label, tabId, className]) => (
                       <button
@@ -8336,6 +8368,7 @@ function WorkspaceGate({ session, onLogout }) {
                     ["accounts", "Accounts"],
                     ["families", "Families"],
                     ["issues", "Issues"],
+                    ["storage", "Storage"],
                     ["billing", "Billing"],
                   ].map(([tabId, label]) => (
                     <button
@@ -8841,6 +8874,138 @@ function WorkspaceGate({ session, onLogout }) {
                             message="Plan breakdown will appear after families have subscription rows."
                             actionLabel="Create family"
                             onAction={() => setPlatformAdminTab("create")}
+                            tone="slate"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                {platformAdminTab === "storage" ? (
+                  <section className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-cyan-100 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-cyan-700">
+                            Document storage
+                          </p>
+                          <h3 className="mt-1 text-2xl font-black text-slate-950">
+                            {formatStorageSize(documentStorageUsage.totalBytes)}
+                          </h3>
+                          <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
+                            Family document vault usage across active families. This is read-only usage data to help plan future storage limits or paid modules.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openPlatformAdmin}
+                          disabled={isPlatformLoading}
+                          className="w-fit rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-bold text-cyan-700 disabled:opacity-50"
+                        >
+                          {isPlatformLoading ? "Refreshing..." : "Refresh"}
+                        </button>
+                      </div>
+
+                      {documentStorageUsage.setupRequired ? (
+                        <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
+                          Document Vault storage tables are not installed on this database yet.
+                        </div>
+                      ) : null}
+
+                      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-cyan-700">
+                            Total used
+                          </p>
+                          <p className="mt-1 text-2xl font-black text-slate-950">
+                            {formatStorageSize(documentStorageUsage.totalBytes)}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                            Documents
+                          </p>
+                          <p className="mt-1 text-2xl font-black text-slate-950">
+                            {documentStorageUsage.documentCount || 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-indigo-700">
+                            Families using vault
+                          </p>
+                          <p className="mt-1 text-2xl font-black text-slate-950">
+                            {documentStorageUsage.familyCount || 0}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3">
+                          <p className="text-[10px] font-black uppercase tracking-[0.12em] text-amber-700">
+                            Largest family
+                          </p>
+                          <p className="mt-1 text-2xl font-black text-slate-950">
+                            {formatStorageSize(documentStorageUsage.largestFamilyBytes)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-500">
+                            Usage by family
+                          </p>
+                          <h4 className="text-lg font-black text-slate-950">
+                            Highest storage users
+                          </h4>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                          {(documentStorageUsage.families || []).length} shown
+                        </span>
+                      </div>
+
+                      <div className="mt-3 space-y-2">
+                        {(documentStorageUsage.families || []).length ? (
+                          documentStorageUsage.families.map((family) => (
+                            <button
+                              type="button"
+                              key={family.familyId}
+                              onClick={() => openPlatformFamily(family.familyId)}
+                              className="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-left transition hover:border-cyan-200 hover:bg-cyan-50"
+                            >
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="min-w-0">
+                                  <p className="truncate font-black text-slate-950">
+                                    {family.familyName || "Unnamed family"}
+                                  </p>
+                                  <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
+                                    {family.ownerEmail || family.ownerName || "No owner email"} ·{" "}
+                                    {family.documentCount || 0} document{family.documentCount === 1 ? "" : "s"}
+                                  </p>
+                                  <p className="mt-0.5 text-xs font-semibold text-slate-500">
+                                    Last upload:{" "}
+                                    {family.lastUploadedAt
+                                      ? formatPlatformDateTime(family.lastUploadedAt)
+                                      : "Not available"}
+                                  </p>
+                                </div>
+                                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                  <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-slate-900 shadow-sm">
+                                    {formatStorageSize(family.totalBytes)}
+                                  </span>
+                                  <span className="rounded-full bg-cyan-100 px-3 py-1 text-xs font-black text-cyan-800">
+                                    View family
+                                  </span>
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <AdminEmptyState
+                            title="No document storage yet"
+                            message="Families that upload Document Vault files will appear here with their storage usage."
+                            actionLabel="Refresh storage"
+                            onAction={openPlatformAdmin}
                             tone="slate"
                           />
                         )}
@@ -10727,10 +10892,6 @@ function WorkspaceGate({ session, onLogout }) {
           accountAccess={selectedFamilyAccess}
           moduleVisibility={moduleVisibility}
           showToast={showToast}
-          isScreenshotImportEnabled={
-            Boolean(session?.user?.isPlatformAdmin) ||
-            selectedFamilyAccess?.reason === "beta"
-          }
           useSaasApi
         />
       </DashboardErrorBoundary>

@@ -554,6 +554,80 @@ async function buildNeedsAttentionSummary() {
   };
 }
 
+async function buildDocumentStorageSummary() {
+  const emptySummary = {
+    totalBytes: 0,
+    documentCount: 0,
+    familyCount: 0,
+    largestFamilyBytes: 0,
+    families: [],
+    setupRequired: false,
+  };
+
+  try {
+    const [totals, families] = await Promise.all([
+      query(
+        `
+          SELECT
+            COALESCE(sum(d.file_size_bytes), 0)::bigint AS "totalBytes",
+            count(d.id)::int AS "documentCount",
+            count(DISTINCT d.family_id)::int AS "familyCount"
+          FROM family_documents d
+          INNER JOIN families f ON f.id = d.family_id
+          WHERE d.deleted_at IS NULL
+            AND f.deleted_at IS NULL
+        `,
+      ),
+      query(
+        `
+          SELECT
+            f.id AS "familyId",
+            f.name AS "familyName",
+            u.full_name AS "ownerName",
+            u.email AS "ownerEmail",
+            count(d.id)::int AS "documentCount",
+            COALESCE(sum(d.file_size_bytes), 0)::bigint AS "totalBytes",
+            COALESCE(max(d.file_size_bytes), 0)::int AS "largestDocumentBytes",
+            max(d.created_at) AS "lastUploadedAt"
+          FROM family_documents d
+          INNER JOIN families f ON f.id = d.family_id
+          LEFT JOIN users u ON u.id = f.created_by_user_id
+          WHERE d.deleted_at IS NULL
+            AND f.deleted_at IS NULL
+          GROUP BY f.id, f.name, u.full_name, u.email
+          ORDER BY COALESCE(sum(d.file_size_bytes), 0) DESC, max(d.created_at) DESC
+          LIMIT 50
+        `,
+      ),
+    ]);
+
+    const familyRows = families.rows.map((row) => ({
+      ...row,
+      totalBytes: Number(row.totalBytes || 0),
+      documentCount: Number(row.documentCount || 0),
+      largestDocumentBytes: Number(row.largestDocumentBytes || 0),
+    }));
+
+    return {
+      totalBytes: Number(totals.rows[0]?.totalBytes || 0),
+      documentCount: Number(totals.rows[0]?.documentCount || 0),
+      familyCount: Number(totals.rows[0]?.familyCount || 0),
+      largestFamilyBytes: familyRows[0]?.totalBytes || 0,
+      families: familyRows,
+      setupRequired: false,
+    };
+  } catch (error) {
+    if (
+      error.code === "42P01" ||
+      error.message?.includes("family_documents")
+    ) {
+      return { ...emptySummary, setupRequired: true };
+    }
+
+    throw error;
+  }
+}
+
 adminRouter.get(
   "/overview",
   asyncHandler(async (req, res) => {
@@ -571,6 +645,7 @@ adminRouter.get(
       newAccountsThisWeek,
       needsAttention,
       recentActivity,
+      storageUsage,
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
@@ -668,6 +743,7 @@ adminRouter.get(
           LIMIT 12
         `,
       ),
+      buildDocumentStorageSummary(),
     ]);
 
     res.json({
@@ -688,6 +764,7 @@ adminRouter.get(
         newAccountsThisWeek: newAccountsThisWeek.rows[0].count,
         needsAttention,
         recentActivity: recentActivity.rows,
+        storageUsage,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
