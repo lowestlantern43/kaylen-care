@@ -649,6 +649,9 @@ export default function KaylenCareMonitorDashboard({
   importantEvents = [],
   accountAccess = null,
   moduleVisibility = DEFAULT_MODULE_VISIBILITY,
+  documentVault = null,
+  onStartDocumentVaultCheckout,
+  isDocumentVaultCheckoutLoading = false,
   showToast,
   useSaasApi = false,
 } = {}) {
@@ -11769,6 +11772,18 @@ export default function KaylenCareMonitorDashboard({
         Math.max(largest, Number(document.fileSizeBytes || 0)),
       0,
     );
+    const isDocumentVaultKnown = Boolean(documentVault);
+    const documentVaultStatus = documentVault?.override?.status || "default";
+    const isDocumentVaultPaid =
+      !isDocumentVaultKnown ||
+      documentVaultStatus === "paid" ||
+      documentVaultStatus === "included";
+    const isDocumentVaultDisabled = documentVaultStatus === "disabled";
+    const shouldPromptForDocumentVault =
+      documentVault?.settings?.enabled &&
+      !isDocumentVaultPaid &&
+      !isDocumentVaultDisabled;
+    const documentVaultTiers = documentVault?.settings?.tiers || [];
 
     return (
     <div className="mt-6 space-y-4">
@@ -11819,6 +11834,71 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </section>
 
+      {isDocumentVaultDisabled ? (
+        <section className="rounded-[1.75rem] border border-amber-100 bg-amber-50 p-4 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-amber-700">
+            Add-on disabled
+          </p>
+          <h4 className="mt-1 text-lg font-black text-slate-950">
+            Document uploads are not active for this family
+          </h4>
+          <p className="mt-1 text-sm leading-6 text-amber-900">
+            Existing documents remain visible, but new uploads are disabled.
+            Contact FamilyTrack support if you need this changed.
+          </p>
+        </section>
+      ) : null}
+
+      {shouldPromptForDocumentVault ? (
+        <section className="rounded-[1.75rem] border border-cyan-100 bg-cyan-50/80 p-4 shadow-sm">
+          <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
+            Optional storage add-on
+          </p>
+          <h4 className="mt-1 text-lg font-black text-slate-950">
+            Enable Document Vault storage
+          </h4>
+          <p className="mt-1 text-sm leading-6 text-slate-600">
+            Document Vault keeps private family documents together. Choose a
+            storage tier to upload new files; existing files remain viewable.
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {documentVaultTiers.length ? (
+              documentVaultTiers.map((tier) => (
+                <div
+                  key={tier.id}
+                  className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm"
+                >
+                  <p className="font-black text-slate-950">{tier.label}</p>
+                  <p className="mt-1 text-2xl font-black text-cyan-800">
+                    £{tier.monthlyPriceGbp}/mo
+                  </p>
+                  <p className="mt-1 text-xs font-bold text-slate-500">
+                    {tier.includedStorageGb}GB private storage
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onStartDocumentVaultCheckout?.(tier.id)}
+                    disabled={
+                      isDocumentVaultCheckoutLoading || !tier.stripePriceId
+                    }
+                    className="mt-3 w-full rounded-xl bg-cyan-700 px-3 py-2 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isDocumentVaultCheckoutLoading
+                      ? "Opening Stripe..."
+                      : "Choose this storage"}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm font-bold text-amber-900 sm:col-span-2">
+                Storage plans are not configured yet.
+              </div>
+            )}
+          </div>
+        </section>
+      ) : null}
+
+      {!isDocumentVaultPaid ? null : (
       <form
         onSubmit={handleDocumentUpload}
         className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-4 shadow-sm"
@@ -11931,6 +12011,7 @@ export default function KaylenCareMonitorDashboard({
           {isUploadingDocument ? "Uploading..." : "Save document"}
         </button>
       </form>
+      )}
 
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
         <div className="grid gap-3 md:grid-cols-3">

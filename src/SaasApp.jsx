@@ -3209,6 +3209,27 @@ function WorkspaceGate({ session, onLogout }) {
   }, [selectedFamilyId, upgradeBannerStorageKey]);
 
   useEffect(() => {
+    if (!selectedFamilyId) {
+      setSubscription(null);
+      return;
+    }
+
+    let ignore = false;
+    api
+      .getSubscription(selectedFamilyId)
+      .then((loadedSubscription) => {
+        if (!ignore) setSubscription(loadedSubscription);
+      })
+      .catch(() => {
+        if (!ignore) setSubscription(null);
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [selectedFamilyId]);
+
+  useEffect(() => {
     let ignore = false;
 
     async function loadFeedbackConfig() {
@@ -11248,6 +11269,9 @@ function WorkspaceGate({ session, onLogout }) {
           importantEvents={importantEvents}
           accountAccess={selectedFamilyAccess}
           moduleVisibility={moduleVisibility}
+          documentVault={subscription?.documentVault || null}
+          onStartDocumentVaultCheckout={startDocumentVaultCheckout}
+          isDocumentVaultCheckoutLoading={isCheckoutLoading}
           showToast={showToast}
           useSaasApi
         />

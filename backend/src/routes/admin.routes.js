@@ -302,7 +302,7 @@ async function syncFamilySubscriptionFromStripe(familyId) {
   const subscription = subscriptions.data?.find((item) =>
     ["active", "trialing", "past_due", "incomplete", "canceled", "unpaid"].includes(
       item.status,
-    ),
+    ) && item.metadata?.add_on !== "document_vault",
   );
 
   if (!subscription) {
@@ -1036,7 +1036,7 @@ adminRouter.patch(
 
     await writeAudit(req, {
       entityType: "platform_setting",
-      entityId: "document_vault",
+      entityId: null,
       action: "platform_document_vault_settings_updated",
       metadata: value,
     });

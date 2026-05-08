@@ -148,7 +148,9 @@ async function syncFamilySubscriptionIfNeeded(subscriptionRow) {
     subscriptionRow.stripeCustomerId,
   );
   const bestMatch = subscriptions.data?.find((subscription) =>
-    ["active", "trialing", "past_due", "incomplete"].includes(subscription.status),
+    ["active", "trialing", "past_due", "incomplete"].includes(
+      subscription.status,
+    ) && subscription.metadata?.add_on !== "document_vault",
   );
 
   if (!bestMatch) return subscriptionRow;
