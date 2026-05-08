@@ -20,6 +20,38 @@ async function updateSubscriptionFromStripe(subscription) {
 
   const familyId = subscription.metadata?.family_id;
   if (!familyId) return;
+  if (subscription.metadata?.add_on === "document_vault") {
+    const override = {
+      status: ["active", "trialing", "past_due"].includes(subscription.status)
+        ? "paid"
+        : "disabled",
+      tierId: subscription.metadata?.tier_id || "",
+      monthlyPriceGbp: subscription.metadata?.monthly_price_gbp
+        ? Number(subscription.metadata.monthly_price_gbp)
+        : null,
+      includedStorageGb: subscription.metadata?.included_storage_gb
+        ? Number(subscription.metadata.included_storage_gb)
+        : null,
+      notes: `Stripe Document Vault add-on: ${
+        subscription.metadata?.tier_label || subscription.metadata?.tier_id || "tier"
+      }`,
+    };
+
+    await query(
+      "ALTER TABLE families ADD COLUMN IF NOT EXISTS document_vault_override jsonb",
+    );
+    await query(
+      `
+        UPDATE families
+        SET document_vault_override = $1
+        WHERE id = $2
+          AND deleted_at IS NULL
+      `,
+      [JSON.stringify(override), familyId],
+    );
+    return;
+  }
+
   const status = subscription.status || "inactive";
   const plan = ["active", "trialing", "past_due"].includes(status)
     ? "family"

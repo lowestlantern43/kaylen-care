@@ -3259,14 +3259,17 @@ function WorkspaceGate({ session, onLogout }) {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const billingResult = params.get("billing");
-    if (!billingResult) return;
+    const documentVaultResult = params.get("documentVault");
+    if (!billingResult && !documentVaultResult) return;
 
-    if (billingResult === "success") {
+    if (billingResult === "success" || documentVaultResult === "success") {
       setAccountMessage(
-        "Thanks - Stripe is confirming the subscription. Access will update automatically once the payment is confirmed.",
+        documentVaultResult === "success"
+          ? "Thanks - Stripe is confirming the Document Vault add-on. Access will update automatically once payment is confirmed."
+          : "Thanks - Stripe is confirming the subscription. Access will update automatically once the payment is confirmed.",
       );
     }
-    if (billingResult === "cancelled") {
+    if (billingResult === "cancelled" || documentVaultResult === "cancelled") {
       setAccountMessage("Checkout was cancelled. You can upgrade whenever you are ready.");
     }
 
@@ -4308,6 +4311,24 @@ function WorkspaceGate({ session, onLogout }) {
     }
   };
 
+  const startDocumentVaultCheckout = async (tierId) => {
+    if (!selectedFamilyId || !tierId) return;
+
+    setIsCheckoutLoading(true);
+    setError("");
+
+    try {
+      const checkout = await api.createDocumentVaultCheckoutSession(
+        selectedFamilyId,
+        { tierId },
+      );
+      window.location.assign(checkout.checkoutUrl);
+    } catch (caughtError) {
+      setError(caughtError.message);
+      setIsCheckoutLoading(false);
+    }
+  };
+
   const dismissUpgradeBanner = () => {
     if (!selectedFamilyId || !upgradeBannerStorageKey) return;
 
@@ -4399,6 +4420,7 @@ function WorkspaceGate({ session, onLogout }) {
             label: tier.label,
             monthlyPriceGbp: String(tier.monthlyPriceGbp ?? 0),
             includedStorageGb: String(tier.includedStorageGb ?? 0),
+            stripePriceId: tier.stripePriceId || "",
           })),
           notes:
             documentVaultSettings.notes ||
@@ -4880,6 +4902,7 @@ function WorkspaceGate({ session, onLogout }) {
           label: tier.label,
           monthlyPriceGbp: String(tier.monthlyPriceGbp ?? 0),
           includedStorageGb: String(tier.includedStorageGb ?? 0),
+          stripePriceId: tier.stripePriceId || "",
         })),
         notes: settings.notes || "",
       });
@@ -6574,6 +6597,59 @@ function WorkspaceGate({ session, onLogout }) {
                   </div>
                 </div>
               </section>
+              {subscription?.documentVault?.settings?.enabled ? (
+                <section className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 shadow-sm lg:col-span-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                        Document Vault add-on
+                      </p>
+                      <h3 className="mt-1 text-lg font-black text-slate-950">
+                        Extra private document storage
+                      </h3>
+                      <p className="mt-1 text-sm font-semibold text-slate-600">
+                        Current usage:{" "}
+                        {formatStorageSize(subscription.documentVault.usage?.totalBytes)}{" "}
+                        across {subscription.documentVault.usage?.documentCount || 0} files.
+                      </p>
+                    </div>
+                    <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-black text-cyan-800 shadow-sm">
+                      {subscription.documentVault.override?.status === "paid"
+                        ? "Active add-on"
+                        : subscription.documentVault.override?.status === "included"
+                          ? "Included"
+                          : "Optional extra"}
+                    </span>
+                  </div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {(subscription.documentVault.settings.tiers || []).map((tier) => (
+                      <div
+                        key={tier.id}
+                        className="rounded-2xl border border-cyan-100 bg-white p-3 shadow-sm"
+                      >
+                        <p className="text-sm font-black text-slate-950">
+                          {tier.label}
+                        </p>
+                        <p className="mt-1 text-2xl font-black text-cyan-800">
+                          £{tier.monthlyPriceGbp}/mo
+                        </p>
+                        <p className="mt-1 text-xs font-bold text-slate-500">
+                          {tier.includedStorageGb}GB storage · Stripe{" "}
+                          {tier.stripePriceId ? "ready" : "not configured"}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => startDocumentVaultCheckout(tier.id)}
+                          disabled={isCheckoutLoading || !tier.stripePriceId}
+                          className="mt-3 w-full rounded-xl bg-cyan-700 px-3 py-2 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {isCheckoutLoading ? "Opening Stripe..." : "Choose this storage"}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               </>
               ) : null}
 
@@ -9094,6 +9170,7 @@ function WorkspaceGate({ session, onLogout }) {
                                     label: "New storage tier",
                                     monthlyPriceGbp: "",
                                     includedStorageGb: "",
+                                    stripePriceId: "",
                                   },
                                 ],
                               }))
@@ -9107,7 +9184,7 @@ function WorkspaceGate({ session, onLogout }) {
                           {(platformDocumentVaultSettingsForm.tiers || []).map((tier, index) => (
                             <div
                               key={tier.id || index}
-                              className="grid gap-2 rounded-2xl border border-cyan-100 bg-white p-3 md:grid-cols-[1.4fr_1fr_1fr_auto]"
+                              className="grid gap-2 rounded-2xl border border-cyan-100 bg-white p-3 md:grid-cols-[1.2fr_0.8fr_0.8fr_1.4fr_auto]"
                             >
                               <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
                                 Tier name
@@ -9164,6 +9241,24 @@ function WorkspaceGate({ session, onLogout }) {
                                       ),
                                     }))
                                   }
+                                />
+                              </label>
+                              <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                                Stripe price ID
+                                <input
+                                  className="mt-1 min-h-[42px] w-full min-w-0 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none focus:ring-2 focus:ring-cyan-100"
+                                  value={tier.stripePriceId || ""}
+                                  onChange={(event) =>
+                                    setPlatformDocumentVaultSettingsForm((form) => ({
+                                      ...form,
+                                      tiers: form.tiers.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, stripePriceId: event.target.value }
+                                          : item,
+                                      ),
+                                    }))
+                                  }
+                                  placeholder="price_..."
                                 />
                               </label>
                               <button

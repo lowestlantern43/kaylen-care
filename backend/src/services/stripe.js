@@ -89,17 +89,22 @@ export async function createStripeCheckoutSession({
   customerId,
   familyId,
   familyName,
+  priceId = config.stripePriceId,
+  plan = "family",
+  successPath = "",
+  cancelPath = "",
+  metadata = {},
   promotionCodeId = "",
   promotionCode = "",
 }) {
-  if (!config.stripePriceId) {
+  if (!priceId) {
     throw badRequest("Stripe price is not configured yet. Add STRIPE_FAMILY_PRICE_ID to the backend environment.");
   }
 
   const params = new URLSearchParams();
   params.set("mode", "subscription");
   params.set("customer", customerId);
-  params.set("line_items[0][price]", config.stripePriceId);
+  params.set("line_items[0][price]", priceId);
   params.set("line_items[0][quantity]", "1");
   if (promotionCodeId) {
     params.set("discounts[0][promotion_code]", promotionCodeId);
@@ -108,17 +113,27 @@ export async function createStripeCheckoutSession({
   }
   params.set(
     "success_url",
-    `${config.frontendUrl}?billing=success&session_id={CHECKOUT_SESSION_ID}`,
+    `${config.frontendUrl}${successPath || "?billing=success"}&session_id={CHECKOUT_SESSION_ID}`,
   );
-  params.set("cancel_url", `${config.frontendUrl}?billing=cancelled`);
+  params.set("cancel_url", `${config.frontendUrl}${cancelPath || "?billing=cancelled"}`);
   params.set("client_reference_id", familyId);
   params.set("metadata[family_id]", familyId);
   params.set("metadata[family_name]", familyName);
-  params.set("metadata[plan]", "family");
+  params.set("metadata[plan]", plan);
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (value !== null && typeof value !== "undefined" && value !== "") {
+      params.set(`metadata[${key}]`, String(value));
+    }
+  });
   if (promotionCode) params.set("metadata[promotion_code]", promotionCode);
   params.set("subscription_data[metadata][family_id]", familyId);
   params.set("subscription_data[metadata][family_name]", familyName);
-  params.set("subscription_data[metadata][plan]", "family");
+  params.set("subscription_data[metadata][plan]", plan);
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (value !== null && typeof value !== "undefined" && value !== "") {
+      params.set(`subscription_data[metadata][${key}]`, String(value));
+    }
+  });
   if (promotionCode) {
     params.set("subscription_data[metadata][promotion_code]", promotionCode);
   }

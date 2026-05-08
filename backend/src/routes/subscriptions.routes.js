@@ -32,6 +32,46 @@ function getPlanName(subscription) {
   return subscription.metadata?.plan || "family";
 }
 
+function normaliseDocumentVaultTiers(tiers = []) {
+  const cleanTiers = Array.isArray(tiers)
+    ? tiers
+        .map((tier, index) => ({
+          id:
+            typeof tier?.id === "string" && tier.id.trim()
+              ? tier.id.trim()
+              : `storage-tier-${index + 1}`,
+          label:
+            typeof tier?.label === "string" && tier.label.trim()
+              ? tier.label.trim()
+              : `${Number(tier?.includedStorageGb || 100)}GB storage`,
+          monthlyPriceGbp: Number(tier?.monthlyPriceGbp || 0),
+          includedStorageGb: Number(tier?.includedStorageGb || 0),
+          stripePriceId:
+            typeof tier?.stripePriceId === "string"
+              ? tier.stripePriceId.trim()
+              : "",
+        }))
+        .filter((tier) => tier.id && tier.stripePriceId)
+    : [];
+
+  return cleanTiers;
+}
+
+async function getDocumentVaultTier(tierId) {
+  const { rows } = await query(
+    `
+      SELECT value
+      FROM platform_settings
+      WHERE key = 'document_vault'
+      LIMIT 1
+    `,
+  );
+  const settings = rows[0]?.value || {};
+  if (settings.enabled === false) return null;
+  const tiers = normaliseDocumentVaultTiers(settings.tiers);
+  return tiers.find((tier) => tier.id === tierId) || null;
+}
+
 async function syncSubscriptionRowFromStripe(subscription, familyId) {
   const discount = extractStripeDiscountInfo(subscription);
   const promotionCode =
@@ -154,9 +194,56 @@ subscriptionsRouter.get(
         plan: "trial",
       },
     );
+    const [settings, familyVault, usage] = await Promise.all([
+      query(
+        `
+          SELECT value
+          FROM platform_settings
+          WHERE key = 'document_vault'
+          LIMIT 1
+        `,
+      ),
+      query(
+        `
+          SELECT document_vault_override AS "documentVaultOverride"
+          FROM families
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [req.familyMember.family_id],
+      ),
+      query(
+        `
+          SELECT
+            count(id)::int AS "documentCount",
+            COALESCE(sum(file_size_bytes), 0)::bigint AS "totalBytes"
+          FROM family_documents
+          WHERE family_id = $1
+            AND deleted_at IS NULL
+        `,
+        [req.familyMember.family_id],
+      ),
+    ]);
+    const documentVaultSettings = settings.rows[0]?.value || {};
 
     res.json({
-      data: subscription,
+      data: {
+        ...subscription,
+        documentVault: {
+          settings: {
+            enabled: documentVaultSettings.enabled !== false,
+            tiers: normaliseDocumentVaultTiers(documentVaultSettings.tiers),
+            notes: documentVaultSettings.notes || "",
+          },
+          override: familyVault.rows[0]?.documentVaultOverride || {
+            status: "default",
+          },
+          usage: {
+            documentCount: Number(usage.rows[0]?.documentCount || 0),
+            totalBytes: Number(usage.rows[0]?.totalBytes || 0),
+          },
+        },
+      },
       error: null,
     });
   }),
@@ -235,6 +322,96 @@ subscriptionsRouter.post(
       familyName: family.familyName,
       promotionCodeId: promotionCode?.id || "",
       promotionCode: requestedPromotionCode,
+    });
+
+    res.json({
+      data: {
+        checkoutUrl: session.url,
+      },
+      error: null,
+    });
+  }),
+);
+
+subscriptionsRouter.post(
+  "/document-vault/checkout",
+  requireRole("owner"),
+  asyncHandler(async (req, res) => {
+    const tierId = String(req.body?.tierId || "").trim();
+    const tier = await getDocumentVaultTier(tierId);
+
+    if (!tier) {
+      res.status(400).json({
+        data: null,
+        error: {
+          code: "invalid_document_vault_tier",
+          message:
+            "That Document Vault storage tier is not available. Check the owner pricing settings.",
+        },
+      });
+      return;
+    }
+
+    const { rows } = await query(
+      `
+        SELECT
+          f.id AS "familyId",
+          f.name AS "familyName",
+          s.stripe_customer_id AS "stripeCustomerId"
+        FROM families f
+        LEFT JOIN subscriptions s ON s.family_id = f.id
+        WHERE f.id = $1 AND f.deleted_at IS NULL
+        LIMIT 1
+      `,
+      [req.familyMember.family_id],
+    );
+
+    const family = rows[0];
+    let stripeCustomerId = family.stripeCustomerId;
+
+    if (!stripeCustomerId) {
+      const customer = await createStripeCustomer({
+        email: req.user.email,
+        name: req.user.full_name,
+        familyId: family.familyId,
+        familyName: family.familyName,
+      });
+      stripeCustomerId = customer.id;
+
+      await query(
+        `
+          INSERT INTO subscriptions (
+            family_id,
+            stripe_customer_id,
+            status,
+            plan,
+            trial_started_at,
+            trial_ends_at
+          )
+          VALUES ($1, $2, 'trialing', 'trial', now(), now() + interval '30 days')
+          ON CONFLICT (family_id)
+          DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
+        `,
+        [family.familyId, stripeCustomerId],
+      );
+    }
+
+    const session = await createStripeCheckoutSession({
+      customerId: stripeCustomerId,
+      familyId: family.familyId,
+      familyName: family.familyName,
+      priceId: tier.stripePriceId,
+      plan: "document_vault",
+      successPath: "?documentVault=success",
+      cancelPath: "?documentVault=cancelled",
+      metadata: {
+        add_on: "document_vault",
+        tier_id: tier.id,
+        tier_label: tier.label,
+        monthly_price_gbp: tier.monthlyPriceGbp,
+        included_storage_gb: tier.includedStorageGb,
+        stripe_price_id: tier.stripePriceId,
+      },
     });
 
     res.json({

@@ -99,7 +99,7 @@ async function ensureDocumentVaultBillingSchema() {
       INSERT INTO platform_settings (key, value)
       VALUES (
         'document_vault',
-        '{"enabled": true, "tiers": [{"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100}], "notes": "Default Document Vault add-on pricing."}'::jsonb
+        '{"enabled": true, "tiers": [{"id": "storage-50gb", "label": "50GB storage", "monthlyPriceGbp": 1, "includedStorageGb": 50, "stripePriceId": "price_1TUlQrFCbC5qpS8MXTjrpqjm"}, {"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100, "stripePriceId": "price_1TUlSSFCbC5qpS8MU8DdEyZW"}], "notes": "Default Document Vault add-on pricing."}'::jsonb
       )
       ON CONFLICT (key) DO NOTHING
     `,
@@ -128,6 +128,10 @@ function normaliseDocumentVaultTiers(tiers = []) {
             includedStorageGb: Number.isFinite(includedStorageGb)
               ? Math.max(0, includedStorageGb)
               : 100,
+            stripePriceId:
+              typeof tier?.stripePriceId === "string"
+                ? tier.stripePriceId.trim()
+                : "",
           };
         })
         .filter((tier) => tier.includedStorageGb > 0 || tier.monthlyPriceGbp > 0)
@@ -141,6 +145,7 @@ function normaliseDocumentVaultTiers(tiers = []) {
           label: "100GB storage",
           monthlyPriceGbp: 2,
           includedStorageGb: 100,
+          stripePriceId: "price_1TUlSSFCbC5qpS8MU8DdEyZW",
         },
       ];
 }
@@ -216,6 +221,7 @@ function buildEffectiveDocumentVaultAccess(settings, override) {
       cleanOverride.includedStorageGb !== null
         ? cleanOverride.includedStorageGb
         : selectedTier.includedStorageGb,
+    stripePriceId: selectedTier.stripePriceId || "",
     tierId: isDefault ? "" : selectedTier.id,
     tierLabel: isDefault ? "Default tier" : selectedTier.label,
     billingLabel:
