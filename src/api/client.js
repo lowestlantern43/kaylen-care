@@ -450,4 +450,14 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  adminUpdateDocumentVaultSettings: (payload) =>
+    request("/admin/document-vault-settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  adminUpdateFamilyDocumentVault: (familyId, payload) =>
+    request(`/admin/families/${familyId}/document-vault`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
 };

@@ -1,4 +1,4 @@
-import html2canvas from "html2canvas";
+﻿import html2canvas from "html2canvas";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -142,7 +142,7 @@ const publicPages = {
     title: "FamilyTrack - Simple Care Tracking for Families",
     description:
       "FamilyTrack helps busy parents and carers log food, medication, sleep, toileting and health, then create clearer reports for doctors, school and reviews.",
-    h1: "FamilyTrack — simple care tracking for families",
+    h1: "FamilyTrack â€” simple care tracking for families",
     canonical: `${PRODUCTION_URL}/`,
     ogImage: `${PRODUCTION_URL}/screenshots/dashboard.png`,
   },
@@ -917,7 +917,7 @@ const parseCareMedicationRows = (value = "") => {
         };
       }
 
-      const separator = [" - ", " – ", " — ", ":"].find((item) =>
+      const separator = [" - ", " â€“ ", " â€” ", ":"].find((item) =>
         line.includes(item),
       );
       if (!separator) {
@@ -1066,7 +1066,7 @@ function ChildPhotoPreview({ child, url }) {
   if (hasFailed) {
     return (
       <div className="flex h-20 w-32 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-2 text-center text-xs font-bold text-amber-800">
-        Photo uploaded but cannot be viewed — check storage permissions.
+        Photo uploaded but cannot be viewed â€” check storage permissions.
       </div>
     );
   }
@@ -1232,7 +1232,7 @@ function Toast({ toast, onClose }) {
             className="rounded-full bg-white/70 px-2 py-1 text-xs font-black shadow-sm"
             aria-label="Close notification"
           >
-            ×
+            Ã—
           </button>
         </div>
       </div>
@@ -1689,7 +1689,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
                   className="flex gap-3 text-sm font-semibold leading-6 text-slate-700"
                 >
                   <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-indigo-700 shadow-sm">
-                    ✓
+                    âœ“
                   </span>
                   <span>{item}</span>
                 </li>
@@ -2740,6 +2740,27 @@ function WorkspaceGate({ session, onLogout }) {
     trialEndsAt: "",
     accessPaused: false,
   });
+  const [platformDocumentVaultSettingsForm, setPlatformDocumentVaultSettingsForm] =
+    useState({
+      enabled: true,
+      tiers: [
+        {
+          id: "storage-100gb",
+          label: "100GB storage",
+          monthlyPriceGbp: "2",
+          includedStorageGb: "100",
+        },
+      ],
+      notes: "Default Document Vault add-on pricing.",
+    });
+  const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
+    useState({
+      status: "default",
+      tierId: "",
+      monthlyPriceGbp: "",
+      includedStorageGb: "",
+      notes: "",
+    });
   const [platformCreateAccountForm, setPlatformCreateAccountForm] = useState({
     parentName: "",
     email: "",
@@ -3352,8 +3373,8 @@ function WorkspaceGate({ session, onLogout }) {
 
         setResolvedIssueNotice(
           notifications.length === 1
-            ? "Your reported issue has been resolved ✅"
-            : `${notifications.length} of your reported issues have been resolved ✅`,
+            ? "Your reported issue has been resolved âœ…"
+            : `${notifications.length} of your reported issues have been resolved âœ…`,
         );
         await api.markResolvedIssueNotificationsSeen();
       } catch {
@@ -4359,6 +4380,31 @@ function WorkspaceGate({ session, onLogout }) {
         api.adminArchivedFamilies(),
       ]);
       setPlatformData({ overview, families, users, archivedFamilies });
+      const documentVaultSettings = overview?.storageUsage?.settings;
+      if (documentVaultSettings) {
+        setPlatformDocumentVaultSettingsForm({
+          enabled: documentVaultSettings.enabled !== false,
+          tiers: (documentVaultSettings.tiers?.length
+            ? documentVaultSettings.tiers
+            : [
+                {
+                  id: "storage-100gb",
+                  label: "100GB storage",
+                  monthlyPriceGbp: 2,
+                  includedStorageGb: 100,
+                },
+              ]
+          ).map((tier) => ({
+            id: tier.id,
+            label: tier.label,
+            monthlyPriceGbp: String(tier.monthlyPriceGbp ?? 0),
+            includedStorageGb: String(tier.includedStorageGb ?? 0),
+          })),
+          notes:
+            documentVaultSettings.notes ||
+            "Default Document Vault add-on pricing.",
+        });
+      }
       setSelectedPlatformFamily(null);
       setSelectedPlatformUser(null);
       api
@@ -4558,6 +4604,22 @@ function WorkspaceGate({ session, onLogout }) {
           ? String(detail.family.trialEndsAt).slice(0, 10)
           : "",
         accessPaused: Boolean(detail.family?.accessPausedAt),
+      });
+      const documentVaultOverride = detail.family?.documentVaultOverride || {};
+      setPlatformFamilyDocumentVaultForm({
+        status: documentVaultOverride.status || "default",
+        tierId: documentVaultOverride.tierId || "",
+        monthlyPriceGbp:
+          documentVaultOverride.monthlyPriceGbp === null ||
+          typeof documentVaultOverride.monthlyPriceGbp === "undefined"
+            ? ""
+            : String(documentVaultOverride.monthlyPriceGbp),
+        includedStorageGb:
+          documentVaultOverride.includedStorageGb === null ||
+          typeof documentVaultOverride.includedStorageGb === "undefined"
+            ? ""
+            : String(documentVaultOverride.includedStorageGb),
+        notes: documentVaultOverride.notes || "",
       });
       setPlatformAdminTab("families");
     } catch (caughtError) {
@@ -4791,6 +4853,63 @@ function WorkspaceGate({ session, onLogout }) {
       setPlatformData((current) => ({ ...current, overview, families }));
       await openPlatformFamily(selectedPlatformFamily.family.id);
       setPlatformActionMessage("Plan and access controls updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updatePlatformDocumentVaultSettings = async () => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const settings = await api.adminUpdateDocumentVaultSettings({
+        enabled: Boolean(platformDocumentVaultSettingsForm.enabled),
+        tiers: platformDocumentVaultSettingsForm.tiers,
+        notes: platformDocumentVaultSettingsForm.notes,
+      });
+      const overview = await api.adminOverview();
+      setPlatformData((current) => ({ ...current, overview }));
+      setPlatformDocumentVaultSettingsForm({
+        enabled: settings.enabled !== false,
+        tiers: (settings.tiers || []).map((tier) => ({
+          id: tier.id,
+          label: tier.label,
+          monthlyPriceGbp: String(tier.monthlyPriceGbp ?? 0),
+          includedStorageGb: String(tier.includedStorageGb ?? 0),
+        })),
+        notes: settings.notes || "",
+      });
+      setPlatformActionMessage("Document Vault pricing updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updatePlatformFamilyDocumentVault = async () => {
+    if (!selectedPlatformFamily?.family?.id) return;
+
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      await api.adminUpdateFamilyDocumentVault(
+        selectedPlatformFamily.family.id,
+        platformFamilyDocumentVaultForm,
+      );
+      const [overview, families] = await Promise.all([
+        api.adminOverview(),
+        api.adminFamilies(),
+      ]);
+      setPlatformData((current) => ({ ...current, overview, families }));
+      await openPlatformFamily(selectedPlatformFamily.family.id);
+      setPlatformActionMessage("Document Vault override updated.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -6029,7 +6148,7 @@ function WorkspaceGate({ session, onLogout }) {
                 className="absolute right-3 top-3 rounded-full border border-sky-200 bg-white/80 px-2 py-1 text-xs font-black text-sky-700 shadow-sm"
                 aria-label="Hide trial reminder for 7 days"
               >
-                ×
+                Ã—
               </button>
             </div>
           ) : null}
@@ -6679,7 +6798,7 @@ function WorkspaceGate({ session, onLogout }) {
                           {invite.email}
                         </p>
                         <p className="text-slate-600">
-                          {invite.role} · {invite.acceptedAt ? "accepted" : "pending"}
+                          {invite.role} Â· {invite.acceptedAt ? "accepted" : "pending"}
                         </p>
                       </div>
                     ))}
@@ -8947,6 +9066,149 @@ function WorkspaceGate({ session, onLogout }) {
                           </p>
                         </div>
                       </div>
+
+                      <div className="mt-4 rounded-2xl border border-cyan-100 bg-cyan-50/70 p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <label className="flex items-center gap-2 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-cyan-900 lg:self-stretch">
+                            <input
+                              type="checkbox"
+                              checked={platformDocumentVaultSettingsForm.enabled}
+                              onChange={(event) =>
+                                setPlatformDocumentVaultSettingsForm((form) => ({
+                                  ...form,
+                                  enabled: event.target.checked,
+                                }))
+                              }
+                            />
+                            Default add-on enabled
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPlatformDocumentVaultSettingsForm((form) => ({
+                                ...form,
+                                tiers: [
+                                  ...(form.tiers || []),
+                                  {
+                                    id: `storage-${Date.now()}`,
+                                    label: "New storage tier",
+                                    monthlyPriceGbp: "",
+                                    includedStorageGb: "",
+                                  },
+                                ],
+                              }))
+                            }
+                            className="rounded-full border border-cyan-200 bg-white px-3 py-1.5 text-xs font-black text-cyan-800"
+                          >
+                            Add tier
+                          </button>
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(platformDocumentVaultSettingsForm.tiers || []).map((tier, index) => (
+                            <div
+                              key={tier.id || index}
+                              className="grid gap-2 rounded-2xl border border-cyan-100 bg-white p-3 md:grid-cols-[1.4fr_1fr_1fr_auto]"
+                            >
+                              <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                                Tier name
+                                <input
+                                  className="mt-1 min-h-[42px] w-full min-w-0 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none focus:ring-2 focus:ring-cyan-100"
+                                  value={tier.label}
+                                  onChange={(event) =>
+                                    setPlatformDocumentVaultSettingsForm((form) => ({
+                                      ...form,
+                                      tiers: form.tiers.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, label: event.target.value }
+                                          : item,
+                                      ),
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                                Monthly price (£)
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="mt-1 min-h-[42px] w-full min-w-0 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-cyan-100"
+                                  value={tier.monthlyPriceGbp}
+                                  onChange={(event) =>
+                                    setPlatformDocumentVaultSettingsForm((form) => ({
+                                      ...form,
+                                      tiers: form.tiers.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, monthlyPriceGbp: event.target.value }
+                                          : item,
+                                      ),
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                                Storage (GB)
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  className="mt-1 min-h-[42px] w-full min-w-0 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:ring-2 focus:ring-cyan-100"
+                                  value={tier.includedStorageGb}
+                                  onChange={(event) =>
+                                    setPlatformDocumentVaultSettingsForm((form) => ({
+                                      ...form,
+                                      tiers: form.tiers.map((item, itemIndex) =>
+                                        itemIndex === index
+                                          ? { ...item, includedStorageGb: event.target.value }
+                                          : item,
+                                      ),
+                                    }))
+                                  }
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setPlatformDocumentVaultSettingsForm((form) => ({
+                                    ...form,
+                                    tiers:
+                                      form.tiers.length <= 1
+                                        ? form.tiers
+                                        : form.tiers.filter((_, itemIndex) => itemIndex !== index),
+                                  }))
+                                }
+                                disabled={(platformDocumentVaultSettingsForm.tiers || []).length <= 1}
+                                className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 disabled:cursor-not-allowed disabled:opacity-40 md:self-end"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={updatePlatformDocumentVaultSettings}
+                            disabled={isPlatformSaving}
+                            className="rounded-full bg-cyan-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                          >
+                            Save pricing
+                          </button>
+                        </div>
+                        <label className="mt-3 block text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                          Internal pricing note
+                          <textarea
+                            className="mt-1 min-h-[70px] w-full min-w-0 rounded-xl border border-cyan-100 bg-white px-3 py-2 text-sm font-semibold normal-case tracking-normal text-slate-800 outline-none focus:ring-2 focus:ring-cyan-100"
+                            value={platformDocumentVaultSettingsForm.notes}
+                            onChange={(event) =>
+                              setPlatformDocumentVaultSettingsForm((form) => ({
+                                ...form,
+                                notes: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -8979,7 +9241,7 @@ function WorkspaceGate({ session, onLogout }) {
                                     {family.familyName || "Unnamed family"}
                                   </p>
                                   <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
-                                    {family.ownerEmail || family.ownerName || "No owner email"} ·{" "}
+                                    {family.ownerEmail || family.ownerName || "No owner email"} Â·{" "}
                                     {family.documentCount || 0} document{family.documentCount === 1 ? "" : "s"}
                                   </p>
                                   <p className="mt-0.5 text-xs font-semibold text-slate-500">
@@ -9197,11 +9459,11 @@ function WorkspaceGate({ session, onLogout }) {
                             </div>
                           </div>
                           <p className="mt-1 text-sm text-slate-600">
-                            Owner: {family.ownerName || "Unknown"} ·{" "}
+                            Owner: {family.ownerName || "Unknown"} Â·{" "}
                             {family.ownerEmail || "No email"}
                           </p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {family.memberCount} members · {family.childCount} children ·{" "}
+                            {family.memberCount} members Â· {family.childCount} children Â·{" "}
                             {family.logCount} logs - Platform:{" "}
                             {family.platformStatus || "active"}
                           </p>
@@ -10042,7 +10304,7 @@ function WorkspaceGate({ session, onLogout }) {
                                   {member.fullName}
                                 </p>
                                 <p className="text-slate-600">
-                                  {member.email} · {member.role}
+                                  {member.email} Â· {member.role}
                                 </p>
                               </div>
                             ))}
@@ -10430,7 +10692,7 @@ function WorkspaceGate({ session, onLogout }) {
                                 </span>
                               </div>
                               <p className="mt-1 text-slate-600">
-                                {log.childFirstName} · {log.createdByName}
+                                {log.childFirstName} Â· {log.createdByName}
                               </p>
                               {log.notes ? (
                                 <p className="mt-1 text-slate-700">{log.notes}</p>
@@ -11524,6 +11786,138 @@ function WorkspaceGate({ session, onLogout }) {
                         Sync Stripe
                       </button>
                     </div>
+                  </div>
+                  <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                          Document Vault add-on
+                        </p>
+                        <h4 className="text-lg font-black text-slate-950">
+                          {selectedPlatformFamily.family?.documentVaultEffective
+                            ?.billingLabel || "Default pricing"}
+                        </h4>
+                        <p className="mt-1 text-sm font-semibold text-slate-600">
+                          Usage:{" "}
+                          {formatStorageSize(
+                            selectedPlatformFamily.family?.documentVaultUsage
+                              ?.totalBytes,
+                          )}{" "}
+                          across{" "}
+                          {selectedPlatformFamily.family?.documentVaultUsage
+                            ?.documentCount || 0}{" "}
+                          files.
+                        </p>
+                      </div>
+                      <span className="w-fit rounded-full bg-white px-3 py-1 text-xs font-black text-cyan-800 shadow-sm">
+                        £
+                        {selectedPlatformFamily.family?.documentVaultEffective
+                          ?.monthlyPriceGbp ?? 0}{" "}
+                        / mo ·{" "}
+                        {selectedPlatformFamily.family?.documentVaultEffective
+                          ?.includedStorageGb ?? 0}
+                        GB
+                      </span>
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                        Family setting
+                        <select
+                          className={inputClass}
+                          value={platformFamilyDocumentVaultForm.status}
+                          onChange={(event) =>
+                            setPlatformFamilyDocumentVaultForm((form) => ({
+                              ...form,
+                              status: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="default">Use default pricing</option>
+                          <option value="paid">Paid add-on</option>
+                          <option value="included">Included / comped</option>
+                          <option value="disabled">Disabled</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                        Storage tier
+                        <select
+                          className={inputClass}
+                          value={platformFamilyDocumentVaultForm.tierId}
+                          onChange={(event) =>
+                            setPlatformFamilyDocumentVaultForm((form) => ({
+                              ...form,
+                              tierId: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Default tier</option>
+                          {(documentStorageUsage.settings?.tiers || []).map(
+                            (tier) => (
+                              <option key={tier.id} value={tier.id}>
+                                {tier.label} - £{tier.monthlyPriceGbp}/mo -{" "}
+                                {tier.includedStorageGb}GB
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                        Price override (£/month)
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          className={inputClass}
+                          value={platformFamilyDocumentVaultForm.monthlyPriceGbp}
+                          onChange={(event) =>
+                            setPlatformFamilyDocumentVaultForm((form) => ({
+                              ...form,
+                              monthlyPriceGbp: event.target.value,
+                            }))
+                          }
+                          placeholder="Use tier price"
+                        />
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                        Storage override (GB)
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          className={inputClass}
+                          value={platformFamilyDocumentVaultForm.includedStorageGb}
+                          onChange={(event) =>
+                            setPlatformFamilyDocumentVaultForm((form) => ({
+                              ...form,
+                              includedStorageGb: event.target.value,
+                            }))
+                          }
+                          placeholder="Use tier allowance"
+                        />
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700 sm:col-span-2">
+                        Override notes
+                        <textarea
+                          className={`${inputClass} min-h-[70px]`}
+                          value={platformFamilyDocumentVaultForm.notes}
+                          onChange={(event) =>
+                            setPlatformFamilyDocumentVaultForm((form) => ({
+                              ...form,
+                              notes: event.target.value,
+                            }))
+                          }
+                          placeholder="Reason for comping, custom pricing, or storage allowance."
+                        />
+                      </label>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={updatePlatformFamilyDocumentVault}
+                      disabled={isPlatformSaving}
+                      className="mt-3 rounded-full bg-cyan-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                    >
+                      Save Document Vault override
+                    </button>
                   </div>
                 </div>
               ) : null}
@@ -12623,3 +13017,4 @@ export default function SaasApp() {
 
   return <WorkspaceGate session={session} onLogout={logout} />;
 }
+

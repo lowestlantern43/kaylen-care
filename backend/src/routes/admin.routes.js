@@ -43,6 +43,7 @@ adminRouter.use(
     await ensurePlanAccessSchema();
     await ensureChildProfileFluidTargetSchema();
     await ensureFamilyArchivePolicySchema();
+    await ensureDocumentVaultBillingSchema();
     next();
   }),
 );
@@ -87,6 +88,158 @@ async function ensureFamilyArchivePolicySchema() {
         ADD COLUMN IF NOT EXISTS permanently_deleted_at timestamptz
     `,
   );
+}
+
+async function ensureDocumentVaultBillingSchema() {
+  await query(
+    "ALTER TABLE families ADD COLUMN IF NOT EXISTS document_vault_override jsonb",
+  );
+  await query(
+    `
+      INSERT INTO platform_settings (key, value)
+      VALUES (
+        'document_vault',
+        '{"enabled": true, "tiers": [{"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100}], "notes": "Default Document Vault add-on pricing."}'::jsonb
+      )
+      ON CONFLICT (key) DO NOTHING
+    `,
+  );
+}
+
+function normaliseDocumentVaultTiers(tiers = []) {
+  const cleanTiers = Array.isArray(tiers)
+    ? tiers
+        .map((tier, index) => {
+          const includedStorageGb = Number(tier?.includedStorageGb);
+          const monthlyPriceGbp = Number(tier?.monthlyPriceGbp);
+          const label =
+            typeof tier?.label === "string" && tier.label.trim()
+              ? tier.label.trim()
+              : `${includedStorageGb || 100}GB storage`;
+          return {
+            id:
+              typeof tier?.id === "string" && tier.id.trim()
+                ? tier.id.trim()
+                : `storage-tier-${index + 1}`,
+            label,
+            monthlyPriceGbp: Number.isFinite(monthlyPriceGbp)
+              ? Math.max(0, monthlyPriceGbp)
+              : 2,
+            includedStorageGb: Number.isFinite(includedStorageGb)
+              ? Math.max(0, includedStorageGb)
+              : 100,
+          };
+        })
+        .filter((tier) => tier.includedStorageGb > 0 || tier.monthlyPriceGbp > 0)
+    : [];
+
+  return cleanTiers.length
+    ? cleanTiers
+    : [
+        {
+          id: "storage-100gb",
+          label: "100GB storage",
+          monthlyPriceGbp: 2,
+          includedStorageGb: 100,
+        },
+      ];
+}
+
+function normaliseDocumentVaultSettings(value = {}) {
+  const tiers = normaliseDocumentVaultTiers(value.tiers);
+  const fallbackTier = tiers[0];
+  return {
+    enabled: value.enabled !== false,
+    tiers,
+    monthlyPriceGbp: Number.isFinite(Number(value.monthlyPriceGbp))
+      ? Number(value.monthlyPriceGbp)
+      : fallbackTier.monthlyPriceGbp,
+    includedStorageGb: Number.isFinite(Number(value.includedStorageGb))
+      ? Number(value.includedStorageGb)
+      : fallbackTier.includedStorageGb,
+    notes:
+      typeof value.notes === "string"
+        ? value.notes
+        : "Default Document Vault add-on pricing.",
+  };
+}
+
+function normaliseDocumentVaultOverride(value = {}) {
+  const status = ["default", "included", "paid", "disabled"].includes(
+    value.status,
+  )
+    ? value.status
+    : "default";
+  return {
+    status,
+    monthlyPriceGbp:
+      value.monthlyPriceGbp === null || value.monthlyPriceGbp === ""
+        ? null
+        : Number.isFinite(Number(value.monthlyPriceGbp))
+          ? Number(value.monthlyPriceGbp)
+          : null,
+    includedStorageGb:
+      value.includedStorageGb === null || value.includedStorageGb === ""
+        ? null
+        : Number.isFinite(Number(value.includedStorageGb))
+          ? Number(value.includedStorageGb)
+          : null,
+    tierId:
+      typeof value.tierId === "string" && value.tierId.trim()
+        ? value.tierId.trim()
+        : "",
+    notes: typeof value.notes === "string" ? value.notes : "",
+  };
+}
+
+function buildEffectiveDocumentVaultAccess(settings, override) {
+  const cleanSettings = normaliseDocumentVaultSettings(settings);
+  const cleanOverride = normaliseDocumentVaultOverride(override);
+  const isDefault = cleanOverride.status === "default";
+  const selectedTier =
+    cleanSettings.tiers.find((tier) => tier.id === cleanOverride.tierId) ||
+    cleanSettings.tiers[0];
+
+  return {
+    enabled:
+      cleanOverride.status === "disabled"
+        ? false
+        : isDefault
+          ? cleanSettings.enabled
+          : true,
+    status: cleanOverride.status,
+    monthlyPriceGbp:
+      cleanOverride.monthlyPriceGbp !== null
+        ? cleanOverride.monthlyPriceGbp
+        : selectedTier.monthlyPriceGbp,
+    includedStorageGb:
+      cleanOverride.includedStorageGb !== null
+        ? cleanOverride.includedStorageGb
+        : selectedTier.includedStorageGb,
+    tierId: isDefault ? "" : selectedTier.id,
+    tierLabel: isDefault ? "Default tier" : selectedTier.label,
+    billingLabel:
+      cleanOverride.status === "included"
+        ? "Included / comped"
+        : cleanOverride.status === "paid"
+          ? "Paid add-on"
+          : cleanOverride.status === "disabled"
+            ? "Disabled"
+            : "Default pricing",
+  };
+}
+
+async function getDocumentVaultSettings() {
+  const { rows } = await query(
+    `
+      SELECT value
+      FROM platform_settings
+      WHERE key = 'document_vault'
+      LIMIT 1
+    `,
+  );
+
+  return normaliseDocumentVaultSettings(rows[0]?.value || {});
 }
 
 async function getFeedbackSettings() {
@@ -555,6 +708,7 @@ async function buildNeedsAttentionSummary() {
 }
 
 async function buildDocumentStorageSummary() {
+  const settings = await getDocumentVaultSettings();
   const emptySummary = {
     totalBytes: 0,
     documentCount: 0,
@@ -562,6 +716,7 @@ async function buildDocumentStorageSummary() {
     largestFamilyBytes: 0,
     families: [],
     setupRequired: false,
+    settings,
   };
 
   try {
@@ -585,6 +740,7 @@ async function buildDocumentStorageSummary() {
             f.name AS "familyName",
             u.full_name AS "ownerName",
             u.email AS "ownerEmail",
+            f.document_vault_override AS "documentVaultOverride",
             count(d.id)::int AS "documentCount",
             COALESCE(sum(d.file_size_bytes), 0)::bigint AS "totalBytes",
             COALESCE(max(d.file_size_bytes), 0)::int AS "largestDocumentBytes",
@@ -594,7 +750,7 @@ async function buildDocumentStorageSummary() {
           LEFT JOIN users u ON u.id = f.created_by_user_id
           WHERE d.deleted_at IS NULL
             AND f.deleted_at IS NULL
-          GROUP BY f.id, f.name, u.full_name, u.email
+          GROUP BY f.id, f.name, u.full_name, u.email, f.document_vault_override
           ORDER BY COALESCE(sum(d.file_size_bytes), 0) DESC, max(d.created_at) DESC
           LIMIT 50
         `,
@@ -606,6 +762,13 @@ async function buildDocumentStorageSummary() {
       totalBytes: Number(row.totalBytes || 0),
       documentCount: Number(row.documentCount || 0),
       largestDocumentBytes: Number(row.largestDocumentBytes || 0),
+      documentVaultOverride: normaliseDocumentVaultOverride(
+        row.documentVaultOverride || {},
+      ),
+      documentVaultEffective: buildEffectiveDocumentVaultAccess(
+        settings,
+        row.documentVaultOverride || {},
+      ),
     }));
 
     return {
@@ -615,6 +778,7 @@ async function buildDocumentStorageSummary() {
       largestFamilyBytes: familyRows[0]?.totalBytes || 0,
       families: familyRows,
       setupRequired: false,
+      settings,
     };
   } catch (error) {
     if (
@@ -832,6 +996,47 @@ adminRouter.patch(
         enabled: rows[0]?.value?.enabled !== false,
         setupRequired: false,
       },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/document-vault-settings",
+  asyncHandler(async (req, res) => {
+    const tiers = normaliseDocumentVaultTiers(req.body?.tiers);
+    if (!tiers.length) {
+      throw badRequest("Add at least one Document Vault storage tier.");
+    }
+    const value = normaliseDocumentVaultSettings({
+      enabled: Boolean(req.body?.enabled),
+      tiers,
+      notes: optionalString(req.body, "notes"),
+    });
+
+    const { rows } = await query(
+      `
+        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+        VALUES ('document_vault', $1, now(), $2)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = now(),
+          updated_by_user_id = EXCLUDED.updated_by_user_id
+        RETURNING value
+      `,
+      [JSON.stringify(value), req.user.id],
+    );
+
+    await writeAudit(req, {
+      entityType: "platform_setting",
+      entityId: "document_vault",
+      action: "platform_document_vault_settings_updated",
+      metadata: value,
+    });
+
+    res.json({
+      data: normaliseDocumentVaultSettings(rows[0]?.value || value),
       error: null,
     });
   }),
@@ -1221,6 +1426,7 @@ adminRouter.get(
           f.timezone,
           f.platform_status AS "platformStatus",
           f.platform_admin_notes AS "platformAdminNotes",
+          f.document_vault_override AS "documentVaultOverride",
           f.created_at AS "createdAt",
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
@@ -1291,6 +1497,7 @@ adminRouter.get(
           f.timezone,
           f.platform_status AS "platformStatus",
           f.platform_admin_notes AS "platformAdminNotes",
+          f.document_vault_override AS "documentVaultOverride",
           f.created_at AS "createdAt",
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
@@ -1342,7 +1549,8 @@ adminRouter.get(
       return;
     }
 
-    const [members, children, recentLogs, auditLogs] = await Promise.all([
+    const [members, children, recentLogs, auditLogs, documentStorage] =
+      await Promise.all([
       query(
         `
           SELECT
@@ -1444,7 +1652,25 @@ adminRouter.get(
         `,
         [familyId],
       ),
+      query(
+        `
+          SELECT
+            count(id)::int AS "documentCount",
+            COALESCE(sum(file_size_bytes), 0)::bigint AS "totalBytes",
+            COALESCE(max(file_size_bytes), 0)::int AS "largestDocumentBytes",
+            max(created_at) AS "lastUploadedAt"
+          FROM family_documents
+          WHERE family_id = $1
+            AND deleted_at IS NULL
+        `,
+        [familyId],
+      ),
     ]);
+
+    const documentVaultSettings = await getDocumentVaultSettings();
+    const documentVaultOverride = normaliseDocumentVaultOverride(
+      family.rows[0].documentVaultOverride || {},
+    );
 
     let familyIssues = [];
     try {
@@ -1488,6 +1714,19 @@ adminRouter.get(
             childCount: children.rows.length,
             memberCount: members.rows.length,
           }),
+          documentVaultOverride,
+          documentVaultEffective: buildEffectiveDocumentVaultAccess(
+            documentVaultSettings,
+            documentVaultOverride,
+          ),
+          documentVaultUsage: {
+            documentCount: Number(documentStorage.rows[0]?.documentCount || 0),
+            totalBytes: Number(documentStorage.rows[0]?.totalBytes || 0),
+            largestDocumentBytes: Number(
+              documentStorage.rows[0]?.largestDocumentBytes || 0,
+            ),
+            lastUploadedAt: documentStorage.rows[0]?.lastUploadedAt || null,
+          },
           stripeCustomerUrl: stripeDashboardUrl(
             "customers",
             family.rows[0].stripeCustomerId,
@@ -1749,6 +1988,89 @@ adminRouter.patch(
 
     res.json({
       data: { ...rows[0], access: buildPlanAccess(rows[0]) },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/families/:familyId/document-vault",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+    const status = requireEnum(
+      req.body,
+      "status",
+      ["default", "included", "paid", "disabled"],
+      "Document Vault status",
+    );
+    const monthlyPriceGbp =
+      req.body?.monthlyPriceGbp === "" ||
+      typeof req.body?.monthlyPriceGbp === "undefined"
+        ? null
+        : Number(req.body.monthlyPriceGbp);
+    const includedStorageGb =
+      req.body?.includedStorageGb === "" ||
+      typeof req.body?.includedStorageGb === "undefined"
+        ? null
+        : Number(req.body.includedStorageGb);
+
+    if (
+      monthlyPriceGbp !== null &&
+      (!Number.isFinite(monthlyPriceGbp) || monthlyPriceGbp < 0)
+    ) {
+      throw badRequest("Document Vault price override must be 0 or higher.");
+    }
+
+    if (
+      includedStorageGb !== null &&
+      (!Number.isFinite(includedStorageGb) || includedStorageGb < 0)
+    ) {
+      throw badRequest("Document Vault storage override must be 0GB or higher.");
+    }
+
+    const override = normaliseDocumentVaultOverride({
+      status,
+      tierId: optionalString(req.body, "tierId"),
+      monthlyPriceGbp,
+      includedStorageGb,
+      notes: optionalString(req.body, "notes"),
+    });
+
+    const { rows } = await query(
+      `
+        UPDATE families
+        SET document_vault_override = $1
+        WHERE id = $2
+          AND deleted_at IS NULL
+        RETURNING
+          id,
+          document_vault_override AS "documentVaultOverride"
+      `,
+      [JSON.stringify(override), familyId],
+    );
+
+    if (!rows[0]) {
+      throw notFound("Family not found.");
+    }
+
+    const settings = await getDocumentVaultSettings();
+
+    await writeAudit(req, {
+      familyId,
+      entityType: "family",
+      entityId: familyId,
+      action: "platform_document_vault_override_updated",
+      metadata: override,
+    });
+
+    res.json({
+      data: {
+        documentVaultOverride: override,
+        documentVaultEffective: buildEffectiveDocumentVaultAccess(
+          settings,
+          override,
+        ),
+      },
       error: null,
     });
   }),
