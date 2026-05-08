@@ -48,6 +48,182 @@ const allowedDocumentTypes = [
 
 documentsRouter.use(requireAuth, requireFamilyMember);
 
+async function ensureDocumentVaultBillingSchema() {
+  await query(
+    "ALTER TABLE families ADD COLUMN IF NOT EXISTS document_vault_override jsonb",
+  );
+  await query(
+    `
+      INSERT INTO platform_settings (key, value)
+      VALUES (
+        'document_vault',
+        '{"enabled": true, "tiers": [{"id": "storage-50gb", "label": "50GB storage", "monthlyPriceGbp": 1, "includedStorageGb": 50, "stripePriceId": "price_1TUlQrFCbC5qpS8MXTjrpqjm"}, {"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100, "stripePriceId": "price_1TUlSSFCbC5qpS8MU8DdEyZW"}], "notes": "Default Document Vault add-on pricing."}'::jsonb
+      )
+      ON CONFLICT (key) DO NOTHING
+    `,
+  );
+}
+
+function normaliseDocumentVaultTiers(tiers = []) {
+  const cleanTiers = Array.isArray(tiers)
+    ? tiers
+        .map((tier, index) => {
+          const includedStorageGb = Number(tier?.includedStorageGb);
+          const monthlyPriceGbp = Number(tier?.monthlyPriceGbp);
+          return {
+            id:
+              typeof tier?.id === "string" && tier.id.trim()
+                ? tier.id.trim()
+                : `storage-tier-${index + 1}`,
+            label:
+              typeof tier?.label === "string" && tier.label.trim()
+                ? tier.label.trim()
+                : `${includedStorageGb || 100}GB storage`,
+            monthlyPriceGbp: Number.isFinite(monthlyPriceGbp)
+              ? Math.max(0, monthlyPriceGbp)
+              : 2,
+            includedStorageGb: Number.isFinite(includedStorageGb)
+              ? Math.max(0, includedStorageGb)
+              : 100,
+            stripePriceId:
+              typeof tier?.stripePriceId === "string"
+                ? tier.stripePriceId.trim()
+                : "",
+          };
+        })
+        .filter((tier) => tier.includedStorageGb > 0 || tier.monthlyPriceGbp > 0)
+    : [];
+
+  return cleanTiers.length
+    ? cleanTiers
+    : [
+        {
+          id: "storage-50gb",
+          label: "50GB storage",
+          monthlyPriceGbp: 1,
+          includedStorageGb: 50,
+          stripePriceId: "price_1TUlQrFCbC5qpS8MXTjrpqjm",
+        },
+        {
+          id: "storage-100gb",
+          label: "100GB storage",
+          monthlyPriceGbp: 2,
+          includedStorageGb: 100,
+          stripePriceId: "price_1TUlSSFCbC5qpS8MU8DdEyZW",
+        },
+      ];
+}
+
+function normaliseDocumentVaultOverride(value = {}) {
+  const status = ["default", "included", "paid", "disabled"].includes(
+    value.status,
+  )
+    ? value.status
+    : "default";
+
+  return {
+    status,
+    tierId:
+      typeof value.tierId === "string" && value.tierId.trim()
+        ? value.tierId.trim()
+        : "",
+    monthlyPriceGbp:
+      value.monthlyPriceGbp === null || value.monthlyPriceGbp === ""
+        ? null
+        : Number.isFinite(Number(value.monthlyPriceGbp))
+          ? Number(value.monthlyPriceGbp)
+          : null,
+    includedStorageGb:
+      value.includedStorageGb === null || value.includedStorageGb === ""
+        ? null
+        : Number.isFinite(Number(value.includedStorageGb))
+          ? Number(value.includedStorageGb)
+          : null,
+  };
+}
+
+async function getDocumentVaultAccess(familyId) {
+  await ensureDocumentVaultBillingSchema();
+
+  const [settingsResult, familyResult, usageResult] = await Promise.all([
+    query(
+      `
+        SELECT value
+        FROM platform_settings
+        WHERE key = 'document_vault'
+        LIMIT 1
+      `,
+    ),
+    query(
+      `
+        SELECT document_vault_override AS "documentVaultOverride"
+        FROM families
+        WHERE id = $1
+          AND deleted_at IS NULL
+        LIMIT 1
+      `,
+      [familyId],
+    ),
+    query(
+      `
+        SELECT COALESCE(sum(file_size_bytes), 0)::bigint AS "totalBytes"
+        FROM family_documents
+        WHERE family_id = $1
+          AND deleted_at IS NULL
+      `,
+      [familyId],
+    ),
+  ]);
+
+  const settings = settingsResult.rows[0]?.value || {};
+  const tiers = normaliseDocumentVaultTiers(settings.tiers);
+  const override = normaliseDocumentVaultOverride(
+    familyResult.rows[0]?.documentVaultOverride || {},
+  );
+  const selectedTier =
+    tiers.find((tier) => tier.id === override.tierId) || tiers[0];
+  const includedStorageGb =
+    override.includedStorageGb !== null
+      ? override.includedStorageGb
+      : selectedTier.includedStorageGb;
+
+  return {
+    enabled: settings.enabled !== false && override.status !== "disabled",
+    hasWriteAccess: ["paid", "included"].includes(override.status),
+    status: override.status,
+    includedStorageBytes: Math.max(0, includedStorageGb) * 1024 ** 3,
+    currentBytes: Number(usageResult.rows[0]?.totalBytes || 0),
+    tier: selectedTier,
+  };
+}
+
+async function assertDocumentVaultCanUpload({ familyId, incomingBytes }) {
+  const access = await getDocumentVaultAccess(familyId);
+
+  if (!access.enabled) {
+    throw badRequest(
+      "Document Vault uploads are disabled for this family. Existing documents remain available.",
+    );
+  }
+
+  if (!access.hasWriteAccess) {
+    throw badRequest(
+      "Document Vault is a paid add-on. Choose a storage plan before uploading new documents.",
+    );
+  }
+
+  if (
+    access.includedStorageBytes > 0 &&
+    access.currentBytes + incomingBytes > access.includedStorageBytes
+  ) {
+    throw badRequest(
+      "Document Vault storage limit reached. Upgrade the storage plan or remove older documents before uploading.",
+    );
+  }
+
+  return access;
+}
+
 async function assertChildBelongsToFamily(childId, familyId) {
   if (!childId) return null;
 
@@ -183,6 +359,11 @@ documentsRouter.post(
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       throw badRequest("Choose a document to upload.");
     }
+
+    await assertDocumentVaultCanUpload({
+      familyId: req.familyMember.family_id,
+      incomingBytes: req.body.length,
+    });
 
     await assertChildBelongsToFamily(childId, req.familyMember.family_id);
 
