@@ -13,10 +13,17 @@ export const config = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripePriceId:
-    process.env.STRIPE_FAMILY_PRICE_ID || process.env.STRIPE_PRICE_ID || "",
+    process.env.STRIPE_PRO_MONTHLY_PRICE_ID ||
+    process.env.STRIPE_FAMILY_PRICE_ID ||
+    process.env.STRIPE_PRICE_ID ||
+    "",
+  stripeDocuments50GbPriceId: process.env.STRIPE_DOCUMENTS_50GB_PRICE_ID || "",
+  stripeDocuments100GbPriceId:
+    process.env.STRIPE_DOCUMENTS_100GB_PRICE_ID || "",
   familyPlanMonthlyPriceGbp: Number(
-    process.env.FAMILY_PLAN_MONTHLY_PRICE_GBP || 9,
+    process.env.FAMILY_PLAN_MONTHLY_PRICE_GBP || 4.99,
   ),
+  proTrialDays: Number(process.env.FAMILYTRACK_PRO_TRIAL_DAYS || 14),
   supportEmail: process.env.SUPPORT_EMAIL || "hello@familytrack.care",
   emailFrom: process.env.EMAIL_FROM || "FamilyTrack <hello@familytrack.care>",
   emailProvider: process.env.EMAIL_PROVIDER || "resend",

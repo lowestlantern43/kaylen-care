@@ -18,6 +18,7 @@ function buildEmailHtml({ subject, text }) {
     .split(/\r?\n/)
     .map((line) => line.trimEnd());
   const firstUrl = lines.find((line) => /^https?:\/\//i.test(line.trim()));
+  const iconUrl = `${config.frontendUrl.replace(/\/$/, "")}/familytrack-care-icon-180.png`;
   const bodyHtml = lines
     .map((line) => {
       const trimmed = line.trim();
@@ -50,9 +51,19 @@ function buildEmailHtml({ subject, text }) {
               <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-radius:26px;background:#ffffff;border:1px solid #dbeafe;box-shadow:0 18px 45px rgba(15,23,42,0.08);overflow:hidden">
                 <tr>
                   <td style="background:linear-gradient(135deg,#eff6ff,#ecfeff);padding:26px 28px 20px">
-                    <div style="display:inline-block;border-radius:18px;background:#ffffff;border:1px solid #bfdbfe;color:#0369a1;font-weight:900;font-size:14px;letter-spacing:.12em;padding:10px 13px;text-transform:uppercase">
-                      FamilyTrack
-                    </div>
+                    <table role="presentation" cellspacing="0" cellpadding="0">
+                      <tr>
+                        <td style="vertical-align:middle">
+                          <img src="${escapeHtml(iconUrl)}" alt="FamilyTrack" width="44" height="44" style="display:block;border-radius:14px;border:1px solid #bfdbfe;background:#ffffff">
+                        </td>
+                        <td style="vertical-align:middle;padding-left:12px">
+                          <div style="color:#0369a1;font-weight:900;font-size:14px;letter-spacing:.12em;text-transform:uppercase">
+                            FamilyTrack
+                          </div>
+                          <div style="color:#64748b;font-size:13px;line-height:1.4">Care tracking for families</div>
+                        </td>
+                      </tr>
+                    </table>
                     <h1 style="margin:18px 0 0;font-size:25px;line-height:1.25;color:#0f172a">${escapeHtml(subject)}</h1>
                   </td>
                 </tr>

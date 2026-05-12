@@ -67,8 +67,20 @@ services:
         value: REPLACE_IN_DIGITALOCEAN
         scope: RUN_TIME
         type: SECRET
-      - key: STRIPE_PRICE_ID
+      - key: STRIPE_PRO_MONTHLY_PRICE_ID
         value: REPLACE_IN_DIGITALOCEAN
+        scope: RUN_TIME
+        type: GENERAL
+      - key: STRIPE_DOCUMENTS_50GB_PRICE_ID
+        value: REPLACE_IN_DIGITALOCEAN
+        scope: RUN_TIME
+        type: GENERAL
+      - key: STRIPE_DOCUMENTS_100GB_PRICE_ID
+        value: REPLACE_IN_DIGITALOCEAN
+        scope: RUN_TIME
+        type: GENERAL
+      - key: FAMILYTRACK_PRO_TRIAL_DAYS
+        value: "14"
         scope: RUN_TIME
         type: GENERAL
 

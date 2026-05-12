@@ -23,6 +23,7 @@ import {
   deleteSpacesObject,
   getDocumentExtension,
 } from "../services/spaces.js";
+import { config } from "../config.js";
 
 export const documentsRouter = Router({ mergeParams: true });
 
@@ -57,10 +58,32 @@ async function ensureDocumentVaultBillingSchema() {
       INSERT INTO platform_settings (key, value)
       VALUES (
         'document_vault',
-        '{"enabled": true, "tiers": [{"id": "storage-50gb", "label": "50GB storage", "monthlyPriceGbp": 1, "includedStorageGb": 50, "stripePriceId": "price_1TUlQrFCbC5qpS8MXTjrpqjm"}, {"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100, "stripePriceId": "price_1TUlSSFCbC5qpS8MU8DdEyZW"}], "notes": "Default Document Vault add-on pricing."}'::jsonb
+        $1::jsonb
       )
       ON CONFLICT (key) DO NOTHING
     `,
+    [
+      JSON.stringify({
+        enabled: true,
+        tiers: [
+          {
+            id: "storage-50gb",
+            label: "50GB Secure Document Storage",
+            monthlyPriceGbp: 2,
+            includedStorageGb: 50,
+            stripePriceId: config.stripeDocuments50GbPriceId,
+          },
+          {
+            id: "storage-100gb",
+            label: "100GB Secure Document Storage",
+            monthlyPriceGbp: 3,
+            includedStorageGb: 100,
+            stripePriceId: config.stripeDocuments100GbPriceId,
+          },
+        ],
+        notes: "Secure Document Storage add-on pricing.",
+      }),
+    ],
   );
 }
 
@@ -99,17 +122,17 @@ function normaliseDocumentVaultTiers(tiers = []) {
     : [
         {
           id: "storage-50gb",
-          label: "50GB storage",
-          monthlyPriceGbp: 1,
+          label: "50GB Secure Document Storage",
+          monthlyPriceGbp: 2,
           includedStorageGb: 50,
-          stripePriceId: "price_1TUlQrFCbC5qpS8MXTjrpqjm",
+          stripePriceId: config.stripeDocuments50GbPriceId,
         },
         {
           id: "storage-100gb",
-          label: "100GB storage",
-          monthlyPriceGbp: 2,
+          label: "100GB Secure Document Storage",
+          monthlyPriceGbp: 3,
           includedStorageGb: 100,
-          stripePriceId: "price_1TUlSSFCbC5qpS8MU8DdEyZW",
+          stripePriceId: config.stripeDocuments100GbPriceId,
         },
       ];
 }

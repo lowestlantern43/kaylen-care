@@ -1,17 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FamilyTrack care icon">
   <defs>
-    <linearGradient id="bg" x1="74" x2="438" y1="48" y2="464" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#dff8ff"/>
+    <linearGradient id="bg" x1="72" y1="44" x2="436" y2="468" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e0fbff"/>
       <stop offset="1" stop-color="#dbeafe"/>
     </linearGradient>
-    <linearGradient id="shield" x1="154" x2="360" y1="112" y2="398" gradientUnits="userSpaceOnUse">
+    <linearGradient id="heart" x1="118" y1="128" x2="394" y2="404" gradientUnits="userSpaceOnUse">
       <stop stop-color="#22c7b8"/>
       <stop offset="1" stop-color="#2563eb"/>
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
-  <path fill="#ffffff" d="M256 72c64 45 117 50 154 54 5 142-46 235-154 314C148 361 97 268 102 126c37-4 90-9 154-54Z" opacity=".96"/>
-  <path fill="url(#shield)" d="M256 104c51 34 93 42 124 45 1 113-38 190-124 254-86-64-125-141-124-254 31-3 73-11 124-45Z"/>
-  <path fill="#ffffff" d="M256 189c18-29 70-30 90 8 21 41-17 86-90 135-73-49-111-94-90-135 20-38 72-37 90-8Z"/>
-  <path fill="#2563eb" d="M244 206h24v38h38v24h-38v38h-24v-38h-38v-24h38v-38Z" opacity=".95"/>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <circle cx="256" cy="258" r="182" fill="#fff" opacity=".76"/>
+  <path fill="url(#heart)" d="M256 402c-9-7-21-16-35-26-72-54-122-92-122-157 0-50 38-88 87-88 29 0 55 14 70 36 15-22 41-36 70-36 49 0 87 38 87 88 0 65-50 103-122 157-14 10-26 19-35 26Z"/>
+  <path fill="#ffffff" d="M256 377c-8-6-18-14-30-23-62-46-104-78-104-133 0-37 28-65 65-65 27 0 51 17 61 43h16c10-26 34-43 61-43 37 0 65 28 65 65 0 55-42 87-104 133-12 9-22 17-30 23Z" opacity=".95"/>
+  <circle cx="256" cy="212" r="34" fill="#0f766e"/>
+  <circle cx="199" cy="235" r="25" fill="#1d4ed8"/>
+  <circle cx="313" cy="235" r="25" fill="#1d4ed8"/>
+  <path fill="#0f766e" d="M199 274c-33 0-59 27-59 60v13h118v-13c0-33-26-60-59-60Z" opacity=".95"/>
+  <path fill="#1d4ed8" d="M313 274c-33 0-59 27-59 60v13h118v-13c0-33-26-60-59-60Z" opacity=".95"/>
+  <path fill="#0891b2" d="M256 258c-43 0-77 35-77 78v28h154v-28c0-43-34-78-77-78Z"/>
+  <path fill="#ffffff" d="M247 300h18v27h27v18h-27v27h-18v-27h-27v-18h27v-27Z" opacity=".95"/>
 </svg>

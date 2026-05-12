@@ -18,6 +18,9 @@ function normalisePublicPricing(value = {}) {
       : 0,
     promoEnabled: value.promoEnabled === true,
     promoLabel: typeof value.promoLabel === "string" ? value.promoLabel : "",
+    trialDays: Number.isFinite(Number(value.trialDays))
+      ? Number(value.trialDays)
+      : config.proTrialDays,
   };
 }
 

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { config } from "../config.js";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -135,9 +136,9 @@ authRouter.post(
               trial_started_at,
               trial_ends_at
             )
-            VALUES ($1, 'trialing', 'trial', now(), now() + interval '30 days')
+            VALUES ($1, 'trialing', 'trial', now(), now() + ($2::int * interval '1 day'))
           `,
-          [family.id],
+          [family.id, config.proTrialDays],
         );
 
         if (childFirstName) {

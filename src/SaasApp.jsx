@@ -16,24 +16,25 @@ const GOOGLE_SITE_VERIFICATION =
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
 const DEFAULT_PUBLIC_PRICING = {
-  familyMonthlyPriceGbp: 9,
-  proMonthlyPriceGbp: 9,
+  familyMonthlyPriceGbp: 4.99,
+  proMonthlyPriceGbp: 4.99,
   oneOffEventPriceGbp: 0,
   promoEnabled: false,
   promoLabel: "",
+  trialDays: 14,
   documentVault: {
     enabled: true,
     tiers: [
       {
         id: "storage-50gb",
-        label: "50GB Document Vault",
-        monthlyPriceGbp: 1,
+        label: "50GB Secure Document Storage",
+        monthlyPriceGbp: 2,
         includedStorageGb: 50,
       },
       {
         id: "storage-100gb",
-        label: "100GB Document Vault",
-        monthlyPriceGbp: 2,
+        label: "100GB Secure Document Storage",
+        monthlyPriceGbp: 3,
         includedStorageGb: 100,
       },
     ],
@@ -950,6 +951,10 @@ const parseCareMedicationRows = (value = "") => {
           requiredDaily = "",
           timeWindow = "",
           scheduleDays = "",
+          startDate = "",
+          endDate = "",
+          instructions = "",
+          frequency = "",
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
@@ -971,6 +976,10 @@ const parseCareMedicationRows = (value = "") => {
           scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
             requiredDaily: isRequiredDaily,
           }),
+          startDate,
+          endDate,
+          instructions,
+          frequency,
         };
       }
 
@@ -989,6 +998,10 @@ const parseCareMedicationRows = (value = "") => {
           timeWindow: "",
           timeWindows: [],
           scheduleDays: [],
+          startDate: "",
+          endDate: "",
+          instructions: "",
+          frequency: "",
         };
       }
 
@@ -1004,6 +1017,10 @@ const parseCareMedicationRows = (value = "") => {
         timeWindow: "",
         timeWindows: [],
         scheduleDays: [],
+        startDate: "",
+        endDate: "",
+        instructions: "",
+        frequency: "",
       };
     })
     .filter((item) => item.name || item.doseAmount || item.notes);
@@ -1027,6 +1044,10 @@ const serializeCareMedicationRows = (rows) =>
       scheduleDays: normaliseMedicationScheduleDays(row.scheduleDays, {
         requiredDaily: row.requiredDaily,
       }).join(","),
+      startDate: cleanFormText(row.startDate),
+      endDate: cleanFormText(row.endDate),
+      instructions: cleanFormText(row.instructions),
+      frequency: cleanFormText(row.frequency),
     }))
     .filter((row) => row.name || row.doseAmount || row.notes)
     .map((row) =>
@@ -1040,6 +1061,10 @@ const serializeCareMedicationRows = (rows) =>
         row.requiredDaily,
         row.timeWindow,
         row.scheduleDays,
+        row.startDate,
+        row.endDate,
+        row.instructions,
+        row.frequency,
       ].join(" | "),
     )
     .join("\n");
@@ -1055,6 +1080,10 @@ const emptyCareMedicationRow = () => ({
   timeWindow: "",
   timeWindows: [],
   scheduleDays: [],
+  startDate: "",
+  endDate: "",
+  instructions: "",
+  frequency: "",
 });
 
 const careMedicationRowsFromProfile = (value = "") => {
@@ -1064,6 +1093,19 @@ const careMedicationRowsFromProfile = (value = "") => {
 
 const savedCareMedicationRows = (rows) =>
   rows.filter((row) => row.name || row.doseAmount || row.notes);
+
+const careMedicationEndDateHasPassed = (row, referenceDate = new Date()) => {
+  if (!row?.endDate) return false;
+  const end = new Date(`${row.endDate}T23:59:59`);
+  if (Number.isNaN(end.getTime())) return false;
+  return referenceDate.getTime() > end.getTime();
+};
+
+const activeCareMedicationRows = (rows, referenceDate = new Date()) =>
+  savedCareMedicationRows(rows).filter(
+    (row) =>
+      row.active !== false && !careMedicationEndDateHasPassed(row, referenceDate),
+  );
 
 function ChildAvatar({ child, active = false, size = "sm" }) {
   const avatarUrl = avatarUrlForChild(child);
@@ -1495,6 +1537,7 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
   const familyPrice = Number(pricing.familyMonthlyPriceGbp || 0);
   const proPrice = Number(pricing.proMonthlyPriceGbp || familyPrice || 0);
   const oneOffPrice = Number(pricing.oneOffEventPriceGbp || 0);
+  const trialDays = Number(pricing.trialDays || 14);
   const documentVaultTiers = pricing.documentVault?.enabled === false
     ? []
     : pricing.documentVault?.tiers || [];
@@ -1548,6 +1591,9 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
               carers, including SEN families and children with additional needs.
               Record food, medication, sleep, toileting and health logs, then
               turn daily notes into reports for doctors, school and reviews.
+            </p>
+            <p className="mt-4 inline-flex rounded-full border border-sky-100 bg-white/80 px-4 py-2 text-sm font-black text-sky-800 shadow-sm">
+              {trialDays}-day free trial. £{familyPrice}/month after trial unless cancelled.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={onStartFree} className={buttonClass}>
@@ -1669,18 +1715,20 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
                 £{familyPrice}/mo
               </p>
               <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                Core logging, reports, Care Snapshot, sharing and family access.
+                {trialDays}-day free trial with card required. Full care tracking,
+                reports, PDF exports, multiple children, sharing and Care Snapshot.
               </p>
             </article>
             <article className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
-                Document Vault
+                Secure Document Storage
               </p>
               <p className="mt-2 text-3xl font-black text-slate-950">
                 from £{documentVaultTiers[0]?.monthlyPriceGbp ?? 0}/mo
               </p>
               <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                Optional private document storage for EHCP, school, medical and care files.
+                Optional storage for EHCPs, hospital letters, care plans,
+                medication forms, reports and appointments.
               </p>
             </article>
             <article className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
@@ -1938,6 +1986,11 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
         <div className="rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl md:p-10">
           <div className="text-center">
             <div className="w-full rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-50 to-white px-6 py-4 shadow-sm">
+              <img
+                src="/familytrack-care-icon-180.png"
+                alt=""
+                className="mx-auto mb-3 h-14 w-14 rounded-2xl border border-sky-100 bg-white shadow-sm"
+              />
               <h1 className="text-center text-2xl font-black tracking-tight text-slate-950 md:text-3xl">
                 FamilyTrack
               </h1>
@@ -2865,19 +2918,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       tiers: [
         {
           id: "storage-100gb",
-          label: "100GB storage",
-          monthlyPriceGbp: "2",
+          label: "100GB Secure Document Storage",
+          monthlyPriceGbp: "3",
           includedStorageGb: "100",
         },
       ],
-      notes: "Default Document Vault add-on pricing.",
+      notes: "Secure Document Storage add-on pricing.",
     });
   const [platformPublicPricingForm, setPlatformPublicPricingForm] = useState({
-    familyMonthlyPriceGbp: "9",
-    proMonthlyPriceGbp: "9",
+    familyMonthlyPriceGbp: "4.99",
+    proMonthlyPriceGbp: "4.99",
     oneOffEventPriceGbp: "0",
     promoEnabled: false,
     promoLabel: "",
+    trialDays: "14",
   });
   const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
     useState({
@@ -4228,6 +4282,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       ),
       active: regularMedicationDraft.active !== false,
       notes: cleanFormText(regularMedicationDraft.notes),
+      startDate: cleanFormText(regularMedicationDraft.startDate),
+      endDate: cleanFormText(regularMedicationDraft.endDate),
+      instructions: cleanFormText(regularMedicationDraft.instructions),
+      frequency: cleanFormText(regularMedicationDraft.frequency),
     };
     const rows = savedCareMedicationRows(careMedicationRows);
     const nextRows =
@@ -4291,6 +4349,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         timeWindow: "",
         timeWindows: [],
         scheduleDays: [],
+        startDate: "",
+        endDate: "",
+        instructions: "",
+        frequency: "",
       },
     ];
     const nextProfile = {
@@ -4552,11 +4614,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       const publicPricing = overview?.publicPricing;
       if (publicPricing) {
         setPlatformPublicPricingForm({
-          familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 9),
-          proMonthlyPriceGbp: String(publicPricing.proMonthlyPriceGbp ?? 9),
+          familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 4.99),
+          proMonthlyPriceGbp: String(publicPricing.proMonthlyPriceGbp ?? 4.99),
           oneOffEventPriceGbp: String(publicPricing.oneOffEventPriceGbp ?? 0),
           promoEnabled: Boolean(publicPricing.promoEnabled),
           promoLabel: publicPricing.promoLabel || "",
+          trialDays: String(publicPricing.trialDays ?? 14),
         });
       }
       if (documentVaultSettings) {
@@ -4567,8 +4630,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             : [
                 {
                   id: "storage-100gb",
-                  label: "100GB storage",
-                  monthlyPriceGbp: 2,
+                  label: "100GB Secure Document Storage",
+                  monthlyPriceGbp: 3,
                   includedStorageGb: 100,
                 },
               ]
@@ -4581,7 +4644,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           })),
           notes:
             documentVaultSettings.notes ||
-            "Default Document Vault add-on pricing.",
+            "Secure Document Storage add-on pricing.",
         });
       }
       setSelectedPlatformFamily(null);
@@ -5083,15 +5146,17 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         oneOffEventPriceGbp: platformPublicPricingForm.oneOffEventPriceGbp,
         promoEnabled: Boolean(platformPublicPricingForm.promoEnabled),
         promoLabel: platformPublicPricingForm.promoLabel,
+        trialDays: platformPublicPricingForm.trialDays,
       });
       const overview = await api.adminOverview();
       setPlatformData((current) => ({ ...current, overview }));
       setPlatformPublicPricingForm({
-        familyMonthlyPriceGbp: String(pricing.familyMonthlyPriceGbp ?? 9),
-        proMonthlyPriceGbp: String(pricing.proMonthlyPriceGbp ?? 9),
+        familyMonthlyPriceGbp: String(pricing.familyMonthlyPriceGbp ?? 4.99),
+        proMonthlyPriceGbp: String(pricing.proMonthlyPriceGbp ?? 4.99),
         oneOffEventPriceGbp: String(pricing.oneOffEventPriceGbp ?? 0),
         promoEnabled: Boolean(pricing.promoEnabled),
         promoLabel: pricing.promoLabel || "",
+        trialDays: String(pricing.trialDays ?? 14),
       });
       setPlatformActionMessage("Public pricing updated.");
     } catch (caughtError) {
@@ -7559,6 +7624,45 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             </button>
                           </div>
                         </div>
+                        <label className="min-w-0 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                          Start date
+                          <input
+                            type="date"
+                            className={`${inputClass} mt-1`}
+                            value={regularMedicationDraft.startDate || ""}
+                            onChange={(event) =>
+                              updateRegularMedicationDraft(
+                                "startDate",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="min-w-0 text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
+                          End date (optional)
+                          <input
+                            type="date"
+                            className={`${inputClass} mt-1`}
+                            value={regularMedicationDraft.endDate || ""}
+                            onChange={(event) =>
+                              updateRegularMedicationDraft(
+                                "endDate",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </label>
+                        <input
+                          className={`${inputClass} mt-0`}
+                          value={regularMedicationDraft.frequency || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "frequency",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Frequency, e.g. twice daily"
+                        />
                         <input
                           className={`${inputClass} mt-0 md:col-span-3`}
                           value={regularMedicationDraft.notes || ""}
@@ -7569,6 +7673,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             )
                           }
                           placeholder="When / notes, optional"
+                        />
+                        <textarea
+                          className={`${inputClass} mt-0 md:col-span-4`}
+                          rows={3}
+                          value={regularMedicationDraft.instructions || ""}
+                          onChange={(event) =>
+                            updateRegularMedicationDraft(
+                              "instructions",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Instructions, optional"
                         />
                         <div className="flex min-w-0 flex-col gap-2 sm:flex-row md:col-span-4">
                           <button
@@ -7614,12 +7730,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                 <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                                   <div className="min-w-0">
                                     <p className="break-words text-sm font-bold text-slate-900">
-                                      {row.name}
-                                      {row.active === false ? (
+                                    {row.name}
+                                      {careMedicationEndDateHasPassed(row) ? (
+                                        <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                                          Ended
+                                        </span>
+                                      ) : row.active === false ? (
                                         <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold text-slate-500">
                                           Inactive
                                         </span>
-                                      ) : null}
+                                      ) : (
+                                        <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                                          Active
+                                        </span>
+                                      )}
                                     </p>
                                     <p className="mt-1 text-sm font-semibold text-slate-600">
                                       {[row.doseAmount, row.doseUnit]
@@ -7631,13 +7755,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                         ? row.times.join(", ")
                                         : "No times set"}
                                     </p>
+                                    {(row.startDate || row.endDate || row.frequency) ? (
+                                      <p className="mt-1 text-xs font-semibold text-slate-500">
+                                        {row.startDate ? `Start ${row.startDate}` : "No start date"}
+                                        {row.endDate ? ` · Ends ${row.endDate}` : " · Ongoing"}
+                                        {row.frequency ? ` · ${row.frequency}` : ""}
+                                      </p>
+                                    ) : null}
+                                    {row.instructions ? (
+                                      <p className="mt-1 text-xs font-semibold leading-5 text-slate-600">
+                                        {row.instructions}
+                                      </p>
+                                    ) : null}
                                     <div className="mt-2 flex flex-wrap gap-1.5">
                                       {row.requiredDaily ? (
                                         <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-emerald-700">
-                                          {medicationScheduleLabel(
-                                            row.scheduleDays,
-                                            row.requiredDaily,
-                                          )}
+                                          {medicationScheduleLabel(row)}
                                         </span>
                                       ) : normaliseMedicationScheduleDays(row.scheduleDays).includes("prn") ? (
                                         <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-700">
@@ -9300,6 +9433,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           ["Family monthly (£)", "familyMonthlyPriceGbp"],
                           ["Pro monthly (£)", "proMonthlyPriceGbp"],
                           ["One-off event (£)", "oneOffEventPriceGbp"],
+                          ["Trial length (days)", "trialDays"],
                         ].map(([label, field]) => (
                           <label
                             key={field}
@@ -9689,8 +9823,16 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         platformData.overview?.stripeSetup?.hasSecretKey,
                       ],
                       [
-                        "Recurring price ID",
+                        "Pro monthly price ID",
                         platformData.overview?.stripeSetup?.hasPriceId,
+                      ],
+                      [
+                        "Documents 50GB price ID",
+                        platformData.overview?.stripeSetup?.hasDocuments50GbPriceId,
+                      ],
+                      [
+                        "Documents 100GB price ID",
+                        platformData.overview?.stripeSetup?.hasDocuments100GbPriceId,
                       ],
                       [
                         "Webhook secret",
@@ -9713,11 +9855,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <div className="mt-4 grid gap-3 lg:grid-cols-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                        Price ID
+                        FamilyTrack Pro Price ID
                       </p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-800">
                         {platformData.overview?.stripeSetup?.priceId ||
-                          `Add ${platformData.overview?.stripeSetup?.priceEnv || "STRIPE_FAMILY_PRICE_ID"}=price_...`}
+                          `Add ${platformData.overview?.stripeSetup?.priceEnv || "STRIPE_PRO_MONTHLY_PRICE_ID"}=price_...`}
+                      </p>
+                      <p className="mt-2 text-xs font-semibold text-slate-500">
+                        Product: FamilyTrack Pro - Monthly - £4.99. Trial:{" "}
+                        {platformData.overview?.stripeSetup?.trialDays || 14} days.
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -9736,6 +9882,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         {platformData.overview?.stripeSetup?.webhookRoute}
                       </p>
                     </div>
+                  </div>
+                  <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-3 text-sm font-semibold leading-6 text-slate-700">
+                    Add document storage Price IDs in the backend environment as{" "}
+                    <span className="font-black">STRIPE_DOCUMENTS_50GB_PRICE_ID</span>{" "}
+                    and{" "}
+                    <span className="font-black">STRIPE_DOCUMENTS_100GB_PRICE_ID</span>.
+                    Then assign or adjust tiers in the Storage tab.
                   </div>
                 </section>
                 ) : null}
@@ -11518,7 +11671,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           customGivenByOptions={groupedCareOptions.givenBy}
           customLocationOptions={groupedCareOptions.locations}
           onCreateCareOption={addCareOptionFromDiary}
-          childProfile={childProfile || emptyChildProfile}
+          childProfile={{
+            ...(childProfile || emptyChildProfile),
+            currentMedications: serializeCareMedicationRows(
+              activeCareMedicationRows(careMedicationRows),
+            ),
+          }}
           importantEvents={importantEvents}
           accountAccess={selectedFamilyAccess}
           moduleVisibility={moduleVisibility}

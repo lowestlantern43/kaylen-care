@@ -100,10 +100,32 @@ async function ensureDocumentVaultBillingSchema() {
       INSERT INTO platform_settings (key, value)
       VALUES (
         'document_vault',
-        '{"enabled": true, "tiers": [{"id": "storage-50gb", "label": "50GB storage", "monthlyPriceGbp": 1, "includedStorageGb": 50, "stripePriceId": "price_1TUlQrFCbC5qpS8MXTjrpqjm"}, {"id": "storage-100gb", "label": "100GB storage", "monthlyPriceGbp": 2, "includedStorageGb": 100, "stripePriceId": "price_1TUlSSFCbC5qpS8MU8DdEyZW"}], "notes": "Default Document Vault add-on pricing."}'::jsonb
+        $1::jsonb
       )
       ON CONFLICT (key) DO NOTHING
     `,
+    [
+      JSON.stringify({
+        enabled: true,
+        tiers: [
+          {
+            id: "storage-50gb",
+            label: "50GB Secure Document Storage",
+            monthlyPriceGbp: 2,
+            includedStorageGb: 50,
+            stripePriceId: config.stripeDocuments50GbPriceId,
+          },
+          {
+            id: "storage-100gb",
+            label: "100GB Secure Document Storage",
+            monthlyPriceGbp: 3,
+            includedStorageGb: 100,
+            stripePriceId: config.stripeDocuments100GbPriceId,
+          },
+        ],
+        notes: "Secure Document Storage add-on pricing.",
+      }),
+    ],
   );
 }
 
@@ -124,6 +146,7 @@ async function ensurePublicPricingSettings() {
         oneOffEventPriceGbp: 0,
         promoEnabled: false,
         promoLabel: "",
+        trialDays: config.proTrialDays,
       }),
     ],
   );
@@ -142,6 +165,9 @@ function normalisePublicPricingSettings(value = {}) {
       : 0,
     promoEnabled: value.promoEnabled === true,
     promoLabel: typeof value.promoLabel === "string" ? value.promoLabel.trim() : "",
+    trialDays: Number.isFinite(Number(value.trialDays))
+      ? Math.max(0, Number(value.trialDays))
+      : config.proTrialDays,
   };
 }
 
@@ -181,10 +207,10 @@ function normaliseDocumentVaultTiers(tiers = []) {
     : [
         {
           id: "storage-100gb",
-          label: "100GB storage",
-          monthlyPriceGbp: 2,
+          label: "100GB Secure Document Storage",
+          monthlyPriceGbp: 3,
           includedStorageGb: 100,
-          stripePriceId: "price_1TUlSSFCbC5qpS8MU8DdEyZW",
+          stripePriceId: config.stripeDocuments100GbPriceId,
         },
       ];
 }
@@ -204,7 +230,7 @@ function normaliseDocumentVaultSettings(value = {}) {
     notes:
       typeof value.notes === "string"
         ? value.notes
-        : "Default Document Vault add-on pricing.",
+        : "Secure Document Storage add-on pricing.",
   };
 }
 
@@ -994,8 +1020,15 @@ adminRouter.get(
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
           hasPriceId: Boolean(config.stripePriceId),
+          hasDocuments50GbPriceId: Boolean(config.stripeDocuments50GbPriceId),
+          hasDocuments100GbPriceId: Boolean(config.stripeDocuments100GbPriceId),
           priceId: config.stripePriceId || null,
-          priceEnv: "STRIPE_FAMILY_PRICE_ID",
+          priceEnv: "STRIPE_PRO_MONTHLY_PRICE_ID",
+          documentPriceEnvs: [
+            "STRIPE_DOCUMENTS_50GB_PRICE_ID",
+            "STRIPE_DOCUMENTS_100GB_PRICE_ID",
+          ],
+          trialDays: config.proTrialDays,
           checkoutRoute: "/api/families/:familyId/subscription/checkout",
           webhookRoute: "/api/stripe/webhook",
           configFile: "backend/.env",
@@ -1071,6 +1104,7 @@ adminRouter.patch(
       oneOffEventPriceGbp: req.body?.oneOffEventPriceGbp,
       promoEnabled: Boolean(req.body?.promoEnabled),
       promoLabel: optionalString(req.body, "promoLabel"),
+      trialDays: req.body?.trialDays,
     });
 
     const { rows } = await query(
@@ -1179,7 +1213,8 @@ adminRouter.post(
     const familyName = `${childName} Family`;
     const subscriptionStatus =
       plan === "trial" ? "trialing" : plan === "beta" ? "active" : "active";
-    const trialInterval = plan === "trial" ? "30 days" : null;
+    const trialInterval =
+      plan === "trial" ? `${config.proTrialDays} days` : null;
 
     const created = await withTransaction(async (client) => {
       const userResult = await client.query(

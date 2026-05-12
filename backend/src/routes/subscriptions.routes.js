@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requireFamilyMember, requireRole } from "../middleware/familyAccess.js";
@@ -310,11 +311,11 @@ subscriptionsRouter.post(
             trial_started_at,
             trial_ends_at
           )
-          VALUES ($1, $2, 'trialing', 'trial', now(), now() + interval '30 days')
+          VALUES ($1, $2, 'trialing', 'trial', now(), now() + ($3::int * interval '1 day'))
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,
-        [family.familyId, stripeCustomerId],
+        [family.familyId, stripeCustomerId, config.proTrialDays],
       );
     }
 
@@ -390,11 +391,11 @@ subscriptionsRouter.post(
             trial_started_at,
             trial_ends_at
           )
-          VALUES ($1, $2, 'trialing', 'trial', now(), now() + interval '30 days')
+          VALUES ($1, $2, 'trialing', 'trial', now(), now() + ($3::int * interval '1 day'))
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,
-        [family.familyId, stripeCustomerId],
+        [family.familyId, stripeCustomerId, config.proTrialDays],
       );
     }
 
@@ -404,6 +405,7 @@ subscriptionsRouter.post(
       familyName: family.familyName,
       priceId: tier.stripePriceId,
       plan: "document_vault",
+      trialPeriodDays: 0,
       successPath: "?documentVault=success",
       cancelPath: "?documentVault=cancelled",
       metadata: {

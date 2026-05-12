@@ -217,6 +217,13 @@ const medicationScheduleLabel = (medicine) => {
   return days.map((day) => day.toUpperCase()).join(", ");
 };
 
+const medicationEndDateHasPassed = (medicine, referenceDate = new Date()) => {
+  if (!medicine?.endDate) return false;
+  const end = new Date(`${medicine.endDate}T23:59:59`);
+  if (Number.isNaN(end.getTime())) return false;
+  return referenceDate.getTime() > end.getTime();
+};
+
 const parseMedicationProfile = (value = "") => {
   if (value === null || value === undefined) return [];
 
@@ -236,6 +243,10 @@ const parseMedicationProfile = (value = "") => {
           requiredDaily = "",
           timeWindow = "",
           scheduleDays = "",
+          startDate = "",
+          endDate = "",
+          instructions = "",
+          frequency = "",
         ] = line
           .split("|")
           .map((part) => cleanFormText(part));
@@ -259,6 +270,10 @@ const parseMedicationProfile = (value = "") => {
           scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
             requiredDaily: isRequiredDaily,
           }),
+          startDate,
+          endDate,
+          instructions,
+          frequency,
         };
       }
 
@@ -266,7 +281,7 @@ const parseMedicationProfile = (value = "") => {
         line.includes(item),
       );
       if (!separator) {
-        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "", timeWindows: [], scheduleDays: [] };
+        return { name: cleanFormText(line), dose: "", doseAmount: "", doseUnit: "", times: [], active: true, notes: "", requiredDaily: false, timeWindow: "", timeWindows: [], scheduleDays: [], startDate: "", endDate: "", instructions: "", frequency: "" };
       }
       const [name, ...doseParts] = line.split(separator);
       const dose = cleanFormText(doseParts.join(separator));
@@ -282,9 +297,18 @@ const parseMedicationProfile = (value = "") => {
         timeWindow: "",
         timeWindows: [],
         scheduleDays: [],
+        startDate: "",
+        endDate: "",
+        instructions: "",
+        frequency: "",
       };
     })
-    .filter((item) => item.name && item.active !== false);
+    .filter(
+      (item) =>
+        item.name &&
+        item.active !== false &&
+        !medicationEndDateHasPassed(item),
+    );
 };
 
 const medicationStatusLabel = (status) => {

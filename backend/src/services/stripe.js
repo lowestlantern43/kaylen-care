@@ -91,6 +91,7 @@ export async function createStripeCheckoutSession({
   familyName,
   priceId = config.stripePriceId,
   plan = "family",
+  trialPeriodDays = config.proTrialDays,
   successPath = "",
   cancelPath = "",
   metadata = {},
@@ -98,14 +99,18 @@ export async function createStripeCheckoutSession({
   promotionCode = "",
 }) {
   if (!priceId) {
-    throw badRequest("Stripe price is not configured yet. Add STRIPE_FAMILY_PRICE_ID to the backend environment.");
+    throw badRequest("Stripe price is not configured yet. Add STRIPE_PRO_MONTHLY_PRICE_ID to the backend environment.");
   }
 
   const params = new URLSearchParams();
   params.set("mode", "subscription");
   params.set("customer", customerId);
+  params.set("payment_method_collection", "always");
   params.set("line_items[0][price]", priceId);
   params.set("line_items[0][quantity]", "1");
+  if (Number(trialPeriodDays) > 0) {
+    params.set("subscription_data[trial_period_days]", String(Number(trialPeriodDays)));
+  }
   if (promotionCodeId) {
     params.set("discounts[0][promotion_code]", promotionCodeId);
   } else {

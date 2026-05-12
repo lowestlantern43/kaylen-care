@@ -49,7 +49,10 @@ Runtime environment variables:
 | `FRONTEND_URL` | Runtime | No | DigitalOcean app URL, then custom domain later |
 | `STRIPE_SECRET_KEY` | Runtime | Yes | Stripe secret key |
 | `STRIPE_WEBHOOK_SECRET` | Runtime | Yes | Stripe webhook signing secret |
-| `STRIPE_PRICE_ID` | Runtime | No | Stripe recurring price ID |
+| `STRIPE_PRO_MONTHLY_PRICE_ID` | Runtime | No | FamilyTrack Pro monthly Stripe price ID |
+| `STRIPE_DOCUMENTS_50GB_PRICE_ID` | Runtime | No | Secure Document Storage 50GB add-on price ID |
+| `STRIPE_DOCUMENTS_100GB_PRICE_ID` | Runtime | No | Secure Document Storage 100GB add-on price ID |
+| `FAMILYTRACK_PRO_TRIAL_DAYS` | Runtime | No | Default `14` |
 
 ## Web Component
 
