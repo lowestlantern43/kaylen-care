@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="FamilyTrack care icon">
+  <defs>
+    <linearGradient id="bg" x1="74" x2="438" y1="48" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#dff8ff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <linearGradient id="shield" x1="154" x2="360" y1="112" y2="398" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#22c7b8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <path fill="#ffffff" d="M256 72c64 45 117 50 154 54 5 142-46 235-154 314C148 361 97 268 102 126c37-4 90-9 154-54Z" opacity=".96"/>
+  <path fill="url(#shield)" d="M256 104c51 34 93 42 124 45 1 113-38 190-124 254-86-64-125-141-124-254 31-3 73-11 124-45Z"/>
+  <path fill="#ffffff" d="M256 189c18-29 70-30 90 8 21 41-17 86-90 135-73-49-111-94-90-135 20-38 72-37 90-8Z"/>
+  <path fill="#2563eb" d="M244 206h24v38h38v24h-38v38h-24v-38h-38v-24h38v-38Z" opacity=".95"/>
+</svg>

@@ -10,11 +10,68 @@ import sleepScreenshot from "./assets/screenshots/sleep-log.png";
 
 const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
+const GA_MEASUREMENT_ID = import.meta.env.VITE_GA_MEASUREMENT_ID || "";
+const GOOGLE_SITE_VERIFICATION =
+  import.meta.env.VITE_GOOGLE_SITE_VERIFICATION || "";
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
+const DEFAULT_PUBLIC_PRICING = {
+  familyMonthlyPriceGbp: 9,
+  proMonthlyPriceGbp: 9,
+  oneOffEventPriceGbp: 0,
+  promoEnabled: false,
+  promoLabel: "",
+  documentVault: {
+    enabled: true,
+    tiers: [
+      {
+        id: "storage-50gb",
+        label: "50GB Document Vault",
+        monthlyPriceGbp: 1,
+        includedStorageGb: 50,
+      },
+      {
+        id: "storage-100gb",
+        label: "100GB Document Vault",
+        monthlyPriceGbp: 2,
+        includedStorageGb: 100,
+      },
+    ],
+  },
+};
 const INSTALL_ONBOARDING_SEEN_KEY = "familytrack:install-onboarding-seen";
 const INSTALL_ONBOARDING_DISMISSED_KEY =
   "familytrack:install-onboarding-dismissed";
+
+function installMarketingMetadata() {
+  if (GOOGLE_SITE_VERIFICATION) {
+    const existing = document.querySelector(
+      'meta[name="google-site-verification"]',
+    );
+    if (!existing) {
+      const meta = document.createElement("meta");
+      meta.name = "google-site-verification";
+      meta.content = GOOGLE_SITE_VERIFICATION;
+      document.head.appendChild(meta);
+    }
+  }
+
+  if (!GA_MEASUREMENT_ID || window.__familytrackGaLoaded) return;
+  window.__familytrackGaLoaded = true;
+  window.dataLayer = window.dataLayer || [];
+  window.gtag = function gtag() {
+    window.dataLayer.push(arguments);
+  };
+  window.gtag("js", new Date());
+  window.gtag("config", GA_MEASUREMENT_ID, { anonymize_ip: true });
+
+  const script = document.createElement("script");
+  script.async = true;
+  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
+    GA_MEASUREMENT_ID,
+  )}`;
+  document.head.appendChild(script);
+}
 const MODULE_VISIBILITY_OPTIONS = [
   {
     key: "food",
@@ -142,7 +199,7 @@ const publicPages = {
     title: "FamilyTrack - Simple Care Tracking for Families",
     description:
       "FamilyTrack helps busy parents and carers log food, medication, sleep, toileting and health, then create clearer reports for doctors, school and reviews.",
-    h1: "FamilyTrack â€” simple care tracking for families",
+    h1: "FamilyTrack — simple care tracking for families",
     canonical: `${PRODUCTION_URL}/`,
     ogImage: `${PRODUCTION_URL}/screenshots/dashboard.png`,
   },
@@ -917,7 +974,7 @@ const parseCareMedicationRows = (value = "") => {
         };
       }
 
-      const separator = [" - ", " â€“ ", " â€” ", ":"].find((item) =>
+      const separator = [" - ", " – ", " — ", ":"].find((item) =>
         line.includes(item),
       );
       if (!separator) {
@@ -1066,7 +1123,7 @@ function ChildPhotoPreview({ child, url }) {
   if (hasFailed) {
     return (
       <div className="flex h-20 w-32 items-center justify-center rounded-2xl border border-amber-200 bg-amber-50 px-2 text-center text-xs font-bold text-amber-800">
-        Photo uploaded but cannot be viewed â€” check storage permissions.
+        Photo uploaded but cannot be viewed — check storage permissions.
       </div>
     );
   }
@@ -1232,7 +1289,7 @@ function Toast({ toast, onClose }) {
             className="rounded-full bg-white/70 px-2 py-1 text-xs font-black shadow-sm"
             aria-label="Close notification"
           >
-            Ã—
+            ×
           </button>
         </div>
       </div>
@@ -1433,8 +1490,14 @@ function PublicFooter() {
   );
 }
 
-function LandingPage({ onStartFree, onLogin }) {
+function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING }) {
   const page = publicPages["/"];
+  const familyPrice = Number(pricing.familyMonthlyPriceGbp || 0);
+  const proPrice = Number(pricing.proMonthlyPriceGbp || familyPrice || 0);
+  const oneOffPrice = Number(pricing.oneOffEventPriceGbp || 0);
+  const documentVaultTiers = pricing.documentVault?.enabled === false
+    ? []
+    : pricing.documentVault?.tiers || [];
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -1580,6 +1643,62 @@ function LandingPage({ onStartFree, onLogin }) {
         </div>
       </section>
 
+      <section className="px-5 py-12">
+        <div className="mx-auto max-w-6xl rounded-[2rem] border border-sky-100 bg-white p-5 shadow-sm sm:p-7">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.18em] text-sky-600">
+                Simple pricing
+              </p>
+              <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
+                Start free, upgrade when it helps
+              </h2>
+            </div>
+            {pricing.promoEnabled && pricing.promoLabel ? (
+              <span className="rounded-full bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">
+                {pricing.promoLabel}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <article className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-700">
+                Family plan
+              </p>
+              <p className="mt-2 text-3xl font-black text-slate-950">
+                £{familyPrice}/mo
+              </p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                Core logging, reports, Care Snapshot, sharing and family access.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                Document Vault
+              </p>
+              <p className="mt-2 text-3xl font-black text-slate-950">
+                from £{documentVaultTiers[0]?.monthlyPriceGbp ?? 0}/mo
+              </p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                Optional private document storage for EHCP, school, medical and care files.
+              </p>
+            </article>
+            <article className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700">
+                Professional / future
+              </p>
+              <p className="mt-2 text-3xl font-black text-slate-950">
+                £{proPrice}/mo
+              </p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                For future professional or expanded care use. One-off events
+                {oneOffPrice > 0 ? ` from £${oneOffPrice}.` : " can be priced separately."}
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
       <section className="bg-indigo-50 px-5 py-12">
         <div className="mx-auto max-w-6xl">
           <h2 className="text-2xl font-black text-slate-950">
@@ -1689,7 +1808,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
                   className="flex gap-3 text-sm font-semibold leading-6 text-slate-700"
                 >
                   <span className="mt-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white text-xs font-black text-indigo-700 shadow-sm">
-                    âœ“
+                    ✓
                   </span>
                   <span>{item}</span>
                 </li>
@@ -2548,7 +2667,7 @@ function IssueAdminPanel({
   );
 }
 
-function WorkspaceGate({ session, onLogout }) {
+function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICING }) {
   const normalizeFamily = (family) => ({
     familyId: family.familyId || family.id,
     familyName: family.familyName || family.name,
@@ -2753,6 +2872,13 @@ function WorkspaceGate({ session, onLogout }) {
       ],
       notes: "Default Document Vault add-on pricing.",
     });
+  const [platformPublicPricingForm, setPlatformPublicPricingForm] = useState({
+    familyMonthlyPriceGbp: "9",
+    proMonthlyPriceGbp: "9",
+    oneOffEventPriceGbp: "0",
+    promoEnabled: false,
+    promoLabel: "",
+  });
   const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
     useState({
       status: "default",
@@ -3397,8 +3523,8 @@ function WorkspaceGate({ session, onLogout }) {
 
         setResolvedIssueNotice(
           notifications.length === 1
-            ? "Your reported issue has been resolved âœ…"
-            : `${notifications.length} of your reported issues have been resolved âœ…`,
+            ? "Your reported issue has been resolved ✓"
+            : `${notifications.length} of your reported issues have been resolved ✓`,
         );
         await api.markResolvedIssueNotificationsSeen();
       } catch {
@@ -4423,6 +4549,16 @@ function WorkspaceGate({ session, onLogout }) {
       ]);
       setPlatformData({ overview, families, users, archivedFamilies });
       const documentVaultSettings = overview?.storageUsage?.settings;
+      const publicPricing = overview?.publicPricing;
+      if (publicPricing) {
+        setPlatformPublicPricingForm({
+          familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 9),
+          proMonthlyPriceGbp: String(publicPricing.proMonthlyPriceGbp ?? 9),
+          oneOffEventPriceGbp: String(publicPricing.oneOffEventPriceGbp ?? 0),
+          promoEnabled: Boolean(publicPricing.promoEnabled),
+          promoLabel: publicPricing.promoLabel || "",
+        });
+      }
       if (documentVaultSettings) {
         setPlatformDocumentVaultSettingsForm({
           enabled: documentVaultSettings.enabled !== false,
@@ -4928,6 +5064,36 @@ function WorkspaceGate({ session, onLogout }) {
         notes: settings.notes || "",
       });
       setPlatformActionMessage("Document Vault pricing updated.");
+    } catch (caughtError) {
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updatePlatformPublicPricing = async () => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const pricing = await api.adminUpdatePublicPricing({
+        familyMonthlyPriceGbp: platformPublicPricingForm.familyMonthlyPriceGbp,
+        proMonthlyPriceGbp: platformPublicPricingForm.proMonthlyPriceGbp,
+        oneOffEventPriceGbp: platformPublicPricingForm.oneOffEventPriceGbp,
+        promoEnabled: Boolean(platformPublicPricingForm.promoEnabled),
+        promoLabel: platformPublicPricingForm.promoLabel,
+      });
+      const overview = await api.adminOverview();
+      setPlatformData((current) => ({ ...current, overview }));
+      setPlatformPublicPricingForm({
+        familyMonthlyPriceGbp: String(pricing.familyMonthlyPriceGbp ?? 9),
+        proMonthlyPriceGbp: String(pricing.proMonthlyPriceGbp ?? 9),
+        oneOffEventPriceGbp: String(pricing.oneOffEventPriceGbp ?? 0),
+        promoEnabled: Boolean(pricing.promoEnabled),
+        promoLabel: pricing.promoLabel || "",
+      });
+      setPlatformActionMessage("Public pricing updated.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -6175,7 +6341,8 @@ function WorkspaceGate({ session, onLogout }) {
                   {selectedFamilyAccess.trialDaysLeft === 1 ? "" : "s"} left
                 </p>
                 <p className="mt-0.5 font-semibold text-sky-700">
-                  Upgrade when you are ready to keep full editing access.
+                  Upgrade when you are ready to keep full editing access. Family plan £
+                  {publicPricing.familyMonthlyPriceGbp}/mo.
                 </p>
               </div>
               <button
@@ -6192,7 +6359,7 @@ function WorkspaceGate({ session, onLogout }) {
                 className="absolute right-3 top-3 rounded-full border border-sky-200 bg-white/80 px-2 py-1 text-xs font-black text-sky-700 shadow-sm"
                 aria-label="Hide trial reminder for 7 days"
               >
-                Ã—
+                ×
               </button>
             </div>
           ) : null}
@@ -6535,6 +6702,12 @@ function WorkspaceGate({ session, onLogout }) {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-bold text-slate-900">Subscription / Plan</h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-600">
+                      Family plan: £{publicPricing.familyMonthlyPriceGbp}/mo
+                      {publicPricing.promoEnabled && publicPricing.promoLabel
+                        ? ` · ${publicPricing.promoLabel}`
+                        : ""}
+                    </p>
                     <div className="mt-2">
                       <PlanBadge
                         record={{
@@ -6895,7 +7068,7 @@ function WorkspaceGate({ session, onLogout }) {
                           {invite.email}
                         </p>
                         <p className="text-slate-600">
-                          {invite.role} Â· {invite.acceptedAt ? "accepted" : "pending"}
+                          {invite.role} · {invite.acceptedAt ? "accepted" : "pending"}
                         </p>
                       </div>
                     ))}
@@ -9100,6 +9273,86 @@ function WorkspaceGate({ session, onLogout }) {
 
                 {platformAdminTab === "storage" ? (
                   <section className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-indigo-100 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-700">
+                            Public pricing
+                          </p>
+                          <h3 className="mt-1 text-xl font-black text-slate-950">
+                            Website and plan page prices
+                          </h3>
+                          <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
+                            These values feed the public pricing display. Stripe price IDs are still managed on each paid add-on or subscription setup.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={updatePlatformPublicPricing}
+                          disabled={isPlatformSaving}
+                          className="w-fit rounded-full bg-indigo-600 px-4 py-2 text-xs font-black text-white shadow-sm disabled:opacity-50"
+                        >
+                          {isPlatformSaving ? "Saving..." : "Save pricing"}
+                        </button>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        {[
+                          ["Family monthly (£)", "familyMonthlyPriceGbp"],
+                          ["Pro monthly (£)", "proMonthlyPriceGbp"],
+                          ["One-off event (£)", "oneOffEventPriceGbp"],
+                        ].map(([label, field]) => (
+                          <label
+                            key={field}
+                            className="text-xs font-black uppercase tracking-[0.14em] text-indigo-700"
+                          >
+                            {label}
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              className="mt-1 min-h-[44px] w-full min-w-0 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-base font-black normal-case tracking-normal text-slate-950 outline-none focus:ring-2 focus:ring-indigo-100"
+                              value={platformPublicPricingForm[field]}
+                              onChange={(event) =>
+                                setPlatformPublicPricingForm((form) => ({
+                                  ...form,
+                                  [field]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div className="mt-3 grid gap-3 md:grid-cols-[auto_1fr] md:items-end">
+                        <label className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+                          <input
+                            type="checkbox"
+                            checked={platformPublicPricingForm.promoEnabled}
+                            onChange={(event) =>
+                              setPlatformPublicPricingForm((form) => ({
+                                ...form,
+                                promoEnabled: event.target.checked,
+                              }))
+                            }
+                          />
+                          Promo visible
+                        </label>
+                        <label className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
+                          Promo label
+                          <input
+                            className="mt-1 min-h-[44px] w-full min-w-0 rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-sm font-bold normal-case tracking-normal text-slate-900 outline-none focus:ring-2 focus:ring-emerald-100"
+                            placeholder="e.g. Beta discount available"
+                            value={platformPublicPricingForm.promoLabel}
+                            onChange={(event) =>
+                              setPlatformPublicPricingForm((form) => ({
+                                ...form,
+                                promoLabel: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+
                     <div className="rounded-2xl border border-cyan-100 bg-white p-4 shadow-sm">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                         <div>
@@ -9357,7 +9610,7 @@ function WorkspaceGate({ session, onLogout }) {
                                     {family.familyName || "Unnamed family"}
                                   </p>
                                   <p className="mt-0.5 truncate text-xs font-semibold text-slate-500">
-                                    {family.ownerEmail || family.ownerName || "No owner email"} Â·{" "}
+                                    {family.ownerEmail || family.ownerName || "No owner email"} ·{" "}
                                     {family.documentCount || 0} document{family.documentCount === 1 ? "" : "s"}
                                   </p>
                                   <p className="mt-0.5 text-xs font-semibold text-slate-500">
@@ -9575,11 +9828,11 @@ function WorkspaceGate({ session, onLogout }) {
                             </div>
                           </div>
                           <p className="mt-1 text-sm text-slate-600">
-                            Owner: {family.ownerName || "Unknown"} Â·{" "}
+                            Owner: {family.ownerName || "Unknown"} ·{" "}
                             {family.ownerEmail || "No email"}
                           </p>
                           <p className="mt-1 text-xs font-semibold text-slate-500">
-                            {family.memberCount} members Â· {family.childCount} children Â·{" "}
+                            {family.memberCount} members · {family.childCount} children ·{" "}
                             {family.logCount} logs - Platform:{" "}
                             {family.platformStatus || "active"}
                           </p>
@@ -10420,7 +10673,7 @@ function WorkspaceGate({ session, onLogout }) {
                                   {member.fullName}
                                 </p>
                                 <p className="text-slate-600">
-                                  {member.email} Â· {member.role}
+                                  {member.email} · {member.role}
                                 </p>
                               </div>
                             ))}
@@ -10808,7 +11061,7 @@ function WorkspaceGate({ session, onLogout }) {
                                 </span>
                               </div>
                               <p className="mt-1 text-slate-600">
-                                {log.childFirstName} Â· {log.createdByName}
+                                {log.childFirstName} · {log.createdByName}
                               </p>
                               {log.notes ? (
                                 <p className="mt-1 text-slate-700">{log.notes}</p>
@@ -11273,6 +11526,7 @@ function WorkspaceGate({ session, onLogout }) {
           onStartDocumentVaultCheckout={startDocumentVaultCheckout}
           isDocumentVaultCheckoutLoading={isCheckoutLoading}
           showToast={showToast}
+          currentUser={session.user}
           useSaasApi
         />
       </DashboardErrorBoundary>
@@ -13056,6 +13310,11 @@ export default function SaasApp() {
   const [session, setSession] = useState(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [publicView, setPublicView] = useState("landing");
+  const [publicPricing, setPublicPricing] = useState(DEFAULT_PUBLIC_PRICING);
+
+  useEffect(() => {
+    installMarketingMetadata();
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -13072,6 +13331,30 @@ export default function SaasApp() {
     }
 
     checkSession();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let ignore = false;
+    api
+      .publicPricing()
+      .then((pricing) => {
+        if (!ignore && pricing) {
+          setPublicPricing({
+            ...DEFAULT_PUBLIC_PRICING,
+            ...pricing,
+            documentVault: {
+              ...DEFAULT_PUBLIC_PRICING.documentVault,
+              ...(pricing.documentVault || {}),
+            },
+          });
+        }
+      })
+      .catch(() => {
+        // Public pricing has safe defaults for local development.
+      });
     return () => {
       ignore = true;
     };
@@ -13130,10 +13413,17 @@ export default function SaasApp() {
       <LandingPage
         onStartFree={() => setPublicView("auth")}
         onLogin={() => setPublicView("login")}
+        pricing={publicPricing}
       />
     );
   }
 
-  return <WorkspaceGate session={session} onLogout={logout} />;
+  return (
+    <WorkspaceGate
+      session={session}
+      onLogout={logout}
+      publicPricing={publicPricing}
+    />
+  );
 }
 

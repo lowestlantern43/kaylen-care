@@ -162,6 +162,7 @@ export const api = {
     request("/auth/logout", {
       method: "POST",
     }),
+  publicPricing: () => requestOptional("/public/pricing"),
   changePassword: ({ currentPassword, newPassword }) =>
     request("/account/password", {
       method: "POST",
@@ -457,6 +458,11 @@ export const api = {
     }),
   adminUpdateDocumentVaultSettings: (payload) =>
     request("/admin/document-vault-settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  adminUpdatePublicPricing: (payload) =>
+    request("/admin/public-pricing", {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),

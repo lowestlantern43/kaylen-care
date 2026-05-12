@@ -4,6 +4,80 @@ function plainTextFromLines(lines) {
   return lines.filter(Boolean).join("\n");
 }
 
+function escapeHtml(value = "") {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildEmailHtml({ subject, text }) {
+  const lines = String(text || "")
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd());
+  const firstUrl = lines.find((line) => /^https?:\/\//i.test(line.trim()));
+  const bodyHtml = lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return '<div style="height:12px;line-height:12px">&nbsp;</div>';
+      if (/^https?:\/\//i.test(trimmed)) {
+        return `
+          <p style="margin:18px 0">
+            <a href="${escapeHtml(trimmed)}" style="display:inline-block;border-radius:14px;background:#2563eb;color:#ffffff;font-weight:700;text-decoration:none;padding:13px 18px">
+              Open FamilyTrack
+            </a>
+          </p>
+        `;
+      }
+      return `<p style="margin:0 0 12px;color:#334155;font-size:15px;line-height:1.65">${escapeHtml(line)}</p>`;
+    })
+    .join("");
+
+  return `
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>${escapeHtml(subject)}</title>
+      </head>
+      <body style="margin:0;background:#f4f7fb;font-family:Inter,Segoe UI,Arial,sans-serif;color:#0f172a">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:24px 12px">
+          <tr>
+            <td align="center">
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;border-radius:26px;background:#ffffff;border:1px solid #dbeafe;box-shadow:0 18px 45px rgba(15,23,42,0.08);overflow:hidden">
+                <tr>
+                  <td style="background:linear-gradient(135deg,#eff6ff,#ecfeff);padding:26px 28px 20px">
+                    <div style="display:inline-block;border-radius:18px;background:#ffffff;border:1px solid #bfdbfe;color:#0369a1;font-weight:900;font-size:14px;letter-spacing:.12em;padding:10px 13px;text-transform:uppercase">
+                      FamilyTrack
+                    </div>
+                    <h1 style="margin:18px 0 0;font-size:25px;line-height:1.25;color:#0f172a">${escapeHtml(subject)}</h1>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:26px 28px 8px">
+                    ${bodyHtml}
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding:18px 28px 28px">
+                    <div style="border-top:1px solid #e2e8f0;padding-top:18px;color:#64748b;font-size:13px;line-height:1.6">
+                      <p style="margin:0">Need help? Contact <a href="mailto:${escapeHtml(config.supportEmail)}" style="color:#2563eb;font-weight:700;text-decoration:none">${escapeHtml(config.supportEmail)}</a>.</p>
+                      ${firstUrl ? `<p style="margin:10px 0 0">If the button does not work, copy this link: <br><span style="word-break:break-all">${escapeHtml(firstUrl)}</span></p>` : ""}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+    </html>
+  `;
+}
+
 function normalizeRecipients(to) {
   return Array.isArray(to) ? to.filter(Boolean) : [to].filter(Boolean);
 }
@@ -90,16 +164,23 @@ export async function sendAppEmail({
 }) {
   const recipients = normalizeRecipients(to);
   if (!recipients.length) return { sent: false, skipped: true };
+  const htmlBody = html || buildEmailHtml({ subject, text });
 
   if (config.emailProvider === "resend") {
-    return sendViaResend({ to: recipients, subject, text, html, attachments });
+    return sendViaResend({
+      to: recipients,
+      subject,
+      text,
+      html: htmlBody,
+      attachments,
+    });
   }
 
   return sendViaWebhook({
     to: recipients,
     subject,
     text,
-    html,
+    html: htmlBody,
     metadata,
     attachments,
   });

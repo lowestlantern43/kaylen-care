@@ -44,6 +44,7 @@ adminRouter.use(
     await ensureChildProfileFluidTargetSchema();
     await ensureFamilyArchivePolicySchema();
     await ensureDocumentVaultBillingSchema();
+    await ensurePublicPricingSettings();
     next();
   }),
 );
@@ -104,6 +105,44 @@ async function ensureDocumentVaultBillingSchema() {
       ON CONFLICT (key) DO NOTHING
     `,
   );
+}
+
+async function ensurePublicPricingSettings() {
+  await query(
+    `
+      INSERT INTO platform_settings (key, value)
+      VALUES (
+        'public_pricing',
+        $1::jsonb
+      )
+      ON CONFLICT (key) DO NOTHING
+    `,
+    [
+      JSON.stringify({
+        familyMonthlyPriceGbp: config.familyPlanMonthlyPriceGbp,
+        proMonthlyPriceGbp: config.familyPlanMonthlyPriceGbp,
+        oneOffEventPriceGbp: 0,
+        promoEnabled: false,
+        promoLabel: "",
+      }),
+    ],
+  );
+}
+
+function normalisePublicPricingSettings(value = {}) {
+  return {
+    familyMonthlyPriceGbp: Number.isFinite(Number(value.familyMonthlyPriceGbp))
+      ? Math.max(0, Number(value.familyMonthlyPriceGbp))
+      : config.familyPlanMonthlyPriceGbp,
+    proMonthlyPriceGbp: Number.isFinite(Number(value.proMonthlyPriceGbp))
+      ? Math.max(0, Number(value.proMonthlyPriceGbp))
+      : config.familyPlanMonthlyPriceGbp,
+    oneOffEventPriceGbp: Number.isFinite(Number(value.oneOffEventPriceGbp))
+      ? Math.max(0, Number(value.oneOffEventPriceGbp))
+      : 0,
+    promoEnabled: value.promoEnabled === true,
+    promoLabel: typeof value.promoLabel === "string" ? value.promoLabel.trim() : "",
+  };
 }
 
 function normaliseDocumentVaultTiers(tiers = []) {
@@ -246,6 +285,19 @@ async function getDocumentVaultSettings() {
   );
 
   return normaliseDocumentVaultSettings(rows[0]?.value || {});
+}
+
+async function getPublicPricingSettings() {
+  const { rows } = await query(
+    `
+      SELECT value
+      FROM platform_settings
+      WHERE key = 'public_pricing'
+      LIMIT 1
+    `,
+  );
+
+  return normalisePublicPricingSettings(rows[0]?.value || {});
 }
 
 async function getFeedbackSettings() {
@@ -816,6 +868,7 @@ adminRouter.get(
       needsAttention,
       recentActivity,
       storageUsage,
+      publicPricing,
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
@@ -914,6 +967,7 @@ adminRouter.get(
         `,
       ),
       buildDocumentStorageSummary(),
+      getPublicPricingSettings(),
     ]);
 
     res.json({
@@ -935,6 +989,7 @@ adminRouter.get(
         needsAttention,
         recentActivity: recentActivity.rows,
         storageUsage,
+        publicPricing,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
@@ -1002,6 +1057,45 @@ adminRouter.patch(
         enabled: rows[0]?.value?.enabled !== false,
         setupRequired: false,
       },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/public-pricing",
+  asyncHandler(async (req, res) => {
+    const value = normalisePublicPricingSettings({
+      familyMonthlyPriceGbp: req.body?.familyMonthlyPriceGbp,
+      proMonthlyPriceGbp: req.body?.proMonthlyPriceGbp,
+      oneOffEventPriceGbp: req.body?.oneOffEventPriceGbp,
+      promoEnabled: Boolean(req.body?.promoEnabled),
+      promoLabel: optionalString(req.body, "promoLabel"),
+    });
+
+    const { rows } = await query(
+      `
+        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+        VALUES ('public_pricing', $1, now(), $2)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = now(),
+          updated_by_user_id = EXCLUDED.updated_by_user_id
+        RETURNING value
+      `,
+      [JSON.stringify(value), req.user.id],
+    );
+
+    await writeAudit(req, {
+      entityType: "platform_setting",
+      entityId: null,
+      action: "platform_public_pricing_updated",
+      metadata: value,
+    });
+
+    res.json({
+      data: normalisePublicPricingSettings(rows[0]?.value || value),
       error: null,
     });
   }),

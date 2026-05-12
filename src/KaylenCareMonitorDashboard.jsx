@@ -653,6 +653,7 @@ export default function KaylenCareMonitorDashboard({
   onStartDocumentVaultCheckout,
   isDocumentVaultCheckoutLoading = false,
   showToast,
+  currentUser = null,
   useSaasApi = false,
 } = {}) {
   const childProfile = childProfileProp || {};
@@ -664,6 +665,18 @@ export default function KaylenCareMonitorDashboard({
   const isReadOnly = Boolean(
     accountAccess?.viewOnly || accountAccess?.canAddLogs === false,
   );
+  const defaultGivenByName = useMemo(() => {
+    const fullName =
+      currentUser?.fullName ||
+      currentUser?.full_name ||
+      currentUser?.name ||
+      "";
+    const firstName = String(fullName).trim().split(/\s+/).filter(Boolean)[0];
+    if (firstName) return firstName;
+
+    const emailUser = String(currentUser?.email || "").split("@")[0];
+    return emailUser ? emailUser.split(/[._-]+/).filter(Boolean)[0] || emailUser : "";
+  }, [currentUser]);
   const APP_PASSWORD = "030920";
 
   const [passwordInput, setPasswordInput] = useState("");
@@ -807,13 +820,22 @@ export default function KaylenCareMonitorDashboard({
     dose: "",
     status: "given",
     time: "",
-    givenBy: "",
+    givenBy: defaultGivenByName,
     otherGivenBy: "",
     date: todayValue(),
     scheduledWindow: "",
     scheduledDay: "",
     notes: "",
   });
+
+  useEffect(() => {
+    if (!defaultGivenByName) return;
+    setMedicationForm((current) =>
+      current.givenBy || current.otherGivenBy
+        ? current
+        : { ...current, givenBy: defaultGivenByName },
+    );
+  }, [defaultGivenByName]);
   const medicationScheduleStorageKey = `familytrack:medication-schedules:${
     childId || "legacy"
   }`;
@@ -1852,6 +1874,7 @@ export default function KaylenCareMonitorDashboard({
 
   const givenByOptions = uniqueList([
     ...defaultGivenByOptions.slice(0, -1),
+    defaultGivenByName,
     ...customGivenByLabels,
     ...savedGivenByOptions,
     "Other",
@@ -2107,7 +2130,7 @@ export default function KaylenCareMonitorDashboard({
       dose: "",
       status: "given",
       time: "",
-      givenBy: "",
+      givenBy: defaultGivenByName,
       otherGivenBy: "",
       date: todayValue(),
       scheduledWindow: "",
@@ -8928,7 +8951,7 @@ export default function KaylenCareMonitorDashboard({
       time: nowTimeValue(),
       scheduledWindow: medicine.timeWindow || "",
       scheduledDay: medicationScheduleLabel(medicine),
-      givenBy: "",
+      givenBy: current.givenBy || defaultGivenByName,
       otherGivenBy: "",
       notes: "",
     }));
