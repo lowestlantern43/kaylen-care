@@ -176,6 +176,12 @@ export function computeAccess(record = {}) {
   const trialDaysLeft = daysUntil(trialEndsAt);
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const effectiveStatus = billingStatus || status || "none";
+  const hasTrialStatus =
+    effectiveStatus === "trialing" ||
+    status === "trialing" ||
+    billingStatus === "trialing" ||
+    String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
+      "trialing";
   const base = {
     plan,
     status,
@@ -198,6 +204,21 @@ export function computeAccess(record = {}) {
     return withFlags({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
+  if (hasTrialStatus) {
+    return withFlags(
+      {
+        ...base,
+        label:
+          trialDaysLeft > 0
+            ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+            : "Trial active",
+        tone: "sky",
+        reason: "trial",
+      },
+      FULL_ACCESS,
+    );
+  }
+
   if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
     const label =
       accessStatus === "active" || accessStatus === "approved"
@@ -217,17 +238,12 @@ export function computeAccess(record = {}) {
     ["trialing", "active"].includes(effectiveStatus) ||
     ["trialing", "active"].includes(status)
   ) {
-    const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return withFlags(
       {
         ...base,
-        label: isTrialing
-          ? trialDaysLeft > 0
-            ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-            : "Trial active"
-          : "Active",
-        tone: isTrialing ? "sky" : "emerald",
-        reason: isTrialing ? "trial" : "active",
+        label: "Active",
+        tone: "emerald",
+        reason: "active",
       },
       FULL_ACCESS,
     );

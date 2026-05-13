@@ -715,6 +715,12 @@ const planAccessFor = (record = {}) => {
     : 0;
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const effectiveStatus = billingStatus || status || "none";
+  const hasTrialStatus =
+    effectiveStatus === "trialing" ||
+    status === "trialing" ||
+    billingStatus === "trialing" ||
+    String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
+      "trialing";
   const base = {
     plan,
     status,
@@ -737,6 +743,21 @@ const planAccessFor = (record = {}) => {
     return finishAccess({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
+  if (hasTrialStatus) {
+    return finishAccess(
+      {
+        ...base,
+        label:
+          trialDaysLeft > 0
+            ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+            : "Trial active",
+        tone: "sky",
+        reason: "trial",
+      },
+      fullAccessFlags,
+    );
+  }
+
   if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
     const label =
       accessStatus === "active" || accessStatus === "approved"
@@ -756,17 +777,12 @@ const planAccessFor = (record = {}) => {
     ["trialing", "active"].includes(effectiveStatus) ||
     ["trialing", "active"].includes(status)
   ) {
-    const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return finishAccess(
       {
         ...base,
-        label: isTrialing
-          ? trialDaysLeft > 0
-            ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-            : "Trial active"
-          : "Active",
-        tone: isTrialing ? "sky" : "emerald",
-        reason: isTrialing ? "trial" : "active",
+        label: "Active",
+        tone: "emerald",
+        reason: "active",
       },
       fullAccessFlags,
     );
@@ -2871,8 +2887,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       ? family.emergencyContacts
       : family.emergency_contacts || [],
     role: family.role,
-    subscriptionStatus: family.subscriptionStatus || family.status || "trialing",
-    billingStatus: family.billingStatus || family.billing_status || family.subscriptionStatus || family.status || "none",
+    subscriptionStatus:
+      family.subscriptionStatus ||
+      family.subscription_status ||
+      family.stripeSubscriptionStatus ||
+      family.stripe_subscription_status ||
+      family.status ||
+      "trialing",
+    billingStatus:
+      family.billingStatus ||
+      family.billing_status ||
+      family.subscriptionStatus ||
+      family.subscription_status ||
+      family.stripeSubscriptionStatus ||
+      family.stripe_subscription_status ||
+      family.status ||
+      "none",
     accessStatus: family.accessStatus || family.access_status || "legacy",
     manualAccessOverride:
       family.manualAccessOverride || family.manual_access_override || "none",
@@ -2881,7 +2911,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     stripeSubscriptionId:
       family.stripeSubscriptionId || family.stripe_subscription_id || "",
     stripeSyncedAt: family.stripeSyncedAt || family.stripe_synced_at || "",
-    trialEndsAt: family.trialEndsAt || family.trial_ends_at || "",
+    trialEndsAt:
+      family.trialEndsAt ||
+      family.trial_ends_at ||
+      family.trialEnd ||
+      family.trial_end ||
+      "",
     accessPausedAt: family.accessPausedAt || family.access_paused_at || "",
     childCount: family.childCount || family.child_count || 0,
     memberCount: family.memberCount || family.member_count || 0,
@@ -3191,6 +3226,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const selectedFamilyAccess = selectedFamily?.access || planAccessFor(selectedFamily);
   const isTrialing = selectedFamilyAccess?.reason === "trial";
   const trialDaysLeft = Number(selectedFamilyAccess?.trialDaysLeft || 0);
+  const trialBadgeText = trialDaysLeft > 0
+    ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+    : "Trial active";
+  const showTrialBadge =
+    isTrialing &&
+    !showPlatformAdmin &&
+    (!session?.user?.isPlatformAdmin || Boolean(platformViewAsUser));
   const showGentleTrialReminder =
     isTrialing &&
     selectedFamilyAccess?.canAddLogs &&
@@ -6718,16 +6760,26 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       type="button"
                       onClick={() => setShowBillingPanel(true)}
                       className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black shadow-sm transition ${
-                        isTrialing
+                        showTrialBadge
                           ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
                           : planBadgeToneClasses[selectedFamilyAccess.tone] ||
                             planBadgeToneClasses.slate
                       }`}
                     >
-                      {isTrialing
-                        ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-                        : selectedFamilyAccess.label}
+                      {showTrialBadge ? trialBadgeText : selectedFamilyAccess.label}
                     </button>
+                    {session?.user?.isPlatformAdmin ? (
+                      <p className="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold leading-5 text-slate-500">
+                        Trial debug: billing_status{" "}
+                        {selectedFamily?.billingStatus || selectedFamilyAccess.billingStatus || "none"} ·
+                        subscription_status{" "}
+                        {selectedFamily?.subscriptionStatus || selectedFamilyAccess.status || "none"} ·
+                        trial_end{" "}
+                        {selectedFamily?.trialEndsAt || selectedFamilyAccess.trialEndsAt || "missing"} ·
+                        days_left {trialDaysLeft} · show_trial_badge{" "}
+                        {showTrialBadge ? "true" : "false"}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -6818,9 +6870,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 ["Current plan", "FamilyTrack Pro"],
                 [
                   "Status",
-                  isTrialing
-                    ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-                    : selectedFamilyAccess.label,
+                  isTrialing ? trialBadgeText : selectedFamilyAccess.label,
                 ],
                 [
                   "Renewal date",
