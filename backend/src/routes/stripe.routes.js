@@ -53,6 +53,8 @@ async function familyForVerifiedSession(session, userId) {
     session.metadata?.account_id ||
     session.metadata?.familyId ||
     "";
+  const customerId =
+    typeof session.customer === "string" ? session.customer : session.customer?.id;
   const sessionUserId =
     session.metadata?.user_id ||
     session.metadata?.userId ||
@@ -78,6 +80,23 @@ async function familyForVerifiedSession(session, userId) {
       [userId, legacyReference],
     );
     if (legacyRows[0]) return legacyRows[0];
+    if (customerId) {
+      const { rows: customerRows } = await query(
+        `
+          SELECT f.id AS "familyId", f.name AS "familyName"
+          FROM subscriptions s
+          INNER JOIN families f ON f.id = s.family_id
+          INNER JOIN family_members fm ON fm.family_id = f.id
+          WHERE s.stripe_customer_id = $1
+            AND fm.user_id = $2
+            AND fm.deleted_at IS NULL
+            AND f.deleted_at IS NULL
+          LIMIT 1
+        `,
+        [customerId, userId],
+      );
+      if (customerRows[0]) return customerRows[0];
+    }
     return null;
   }
 
@@ -113,9 +132,39 @@ stripeRouter.get(
       sessionId,
     });
 
-    const session = await retrieveStripeCheckoutSession(sessionId);
+    let session = null;
+    try {
+      session = await retrieveStripeCheckoutSession(sessionId);
+    } catch (error) {
+      console.error("Stripe verify-session failed to retrieve session.", {
+        userId: req.user.id,
+        sessionId,
+        message: error.message,
+      });
+      throw badRequest(`Stripe session could not be verified: ${error.message}`);
+    }
+    console.info("Stripe verify-session loaded session.", {
+      userId: req.user.id,
+      sessionId,
+      customerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
+      subscriptionId:
+        typeof session.subscription === "string"
+          ? session.subscription
+          : session.subscription?.id,
+      metadataFamilyId: session.metadata?.family_id || session.metadata?.account_id || "",
+      metadataUserId: session.metadata?.user_id || "",
+      clientReferenceId: session.client_reference_id || "",
+    });
     const family = await familyForVerifiedSession(session, req.user.id);
     if (!family) {
+      console.warn("Stripe verify-session could not link session to current user.", {
+        userId: req.user.id,
+        sessionId,
+        customerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
+        metadataFamilyId: session.metadata?.family_id || session.metadata?.account_id || "",
+        metadataUserId: session.metadata?.user_id || "",
+        clientReferenceId: session.client_reference_id || "",
+      });
       throw forbidden("That Stripe Checkout session is not linked to this account.");
     }
 
@@ -128,7 +177,20 @@ stripeRouter.get(
       throw badRequest("Stripe has not attached a subscription to this Checkout session yet.");
     }
 
-    const synced = await syncSubscriptionFromStripe(subscription, family.familyId);
+    let synced = null;
+    try {
+      synced = await syncSubscriptionFromStripe(subscription, family.familyId);
+    } catch (error) {
+      console.error("Stripe verify-session database sync failed.", {
+        userId: req.user.id,
+        familyId: family.familyId,
+        sessionId,
+        subscriptionId:
+          typeof subscription === "string" ? subscription : subscription?.id,
+        message: error.message,
+      });
+      throw badRequest(`Subscription could not be saved: ${error.message}`);
+    }
     const localSubscription = await loadSubscriptionAccess(family.familyId);
 
     console.info("Stripe verify-session synced subscription.", {
