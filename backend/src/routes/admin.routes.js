@@ -376,11 +376,27 @@ async function syncFamilySubscriptionFromStripe(familyId) {
   }
 
   const subscriptions = await listStripeCustomerSubscriptions(stripeCustomerId);
-  const subscription = subscriptions.data?.find((item) =>
-    ["active", "trialing", "past_due", "incomplete", "canceled", "unpaid"].includes(
-      item.status,
-    ) && item.metadata?.add_on !== "document_vault",
+  const candidateSubscriptions = (subscriptions.data || []).filter(
+    (item) =>
+      item.metadata?.add_on !== "document_vault" &&
+      ["active", "trialing", "past_due", "incomplete", "canceled", "unpaid"].includes(
+        item.status,
+      ),
   );
+  const statusPriority = {
+    trialing: 0,
+    active: 1,
+    past_due: 2,
+    incomplete: 3,
+    unpaid: 4,
+    canceled: 5,
+  };
+  const subscription = candidateSubscriptions.sort((a, b) => {
+    const priorityA = statusPriority[a.status] ?? 99;
+    const priorityB = statusPriority[b.status] ?? 99;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return Number(b.created || 0) - Number(a.created || 0);
+  })[0];
 
   if (!subscription) {
     return null;

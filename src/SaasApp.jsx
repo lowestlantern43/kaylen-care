@@ -922,6 +922,10 @@ function AdminEmptyState({
 
 function AccountAccessPreview({ record }) {
   const access = record?.access || planAccessFor(record);
+  const stripeCustomerId =
+    record?.stripeCustomerId || record?.stripe_customer_id || "";
+  const stripeSubscriptionId =
+    record?.stripeSubscriptionId || record?.stripe_subscription_id || "";
   return (
     <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
       <summary className="cursor-pointer font-bold text-slate-800">
@@ -933,6 +937,12 @@ function AccountAccessPreview({ record }) {
           ["Can add child", access.canAddChild],
           ["Can invite carer", access.canInviteCarer],
           ["Reason", access.reason],
+          ["Role", record?.role || record?.ownerRole || "family"],
+          ["Billing", access.billingStatus || record?.billingStatus || "none"],
+          ["Access status", access.accessStatus || record?.accessStatus || "legacy"],
+          ["Stripe customer", stripeCustomerId ? "Yes" : "No"],
+          ["Stripe subscription", stripeSubscriptionId ? "Yes" : "No"],
+          ["Computed", access.canAddLogs ? "Full access" : "View-only"],
         ].map(([label, value]) => (
           <div key={label} className="rounded-lg bg-slate-50 px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
@@ -2883,6 +2893,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     billingStatus: family.billingStatus || family.billing_status || family.subscriptionStatus || family.status || "none",
     accessStatus: family.accessStatus || family.access_status || "legacy",
     plan: family.plan || "trial",
+    stripeCustomerId: family.stripeCustomerId || family.stripe_customer_id || "",
+    stripeSubscriptionId:
+      family.stripeSubscriptionId || family.stripe_subscription_id || "",
+    stripeSyncedAt: family.stripeSyncedAt || family.stripe_synced_at || "",
     trialEndsAt: family.trialEndsAt || family.trial_ends_at || "",
     accessPausedAt: family.accessPausedAt || family.access_paused_at || "",
     childCount: family.childCount || family.child_count || 0,
@@ -6689,27 +6703,6 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 aria-label="Hide trial reminder for 7 days"
               >
                 ×
-              </button>
-            </div>
-          ) : null}
-          {!selectedFamilyAccess.canAddLogs ? (
-            <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="font-black text-amber-900">
-                  This account is currently view-only
-                </p>
-                <p className="mt-0.5 font-semibold text-amber-800">
-                  Existing logs, reports and Care Snapshot stay available. Subscribe
-                  to add and edit care records.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={startCheckout}
-                disabled={isCheckoutLoading}
-                className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
-              >
-                {isCheckoutLoading ? "Opening..." : "Subscribe"}
               </button>
             </div>
           ) : null}

@@ -63,7 +63,7 @@ stripeRouter.post(
       }
     }
 
-    if (event.type === "invoice.payment_succeeded") {
+    if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
       await updateSubscriptionFromInvoice(event.data.object);
     }
 
