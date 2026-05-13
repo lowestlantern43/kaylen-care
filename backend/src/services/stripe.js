@@ -105,7 +105,9 @@ export async function createStripeCheckoutSession({
   }
 
   const checkoutFrontendUrl = safeFrontendUrl(frontendUrl);
-  const successQueryJoiner = String(successPath || "?billing=success").includes("?")
+  const successDestination = successPath || "/billing/success?billing=success";
+  const cancelDestination = cancelPath || "/billing/cancelled?billing=cancelled";
+  const successQueryJoiner = String(successDestination).includes("?")
     ? "&"
     : "?";
   const params = new URLSearchParams();
@@ -124,9 +126,9 @@ export async function createStripeCheckoutSession({
   }
   params.set(
     "success_url",
-    `${checkoutFrontendUrl}${successPath || "?billing=success"}${successQueryJoiner}session_id={CHECKOUT_SESSION_ID}`,
+    `${checkoutFrontendUrl}${successDestination}${successQueryJoiner}session_id={CHECKOUT_SESSION_ID}`,
   );
-  params.set("cancel_url", `${checkoutFrontendUrl}${cancelPath || "?billing=cancelled"}`);
+  params.set("cancel_url", `${checkoutFrontendUrl}${cancelDestination}`);
   params.set("client_reference_id", familyId);
   params.set("metadata[family_id]", familyId);
   params.set("metadata[family_name]", familyName);
@@ -165,7 +167,7 @@ export async function createStripeBillingPortalSession(customerId, frontendUrl =
 export async function retrieveStripeCheckoutSession(sessionId) {
   const encodedSessionId = encodeURIComponent(sessionId);
   return stripeRequest(
-    `/checkout/sessions/${encodedSessionId}?expand[]=subscription`,
+    `/checkout/sessions/${encodedSessionId}?expand[]=customer&expand[]=subscription`,
     { method: "GET" },
   );
 }

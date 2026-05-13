@@ -3649,25 +3649,23 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     const documentVaultResult = params.get("documentVault");
     const checkoutSessionId = params.get("session_id");
     if (!billingResult && !documentVaultResult) return;
-    if (
-      (billingResult === "success" || documentVaultResult === "success") &&
-      checkoutSessionId &&
-      !selectedFamilyId
-    ) {
-      return;
-    }
-
     const syncCheckoutReturn = async () => {
-      if (!selectedFamilyId) return;
-
+      let syncedFamilyId = selectedFamilyId;
       if ((billingResult === "success" || documentVaultResult === "success") && checkoutSessionId) {
         try {
           setIsCheckoutLoading(true);
           setAccountMessage("Checking your Stripe subscription...");
-          const synced = await api.syncCheckoutSession(selectedFamilyId, {
+          const synced = await api.syncBillingCheckoutSession({
             sessionId: checkoutSessionId,
           });
           if (synced?.subscription) setSubscription(synced.subscription);
+          if (synced?.family?.familyId) {
+            syncedFamilyId = synced.family.familyId;
+            setSelectedFamilyId((current) => current || synced.family.familyId);
+          } else if (synced?.subscription?.familyId) {
+            syncedFamilyId = synced.subscription.familyId;
+            setSelectedFamilyId((current) => current || synced.subscription.familyId);
+          }
           setAccountMessage(
             documentVaultResult === "success"
               ? "Document Vault has been confirmed by Stripe."
@@ -3683,17 +3681,24 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         }
       }
 
-      api
-        .getSubscription(selectedFamilyId)
-        .then((loadedSubscription) => setSubscription(loadedSubscription))
-        .catch(() => null);
+      if (syncedFamilyId) {
+        api
+          .getSubscription(syncedFamilyId)
+          .then((loadedSubscription) => setSubscription(loadedSubscription))
+          .catch(() => null);
+      }
       api
         .listFamilies()
         .then((loadedFamilies) => {
           const normalisedFamilies = loadedFamilies.map(normalizeFamily);
+          const targetFamilyId =
+            syncedFamilyId || selectedFamilyId || normalisedFamilies[0]?.familyId || "";
           setFamilies(normalisedFamilies);
+          if (!selectedFamilyId && targetFamilyId) {
+            setSelectedFamilyId(targetFamilyId);
+          }
           const refreshedFamily = normalisedFamilies.find(
-            (family) => family.familyId === selectedFamilyId,
+            (family) => family.familyId === targetFamilyId,
           );
           if (refreshedFamily?.access?.canAddLogs) {
             setAccountMessage(
@@ -3717,9 +3722,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setAccountMessage("Checkout was cancelled. You can upgrade whenever you are ready.");
     }
 
-    if (selectedFamilyId) {
-      syncCheckoutReturn();
-    }
+    syncCheckoutReturn();
 
     window.history.replaceState({}, "", window.location.pathname);
   }, [selectedFamilyId]);

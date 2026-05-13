@@ -13,9 +13,10 @@ function normaliseStripeTimestamp(timestamp) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
 }
 
-async function familyIdFromStripeSubscription(subscription) {
+async function familyIdFromStripeSubscription(subscription, fallbackFamilyId = "") {
   const metadataFamilyId = subscription?.metadata?.family_id;
   if (metadataFamilyId) return metadataFamilyId;
+  if (fallbackFamilyId) return fallbackFamilyId;
 
   const customerId =
     typeof subscription?.customer === "string"
@@ -38,10 +39,10 @@ async function familyIdFromStripeSubscription(subscription) {
   return rows[0]?.familyId || "";
 }
 
-export async function syncSubscriptionFromStripe(subscription) {
+export async function syncSubscriptionFromStripe(subscription, fallbackFamilyId = "") {
   await ensurePlanAccessSchema();
 
-  const familyId = await familyIdFromStripeSubscription(subscription);
+  const familyId = await familyIdFromStripeSubscription(subscription, fallbackFamilyId);
   if (!familyId) {
     console.warn("Stripe subscription sync skipped: no family_id metadata or customer mapping.", {
       subscriptionId: subscription?.id,

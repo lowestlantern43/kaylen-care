@@ -347,6 +347,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  syncBillingCheckoutSession: (payload = {}) =>
+    request("/billing/sync-checkout-session", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   createDocumentVaultCheckoutSession: (familyId, payload = {}) =>
     request(`/families/${familyId}/subscription/document-vault/checkout`, {
       method: "POST",

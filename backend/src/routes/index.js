@@ -2,6 +2,7 @@ import { Router } from "express";
 import { adminRouter } from "./admin.routes.js";
 import { accountRouter } from "./account.routes.js";
 import { authRouter } from "./auth.routes.js";
+import { billingRouter } from "./billing.routes.js";
 import { careLogsRouter } from "./careLogs.routes.js";
 import { childrenRouter } from "./children.routes.js";
 import { documentsRouter } from "./documents.routes.js";
@@ -19,6 +20,7 @@ export const apiRouter = Router();
 
 apiRouter.use("/health", healthRouter);
 apiRouter.use("/auth", authRouter);
+apiRouter.use("/billing", billingRouter);
 apiRouter.use("/account", accountRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/feedback", feedbackRouter);

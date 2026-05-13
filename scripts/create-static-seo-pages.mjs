@@ -43,6 +43,18 @@ const pages = [
       "Create useful care reports from food, sleep, medication, toileting and health logs for appointments and reviews.",
     image: `${productionUrl}/screenshots/pdf-report.png`,
   },
+  {
+    path: "/billing/success",
+    title: "Billing Success | FamilyTrack",
+    description: "FamilyTrack billing confirmation.",
+    image: `${productionUrl}/familytrack-care-icon-512.png`,
+  },
+  {
+    path: "/billing/cancelled",
+    title: "Billing Cancelled | FamilyTrack",
+    description: "FamilyTrack billing setup was cancelled.",
+    image: `${productionUrl}/familytrack-care-icon-512.png`,
+  },
 ];
 
 const escapeHtml = (value) =>

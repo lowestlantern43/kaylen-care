@@ -272,7 +272,10 @@ subscriptionsRouter.post(
       throw badRequest("Stripe has not attached a subscription to this Checkout session yet.");
     }
 
-    const synced = await syncSubscriptionFromStripe(subscription);
+    const synced = await syncSubscriptionFromStripe(
+      subscription,
+      req.familyMember.family_id,
+    );
 
     const { rows } = await query(
       `
@@ -377,8 +380,8 @@ subscriptionsRouter.post(
       priceId: tier.stripePriceId,
       plan: "document_vault",
       trialPeriodDays: 0,
-      successPath: "?documentVault=success",
-      cancelPath: "?documentVault=cancelled",
+      successPath: "/billing/success?documentVault=success",
+      cancelPath: "/billing/cancelled?documentVault=cancelled",
       metadata: {
         add_on: "document_vault",
         tier_id: tier.id,
