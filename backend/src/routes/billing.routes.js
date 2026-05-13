@@ -75,6 +75,7 @@ async function loadSyncedFamilyAccess(familyId) {
         status AS "subscriptionStatus",
         COALESCE(billing_status, status, 'none') AS "billingStatus",
         COALESCE(access_status, 'legacy') AS "accessStatus",
+        COALESCE(manual_access_override, 'none') AS "manualAccessOverride",
         plan,
         trial_started_at AS "trialStartedAt",
         trial_ends_at AS "trialEndsAt",

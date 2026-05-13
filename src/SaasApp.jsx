@@ -673,6 +673,9 @@ const planAccessFor = (record = {}) => {
   const accessStatus = String(
     record.accessStatus || record.access_status || "legacy",
   ).toLowerCase();
+  const manualAccessOverride = String(
+    record.manualAccessOverride || record.manual_access_override || "none",
+  ).toLowerCase();
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || "";
   const stripeSubscriptionId =
     record.stripeSubscriptionId || record.stripe_subscription_id || "";
@@ -690,6 +693,13 @@ const planAccessFor = (record = {}) => {
   const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
   const explicitlyAllowed = [
+    "force_active",
+    "legacy",
+    "legacy_approved",
+    "free",
+    "internal",
+    "test",
+  ].includes(manualAccessOverride) || [
     "active",
     "approved",
     "legacy",
@@ -699,8 +709,7 @@ const planAccessFor = (record = {}) => {
     "test",
   ].includes(accessStatus);
   const explicitlyLocked =
-    accessStatus === "blocked" ||
-    (accessStatus === "locked" && !stripeAllowsAccess && !billingAllowsAccess);
+    manualAccessOverride === "force_locked" || accessStatus === "blocked";
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -774,18 +783,19 @@ const planAccessFor = (record = {}) => {
   if (explicitlyAllowed && !explicitlyUnpaid) {
     return {
       label:
-        accessStatus === "free"
+        manualAccessOverride === "free" || accessStatus === "free"
           ? "Free/internal"
-          : accessStatus === "test"
+          : manualAccessOverride === "test" || accessStatus === "test"
             ? "Test account"
-            : accessStatus === "internal"
+            : manualAccessOverride === "internal" || accessStatus === "internal"
               ? "Internal"
               : "Legacy approved",
       tone:
+        ["legacy", "legacy_approved"].includes(manualAccessOverride) ||
         accessStatus === "legacy" || accessStatus === "legacy_approved"
           ? "emerald"
           : "indigo",
-      reason: accessStatus,
+      reason: manualAccessOverride !== "none" ? manualAccessOverride : accessStatus,
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
@@ -930,11 +940,23 @@ function AccountAccessPreview({ record }) {
     record?.stripeCustomerId || record?.stripe_customer_id || "";
   const stripeSubscriptionId =
     record?.stripeSubscriptionId || record?.stripe_subscription_id || "";
+  const hasValidStripeStatus = ["trialing", "active"].includes(
+    String(record?.billingStatus || record?.billing_status || record?.status || "").toLowerCase(),
+  );
+  const isManuallyLocked =
+    (access.manualAccessOverride || record?.manualAccessOverride) ===
+    "force_locked";
   return (
     <details className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm">
       <summary className="cursor-pointer font-bold text-slate-800">
         Account Access Preview
       </summary>
+      {hasValidStripeStatus && isManuallyLocked ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+          This account has a valid Stripe trial/subscription but is manually
+          locked.
+        </div>
+      ) : null}
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         {[
           ["Can add logs", access.canAddLogs],
@@ -944,6 +966,10 @@ function AccountAccessPreview({ record }) {
           ["Role", record?.role || record?.ownerRole || "family"],
           ["Billing", access.billingStatus || record?.billingStatus || "none"],
           ["Access status", access.accessStatus || record?.accessStatus || "legacy"],
+          [
+            "Manual override",
+            access.manualAccessOverride || record?.manualAccessOverride || "none",
+          ],
           ["Stripe customer", stripeCustomerId ? "Yes" : "No"],
           ["Stripe subscription", stripeSubscriptionId ? "Yes" : "No"],
           ["Computed", access.canAddLogs ? "Full access" : "View-only"],
@@ -2910,6 +2936,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     subscriptionStatus: family.subscriptionStatus || family.status || "trialing",
     billingStatus: family.billingStatus || family.billing_status || family.subscriptionStatus || family.status || "none",
     accessStatus: family.accessStatus || family.access_status || "legacy",
+    manualAccessOverride:
+      family.manualAccessOverride || family.manual_access_override || "none",
     plan: family.plan || "trial",
     stripeCustomerId: family.stripeCustomerId || family.stripe_customer_id || "",
     stripeSubscriptionId:
@@ -3094,6 +3122,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     plan: "trial",
     status: "trialing",
     accessStatus: "legacy",
+    manualAccessOverride: "none",
     trialEndsAt: "",
     accessPaused: false,
   });
@@ -5096,6 +5125,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         plan: detail.family?.plan || "trial",
         status: detail.family?.subscriptionStatus || "trialing",
         accessStatus: detail.family?.accessStatus || "legacy",
+        manualAccessOverride: detail.family?.manualAccessOverride || "none",
         trialEndsAt: detail.family?.trialEndsAt
           ? String(detail.family.trialEndsAt).slice(0, 10)
           : "",
@@ -5341,6 +5371,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         plan: payload.plan,
         status: payload.status,
         accessStatus: payload.accessStatus || "legacy",
+        manualAccessOverride: payload.manualAccessOverride || "none",
         trialEndsAt: payload.trialEndsAt,
         accessPaused: Boolean(payload.accessPaused),
         accessPauseReason: payload.accessPaused ? "Paused by owner platform" : "",
@@ -11484,6 +11515,23 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             >
                               Sync Stripe status
                             </button>
+                            {selectedPlatformFamily.family.manualAccessOverride ===
+                              "force_locked" ||
+                            selectedPlatformFamily.family.accessStatus === "locked" ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updatePlatformFamilyPlan({
+                                    accessStatus: "active",
+                                    manualAccessOverride: "none",
+                                  })
+                                }
+                                disabled={isPlatformSaving}
+                                className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-700 disabled:opacity-60"
+                              >
+                                Clear locked override
+                              </button>
+                            ) : null}
                             {selectedPlatformFamily.family.stripeCustomerUrl ? (
                               <a
                                 href={selectedPlatformFamily.family.stripeCustomerUrl}

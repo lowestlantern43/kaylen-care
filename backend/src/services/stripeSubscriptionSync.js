@@ -111,6 +111,7 @@ export async function syncSubscriptionFromStripe(subscription, fallbackFamilyId 
         plan,
         billing_status,
         access_status,
+        manual_access_override,
         stripe_synced_at,
         trial_started_at,
         trial_ends_at,
@@ -124,7 +125,7 @@ export async function syncSubscriptionFromStripe(subscription, fallbackFamilyId 
         stripe_discount_amount_off,
         stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, now(), $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, 'none', now(), $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
@@ -132,7 +133,12 @@ export async function syncSubscriptionFromStripe(subscription, fallbackFamilyId 
         status = EXCLUDED.status,
         plan = EXCLUDED.plan,
         billing_status = EXCLUDED.billing_status,
-        access_status = EXCLUDED.access_status,
+        access_status = CASE
+          WHEN subscriptions.manual_access_override = 'force_locked' THEN subscriptions.access_status
+          WHEN EXCLUDED.status IN ('active', 'trialing') THEN 'active'
+          ELSE EXCLUDED.access_status
+        END,
+        manual_access_override = COALESCE(NULLIF(subscriptions.manual_access_override, ''), 'none'),
         stripe_synced_at = EXCLUDED.stripe_synced_at,
         trial_started_at = EXCLUDED.trial_started_at,
         trial_ends_at = EXCLUDED.trial_ends_at,

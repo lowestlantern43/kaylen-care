@@ -9,6 +9,7 @@ ALTER TABLE subscriptions
   ADD COLUMN IF NOT EXISTS access_pause_reason text NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS billing_status text,
   ADD COLUMN IF NOT EXISTS access_status text NOT NULL DEFAULT 'legacy',
+  ADD COLUMN IF NOT EXISTS manual_access_override text NOT NULL DEFAULT 'none',
   ADD COLUMN IF NOT EXISTS stripe_synced_at timestamptz,
   ADD COLUMN IF NOT EXISTS stripe_promotion_code_id text,
   ADD COLUMN IF NOT EXISTS stripe_promotion_code text,
@@ -49,7 +50,8 @@ SET
   trial_started_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_started_at, created_at, now()) ELSE trial_started_at END,
   trial_ends_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_ends_at, COALESCE(created_at, now()) + interval '30 days') ELSE trial_ends_at END,
   billing_status = COALESCE(billing_status, status, 'none'),
-  access_status = COALESCE(NULLIF(access_status, ''), 'legacy')
+  access_status = COALESCE(NULLIF(access_status, ''), 'legacy'),
+  manual_access_override = COALESCE(NULLIF(manual_access_override, ''), 'none')
 WHERE plan IS NULL
    OR trim(plan) = ''
    OR plan = 'free'
@@ -57,7 +59,18 @@ WHERE plan IS NULL
    OR trim(status) = ''
    OR billing_status IS NULL
    OR access_status IS NULL
-   OR trim(access_status) = '';
+   OR trim(access_status) = ''
+   OR manual_access_override IS NULL
+   OR trim(manual_access_override) = '';
+
+UPDATE subscriptions
+SET access_status = 'active',
+    manual_access_override = 'none'
+WHERE COALESCE(NULLIF(manual_access_override, ''), 'none') <> 'force_locked'
+  AND (
+    COALESCE(billing_status, '') IN ('trialing', 'active')
+    OR COALESCE(status, '') IN ('trialing', 'active')
+  );
 `;
 
 let setupPromise = null;
@@ -121,6 +134,9 @@ export function buildPlanAccess(record = {}) {
   const accessStatus = String(
     record.accessStatus || record.access_status || "legacy",
   ).toLowerCase();
+  const manualAccessOverride = String(
+    record.manualAccessOverride || record.manual_access_override || "none",
+  ).toLowerCase();
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || null;
   const stripeSubscriptionId =
     record.stripeSubscriptionId || record.stripe_subscription_id || "";
@@ -152,6 +168,13 @@ export function buildPlanAccess(record = {}) {
     !hasStripeSubscription && plan === "family" && status === "active";
   const beta = plan === "beta";
   const explicitlyAllowed = [
+    "force_active",
+    "legacy",
+    "legacy_approved",
+    "free",
+    "internal",
+    "test",
+  ].includes(manualAccessOverride) || [
     "active",
     "approved",
     "legacy",
@@ -161,8 +184,7 @@ export function buildPlanAccess(record = {}) {
     "test",
   ].includes(accessStatus);
   const explicitlyLocked =
-    accessStatus === "blocked" ||
-    (accessStatus === "locked" && !stripeAllowsAccess && !billingAllowsAccess);
+    manualAccessOverride === "force_locked" || accessStatus === "blocked";
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -215,15 +237,19 @@ export function buildPlanAccess(record = {}) {
     canInviteCarer = true;
   } else if (explicitlyAllowed && !explicitlyUnpaid) {
     label =
-      accessStatus === "free"
-        ? "Free/internal"
-        : accessStatus === "test"
+        manualAccessOverride === "free" || accessStatus === "free"
+          ? "Free/internal"
+        : manualAccessOverride === "test" || accessStatus === "test"
           ? "Test account"
-          : accessStatus === "internal"
+          : manualAccessOverride === "internal" || accessStatus === "internal"
             ? "Internal"
             : "Legacy approved";
-    tone = accessStatus === "legacy" || accessStatus === "legacy_approved" ? "emerald" : "indigo";
-    reason = accessStatus;
+    tone =
+      ["legacy", "legacy_approved"].includes(manualAccessOverride) ||
+      ["legacy", "legacy_approved"].includes(accessStatus)
+        ? "emerald"
+        : "indigo";
+    reason = manualAccessOverride !== "none" ? manualAccessOverride : accessStatus;
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
@@ -264,6 +290,7 @@ export function buildPlanAccess(record = {}) {
     status,
     billingStatus,
     accessStatus,
+    manualAccessOverride,
     trialEndsAt,
     trialDaysLeft,
     label,
@@ -288,6 +315,7 @@ export async function getFamilyPlanAccess(familyId) {
         COALESCE(s.status, 'incomplete') AS status,
         COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
         COALESCE(s.access_status, 'legacy') AS "accessStatus",
+        COALESCE(s.manual_access_override, 'none') AS "manualAccessOverride",
         s.stripe_subscription_id AS "stripeSubscriptionId",
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
@@ -299,7 +327,7 @@ export async function getFamilyPlanAccess(familyId) {
       LEFT JOIN family_members fm ON fm.family_id = f.id AND fm.deleted_at IS NULL
       WHERE f.id = $1
         AND f.deleted_at IS NULL
-      GROUP BY f.id, s.plan, s.status, s.billing_status, s.access_status, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
+      GROUP BY f.id, s.plan, s.status, s.billing_status, s.access_status, s.manual_access_override, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
       LIMIT 1
     `,
     [familyId],

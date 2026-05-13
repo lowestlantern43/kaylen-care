@@ -402,7 +402,7 @@ async function syncFamilySubscriptionFromStripe(familyId) {
     return null;
   }
 
-  await syncSubscriptionFromStripe(subscription);
+  await syncSubscriptionFromStripe(subscription, familyId);
 
   const updated = await query(
     `
@@ -413,6 +413,7 @@ async function syncFamilySubscriptionFromStripe(familyId) {
         status,
         billing_status AS "billingStatus",
         access_status AS "accessStatus",
+        manual_access_override AS "manualAccessOverride",
         plan,
         current_period_end AS "currentPeriodEnd",
         cancel_at_period_end AS "cancelAtPeriodEnd",
@@ -603,6 +604,7 @@ async function listArchivedFamilies() {
         COALESCE(s.status, 'inactive') AS "subscriptionStatus",
         COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
         COALESCE(s.access_status, 'legacy') AS "accessStatus",
+        COALESCE(s.manual_access_override, 'none') AS "manualAccessOverride",
         COALESCE(s.plan, 'trial') AS plan,
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
@@ -1554,6 +1556,7 @@ adminRouter.get(
           COALESCE(s.status, 'inactive') AS "subscriptionStatus",
           COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
           COALESCE(s.access_status, 'legacy') AS "accessStatus",
+          COALESCE(s.manual_access_override, 'none') AS "manualAccessOverride",
           COALESCE(s.plan, 'trial') AS plan,
           s.trial_ends_at AS "trialEndsAt",
           s.access_paused_at AS "accessPausedAt",
@@ -1583,7 +1586,7 @@ adminRouter.get(
         LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.family_id = f.id AND cl.deleted_at IS NULL
         WHERE f.deleted_at IS NULL
-        GROUP BY f.id, u.full_name, u.email, s.status, s.billing_status, s.access_status, s.plan, s.trial_ends_at, s.access_paused_at, s.access_pause_reason
+        GROUP BY f.id, u.full_name, u.email, s.status, s.billing_status, s.access_status, s.manual_access_override, s.plan, s.trial_ends_at, s.access_paused_at, s.access_pause_reason
         ORDER BY f.created_at DESC
         LIMIT 100
       `,
@@ -1627,6 +1630,7 @@ adminRouter.get(
           COALESCE(s.status, 'trialing') AS "subscriptionStatus",
           COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
           COALESCE(s.access_status, 'legacy') AS "accessStatus",
+          COALESCE(s.manual_access_override, 'none') AS "manualAccessOverride",
           COALESCE(s.plan, 'trial') AS plan,
           s.trial_started_at AS "trialStartedAt",
           s.trial_ends_at AS "trialEndsAt",
@@ -2058,6 +2062,15 @@ adminRouter.patch(
       accessStatusValues,
       "Access status",
     );
+    const manualAccessOverride =
+      optionalString(req.body, "manualAccessOverride") ||
+      (["locked", "blocked"].includes(accessStatus)
+        ? "force_locked"
+        : ["active", "approved"].includes(accessStatus)
+          ? "force_active"
+          : ["legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)
+            ? accessStatus
+            : "none");
     const accessPaused = Boolean(req.body.accessPaused);
     const accessPauseReason = optionalString(req.body, "accessPauseReason") || "";
 
@@ -2078,18 +2091,20 @@ adminRouter.patch(
           status,
           billing_status,
           access_status,
+          manual_access_override,
           trial_started_at,
           trial_ends_at,
           access_paused_at,
           access_pause_reason
         )
-        VALUES ($1, $2, $3, $3, $4, now(), $5, CASE WHEN $6 THEN now() ELSE NULL END, $7)
+        VALUES ($1, $2, $3, $3, $4, $5, now(), $6, CASE WHEN $7 THEN now() ELSE NULL END, $8)
         ON CONFLICT (family_id)
         DO UPDATE SET
           plan = EXCLUDED.plan,
           status = EXCLUDED.status,
           billing_status = EXCLUDED.billing_status,
           access_status = EXCLUDED.access_status,
+          manual_access_override = EXCLUDED.manual_access_override,
           trial_started_at = COALESCE(subscriptions.trial_started_at, EXCLUDED.trial_started_at),
           trial_ends_at = EXCLUDED.trial_ends_at,
           access_paused_at = EXCLUDED.access_paused_at,
@@ -2100,6 +2115,7 @@ adminRouter.patch(
           status AS "subscriptionStatus",
           billing_status AS "billingStatus",
           access_status AS "accessStatus",
+          manual_access_override AS "manualAccessOverride",
           trial_started_at AS "trialStartedAt",
           trial_ends_at AS "trialEndsAt",
           access_paused_at AS "accessPausedAt",
@@ -2111,6 +2127,7 @@ adminRouter.patch(
         plan,
         status,
         accessStatus,
+        manualAccessOverride,
         trialEndsAt || null,
         accessPaused,
         accessPauseReason,
@@ -2122,7 +2139,15 @@ adminRouter.patch(
       entityType: "subscription",
       entityId: familyId,
       action: "platform_plan_updated",
-      metadata: { plan, status, accessStatus, trialEndsAt, accessPaused, accessPauseReason },
+      metadata: {
+        plan,
+        status,
+        accessStatus,
+        manualAccessOverride,
+        trialEndsAt,
+        accessPaused,
+        accessPauseReason,
+      },
     });
 
     res.json({
@@ -2701,13 +2726,14 @@ adminRouter.get(
           primary_subscription.status AS "subscriptionStatus",
           primary_subscription.billing_status AS "billingStatus",
           primary_subscription.access_status AS "accessStatus",
+          primary_subscription.manual_access_override AS "manualAccessOverride",
           primary_subscription.trial_ends_at AS "trialEndsAt",
           primary_subscription.access_paused_at AS "accessPausedAt"
         FROM users u
         LEFT JOIN family_members fm ON fm.user_id = u.id AND fm.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.created_by_user_id = u.id AND cl.deleted_at IS NULL
         LEFT JOIN LATERAL (
-          SELECT s.plan, s.status, s.billing_status, s.access_status, s.trial_ends_at, s.access_paused_at
+          SELECT s.plan, s.status, s.billing_status, s.access_status, s.manual_access_override, s.trial_ends_at, s.access_paused_at
           FROM family_members pfm
           INNER JOIN subscriptions s ON s.family_id = pfm.family_id
           WHERE pfm.user_id = u.id
@@ -2716,7 +2742,7 @@ adminRouter.get(
           LIMIT 1
         ) primary_subscription ON true
         WHERE u.deleted_at IS NULL
-        GROUP BY u.id, primary_subscription.plan, primary_subscription.status, primary_subscription.billing_status, primary_subscription.access_status, primary_subscription.trial_ends_at, primary_subscription.access_paused_at
+        GROUP BY u.id, primary_subscription.plan, primary_subscription.status, primary_subscription.billing_status, primary_subscription.access_status, primary_subscription.manual_access_override, primary_subscription.trial_ends_at, primary_subscription.access_paused_at
         ORDER BY u.created_at DESC
         LIMIT 100
       `,
