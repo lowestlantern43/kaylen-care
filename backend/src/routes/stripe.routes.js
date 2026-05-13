@@ -48,8 +48,38 @@ async function loadSubscriptionAccess(familyId) {
 }
 
 async function familyForVerifiedSession(session, userId) {
-  const familyId = session.client_reference_id || session.metadata?.family_id || "";
-  if (!familyId) return null;
+  let familyId =
+    session.metadata?.family_id ||
+    session.metadata?.account_id ||
+    session.metadata?.familyId ||
+    "";
+  const sessionUserId =
+    session.metadata?.user_id ||
+    session.metadata?.userId ||
+    "";
+
+  if (sessionUserId && sessionUserId !== userId) {
+    throw forbidden("This Stripe Checkout session belongs to another user.");
+  }
+
+  if (!familyId) {
+    const legacyReference = session.client_reference_id || "";
+    const { rows: legacyRows } = await query(
+      `
+        SELECT f.id AS "familyId", f.name AS "familyName"
+        FROM family_members fm
+        INNER JOIN families f ON f.id = fm.family_id
+        WHERE fm.user_id = $1
+          AND fm.family_id = $2
+          AND fm.deleted_at IS NULL
+          AND f.deleted_at IS NULL
+        LIMIT 1
+      `,
+      [userId, legacyReference],
+    );
+    if (legacyRows[0]) return legacyRows[0];
+    return null;
+  }
 
   const { rows } = await query(
     `

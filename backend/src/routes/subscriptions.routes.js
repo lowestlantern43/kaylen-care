@@ -455,6 +455,8 @@ subscriptionsRouter.post(
       customerId: stripeCustomerId,
       familyId: family.familyId,
       familyName: family.familyName,
+      userId: req.user.id,
+      email: req.user.email,
       promotionCodeId: promotionCode?.id || "",
       promotionCode: requestedPromotionCode,
       frontendUrl: frontendUrlFromRequest(req),
@@ -504,8 +506,11 @@ subscriptionsRouter.post(
     }
 
     const session = await retrieveStripeCheckoutSession(sessionId);
-    const sessionFamilyId =
-      session.client_reference_id || session.metadata?.family_id || "";
+      const sessionFamilyId =
+        session.metadata?.family_id ||
+        session.metadata?.account_id ||
+        session.client_reference_id ||
+        "";
 
     if (sessionFamilyId !== req.familyMember.family_id) {
       throw forbidden("That Stripe Checkout session does not belong to this family.");
@@ -626,6 +631,8 @@ subscriptionsRouter.post(
       customerId: stripeCustomerId,
       familyId: family.familyId,
       familyName: family.familyName,
+      userId: req.user.id,
+      email: req.user.email,
       priceId: tier.stripePriceId,
       plan: "document_vault",
       trialPeriodDays: 0,

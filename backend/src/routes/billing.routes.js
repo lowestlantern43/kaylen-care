@@ -25,15 +25,26 @@ billingRouter.use(
 
 async function familyForCheckoutSession(session, userId) {
   const sessionFamilyId =
-    session.client_reference_id || session.metadata?.family_id || "";
+    session.metadata?.family_id ||
+    session.metadata?.account_id ||
+    session.metadata?.familyId ||
+    "";
+  const sessionUserId = session.metadata?.user_id || session.metadata?.userId || "";
+  if (sessionUserId && sessionUserId !== userId) {
+    throw forbidden("That Stripe Checkout session belongs to another user.");
+  }
   const customerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id;
+  const legacyReference = session.client_reference_id || "";
 
   const params = [userId];
   let where = "";
 
   if (sessionFamilyId) {
     params.push(sessionFamilyId);
+    where = "AND f.id = $2";
+  } else if (legacyReference) {
+    params.push(legacyReference);
     where = "AND f.id = $2";
   } else if (customerId) {
     params.push(customerId);

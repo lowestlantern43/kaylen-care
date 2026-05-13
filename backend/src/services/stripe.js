@@ -90,6 +90,8 @@ export async function createStripeCheckoutSession({
   customerId,
   familyId,
   familyName,
+  userId = "",
+  email = "",
   priceId = config.stripePriceId,
   plan = "family",
   trialPeriodDays = config.proTrialDays,
@@ -129,8 +131,11 @@ export async function createStripeCheckoutSession({
     `${checkoutFrontendUrl}${successDestination}${successQueryJoiner}session_id={CHECKOUT_SESSION_ID}`,
   );
   params.set("cancel_url", `${checkoutFrontendUrl}${cancelDestination}`);
-  params.set("client_reference_id", familyId);
+  params.set("client_reference_id", userId || familyId);
   params.set("metadata[family_id]", familyId);
+  params.set("metadata[account_id]", familyId);
+  if (userId) params.set("metadata[user_id]", userId);
+  if (email) params.set("metadata[email]", email);
   params.set("metadata[family_name]", familyName);
   params.set("metadata[plan]", plan);
   if (priceId) params.set("metadata[price_id]", priceId);
@@ -141,6 +146,9 @@ export async function createStripeCheckoutSession({
   });
   if (promotionCode) params.set("metadata[promotion_code]", promotionCode);
   params.set("subscription_data[metadata][family_id]", familyId);
+  params.set("subscription_data[metadata][account_id]", familyId);
+  if (userId) params.set("subscription_data[metadata][user_id]", userId);
+  if (email) params.set("subscription_data[metadata][email]", email);
   params.set("subscription_data[metadata][family_name]", familyName);
   params.set("subscription_data[metadata][plan]", plan);
   if (priceId) params.set("subscription_data[metadata][price_id]", priceId);

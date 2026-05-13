@@ -195,6 +195,8 @@ authRouter.post(
         customerId: customer.id,
         familyId: result.family.id,
         familyName: result.family.name,
+        userId: result.user.id,
+        email: result.user.email,
         frontendUrl: frontendUrlFromRequest(req),
       });
       checkoutUrl = checkout.url;
