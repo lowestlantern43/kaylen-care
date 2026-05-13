@@ -4,10 +4,13 @@ import { query } from "../db/pool.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const publicRouter = Router();
+const PUBLIC_PRICING_VERSION = "single-plan-2026-05";
 
 function normalisePublicPricing(value = {}) {
+  const isCurrentPricing = value.pricingVersion === PUBLIC_PRICING_VERSION;
+
   return {
-    familyMonthlyPriceGbp: Number.isFinite(Number(value.familyMonthlyPriceGbp))
+    familyMonthlyPriceGbp: isCurrentPricing && Number.isFinite(Number(value.familyMonthlyPriceGbp))
       ? Number(value.familyMonthlyPriceGbp)
       : config.familyPlanMonthlyPriceGbp,
     oneOffEventPriceGbp: Number.isFinite(Number(value.oneOffEventPriceGbp))
@@ -19,6 +22,7 @@ function normalisePublicPricing(value = {}) {
     trialDays: Number.isFinite(Number(value.trialDays))
       ? Number(value.trialDays)
       : config.proTrialDays,
+    pricingVersion: PUBLIC_PRICING_VERSION,
   };
 }
 

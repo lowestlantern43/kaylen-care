@@ -22,6 +22,7 @@ const DEFAULT_PUBLIC_PRICING = {
   promoLabel: "",
   promoCode: "",
   trialDays: 14,
+  pricingVersion: "single-plan-2026-05",
   documentVault: {
     enabled: true,
     tiers: [

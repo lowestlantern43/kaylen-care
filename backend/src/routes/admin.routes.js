@@ -53,6 +53,7 @@ const memberRoles = ["owner", "parent", "carer", "viewer"];
 const issueStatuses = ["new", "in_progress", "resolved"];
 const planValues = ["trial", "family", "beta", "professional"];
 const statusValues = ["inactive", "trialing", "active", "past_due", "canceled", "cancelled"];
+const PUBLIC_PRICING_VERSION = "single-plan-2026-05";
 
 function isMissingFeedbackTable(error) {
   return error?.code === "42P01";
@@ -147,14 +148,17 @@ async function ensurePublicPricingSettings() {
         promoLabel: "",
         promoCode: "",
         trialDays: config.proTrialDays,
+        pricingVersion: PUBLIC_PRICING_VERSION,
       }),
     ],
   );
 }
 
 function normalisePublicPricingSettings(value = {}) {
+  const isCurrentPricing = value.pricingVersion === PUBLIC_PRICING_VERSION;
+
   return {
-    familyMonthlyPriceGbp: Number.isFinite(Number(value.familyMonthlyPriceGbp))
+    familyMonthlyPriceGbp: isCurrentPricing && Number.isFinite(Number(value.familyMonthlyPriceGbp))
       ? Math.max(0, Number(value.familyMonthlyPriceGbp))
       : config.familyPlanMonthlyPriceGbp,
     oneOffEventPriceGbp: Number.isFinite(Number(value.oneOffEventPriceGbp))
@@ -166,6 +170,7 @@ function normalisePublicPricingSettings(value = {}) {
     trialDays: Number.isFinite(Number(value.trialDays))
       ? Math.max(0, Number(value.trialDays))
       : config.proTrialDays,
+    pricingVersion: PUBLIC_PRICING_VERSION,
   };
 }
 
