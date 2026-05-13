@@ -120,98 +120,88 @@ async function familyForVerifiedSession(session, userId) {
 stripeRouter.get(
   "/verify-session",
   requireAuth,
-  asyncHandler(async (req, res) => {
-    await ensurePlanAccessSchema();
-    const sessionId = String(req.query?.session_id || req.query?.sessionId || "").trim();
-    if (!sessionId || !sessionId.startsWith("cs_")) {
-      throw badRequest("Stripe Checkout session ID is missing.");
-    }
+  async (req, res) => {
+    const debug = {
+      stage: "start",
+      userId: req.user?.id || "",
+      sessionId: String(req.query?.session_id || req.query?.sessionId || "").trim(),
+    };
 
-    console.info("Stripe verify-session requested.", {
-      userId: req.user.id,
-      sessionId,
-    });
-
-    let session = null;
     try {
+      await ensurePlanAccessSchema();
+      const sessionId = debug.sessionId;
+      if (!sessionId || !sessionId.startsWith("cs_")) {
+        debug.stage = "missing_session_id";
+        throw badRequest("Stripe Checkout session ID is missing.");
+      }
+
+      console.info("Stripe verify-session requested.", debug);
+
+      debug.stage = "retrieve_session";
+      let session = null;
       session = await retrieveStripeCheckoutSession(sessionId);
-    } catch (error) {
-      console.error("Stripe verify-session failed to retrieve session.", {
-        userId: req.user.id,
-        sessionId,
-        message: error.message,
-      });
-      throw badRequest(`Stripe session could not be verified: ${error.message}`);
-    }
-    console.info("Stripe verify-session loaded session.", {
-      userId: req.user.id,
-      sessionId,
-      customerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
-      subscriptionId:
+      debug.customerId =
+        typeof session.customer === "string" ? session.customer : session.customer?.id;
+      debug.subscriptionId =
         typeof session.subscription === "string"
           ? session.subscription
-          : session.subscription?.id,
-      metadataFamilyId: session.metadata?.family_id || session.metadata?.account_id || "",
-      metadataUserId: session.metadata?.user_id || "",
-      clientReferenceId: session.client_reference_id || "",
-    });
-    const family = await familyForVerifiedSession(session, req.user.id);
-    if (!family) {
-      console.warn("Stripe verify-session could not link session to current user.", {
-        userId: req.user.id,
-        sessionId,
-        customerId: typeof session.customer === "string" ? session.customer : session.customer?.id,
-        metadataFamilyId: session.metadata?.family_id || session.metadata?.account_id || "",
-        metadataUserId: session.metadata?.user_id || "",
-        clientReferenceId: session.client_reference_id || "",
-      });
-      throw forbidden("That Stripe Checkout session is not linked to this account.");
-    }
+          : session.subscription?.id;
+      debug.metadataFamilyId = session.metadata?.family_id || session.metadata?.account_id || "";
+      debug.metadataUserId = session.metadata?.user_id || "";
+      debug.clientReferenceId = session.client_reference_id || "";
+      console.info("Stripe verify-session loaded session.", debug);
 
-    const subscription =
-      typeof session.subscription === "string"
-        ? await retrieveStripeSubscription(session.subscription)
-        : session.subscription;
+      debug.stage = "link_family";
+      const family = await familyForVerifiedSession(session, req.user.id);
+      if (!family) {
+        throw forbidden("That Stripe Checkout session is not linked to this account.");
+      }
+      debug.familyId = family.familyId;
 
-    if (!subscription) {
-      throw badRequest("Stripe has not attached a subscription to this Checkout session yet.");
-    }
+      debug.stage = "load_subscription";
+      const subscription =
+        typeof session.subscription === "string"
+          ? await retrieveStripeSubscription(session.subscription)
+          : session.subscription;
 
-    let synced = null;
-    try {
+      if (!subscription) {
+        throw badRequest("Stripe has not attached a subscription to this Checkout session yet.");
+      }
+
+      debug.stage = "sync_subscription";
+      let synced = null;
       synced = await syncSubscriptionFromStripe(subscription, family.familyId);
-    } catch (error) {
-      console.error("Stripe verify-session database sync failed.", {
-        userId: req.user.id,
-        familyId: family.familyId,
-        sessionId,
-        subscriptionId:
-          typeof subscription === "string" ? subscription : subscription?.id,
-        message: error.message,
+      debug.stage = "load_local_subscription";
+      const localSubscription = await loadSubscriptionAccess(family.familyId);
+      debug.localStatus = localSubscription.status;
+      debug.localBillingStatus = localSubscription.billingStatus;
+      debug.computedAccess = localSubscription.access?.computedAccess;
+
+      console.info("Stripe verify-session synced subscription.", debug);
+
+      res.json({
+        data: {
+          family,
+          synced,
+          subscription: localSubscription,
+          debug,
+        },
+        error: null,
       });
-      throw badRequest(`Subscription could not be saved: ${error.message}`);
+    } catch (error) {
+      const status = error.status || 500;
+      const message = error.message || "Stripe verification failed.";
+      console.error("Stripe verify-session failed.", { ...debug, message, status });
+      res.status(status).json({
+        data: null,
+        error: {
+          code: error.code || "stripe_verify_failed",
+          message: `${message} [stage: ${debug.stage}]`,
+          details: debug,
+        },
+      });
     }
-    const localSubscription = await loadSubscriptionAccess(family.familyId);
-
-    console.info("Stripe verify-session synced subscription.", {
-      userId: req.user.id,
-      familyId: family.familyId,
-      sessionId,
-      stripeSubscriptionId: localSubscription.stripeSubscriptionId,
-      status: localSubscription.status,
-      billingStatus: localSubscription.billingStatus,
-      access: localSubscription.access?.computedAccess,
-    });
-
-    res.json({
-      data: {
-        family,
-        synced,
-        subscription: localSubscription,
-      },
-      error: null,
-    });
-  }),
+  },
 );
 
 async function updateSubscriptionFromStripe(subscription) {

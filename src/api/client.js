@@ -20,7 +20,8 @@ async function request(path, options = {}) {
 
   if (!response.ok) {
     const message =
-      payload?.error?.message || "Something went wrong. Please try again.";
+      payload?.error?.message ||
+      `${response.status} ${response.statusText || "Request failed"} from ${path}`;
     const error = new Error(message);
     error.status = response.status;
     error.code = payload?.error?.code || "request_failed";

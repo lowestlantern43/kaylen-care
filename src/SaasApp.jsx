@@ -3660,15 +3660,19 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           const message =
             caughtError.message ||
             "Stripe is still confirming checkout. Please refresh in a moment.";
+          const visibleMessage =
+            message === "Something went wrong."
+              ? `Stripe verification failed (${caughtError.status || "unknown status"} ${caughtError.code || "no code"}) at ${caughtError.url || "unknown endpoint"}. Check backend logs for the matching verify-session request.`
+              : message;
           console.error("Stripe checkout return verification failed", {
-            message,
+            message: visibleMessage,
             status: caughtError.status,
             code: caughtError.code,
             url: caughtError.url,
             details: caughtError.details,
           });
-          setError(message);
-          setAccountMessage(message);
+          setError(visibleMessage);
+          setAccountMessage(visibleMessage);
         } finally {
           setIsCheckoutLoading(false);
         }
