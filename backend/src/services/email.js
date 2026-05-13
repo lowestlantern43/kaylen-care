@@ -264,6 +264,31 @@ export function deletionReminderEmail({ fullName, days }) {
   };
 }
 
+export function trialEndingReminderEmail({
+  fullName,
+  daysLeft,
+  monthlyPriceGbp,
+  appUrl,
+}) {
+  const dayLabel = `${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  return {
+    subject: `FamilyTrack trial: ${dayLabel} left`,
+    text: plainTextFromLines([
+      `Hi ${fullName || "there"},`,
+      "",
+      `A gentle reminder that your FamilyTrack free trial has ${dayLabel} remaining.`,
+      `FamilyTrack will continue at £${monthlyPriceGbp}/month after the trial unless cancelled.`,
+      "",
+      "You can manage or cancel your subscription securely through FamilyTrack billing at any time.",
+      appUrl || config.frontendUrl,
+      "",
+      `If you need help, contact ${config.supportEmail}.`,
+      "",
+      "FamilyTrack",
+    ]),
+  };
+}
+
 export function archivedFamilyDeletionWarningEmail({
   fullName,
   familyName,

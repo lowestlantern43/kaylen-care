@@ -1,7 +1,7 @@
 import webPush from "web-push";
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
-import { sendAppEmail } from "./email.js";
+import { sendAppEmail, trialEndingReminderEmail } from "./email.js";
 
 const hasPushConfig = Boolean(config.vapidPublicKey && config.vapidPrivateKey);
 
@@ -501,7 +501,13 @@ export async function runDueReminderScan(now = new Date()) {
   const current = londonParts(now);
   const currentMinutes = minutesFromTime(current.time);
   const currentDate = new Date(`${current.date}T12:00:00`);
-  const results = { medication: 0, appointments: 0, hydration: 0, duplicates: 0 };
+  const results = {
+    medication: 0,
+    appointments: 0,
+    hydration: 0,
+    trialEmails: 0,
+    duplicates: 0,
+  };
 
   const { rows: medicationRows } = await query(
     `
@@ -646,6 +652,107 @@ export async function runDueReminderScan(now = new Date()) {
       });
       if (result.skippedDuplicate) results.duplicates += 1;
       else results.hydration += result.sent || 0;
+    }
+  }
+
+  const trialReminderDays = [3, 1];
+  for (const daysLeft of trialReminderDays) {
+    const start = new Date(currentDate);
+    start.setDate(start.getDate() + daysLeft);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+
+    const { rows: trialRows } = await query(
+      `
+        SELECT
+          s.family_id,
+          s.trial_ends_at,
+          f.name AS family_name,
+          u.id AS user_id,
+          u.email,
+          u.full_name
+        FROM subscriptions s
+        JOIN families f ON f.id = s.family_id
+        JOIN family_members fm ON fm.family_id = f.id
+        JOIN users u ON u.id = fm.user_id
+        WHERE COALESCE(s.billing_status, s.status) = 'trialing'
+          AND s.trial_ends_at >= $1
+          AND s.trial_ends_at < $2
+          AND f.deleted_at IS NULL
+          AND fm.deleted_at IS NULL
+          AND u.deleted_at IS NULL
+          AND u.email IS NOT NULL
+          AND trim(u.email) <> ''
+      `,
+      [start.toISOString(), end.toISOString()],
+    );
+
+    for (const row of trialRows) {
+      const reminderKey = `trial-ending:${row.family_id}:${daysLeft}:${String(row.trial_ends_at).slice(0, 10)}`;
+      const { rows: existingRows } = await query(
+        `
+          SELECT id
+          FROM notification_events
+          WHERE user_id = $1
+            AND family_id = $2
+            AND notification_type = 'trial'
+            AND metadata->>'reminderKey' = $3
+          LIMIT 1
+        `,
+        [row.user_id, row.family_id, reminderKey],
+      );
+
+      if (existingRows[0]) {
+        results.duplicates += 1;
+        continue;
+      }
+
+      const email = trialEndingReminderEmail({
+        fullName: row.full_name,
+        daysLeft,
+        monthlyPriceGbp: config.familyPlanMonthlyPriceGbp,
+        appUrl: config.frontendUrl,
+      });
+      const delivery = await sendAppEmail({
+        to: row.email,
+        ...email,
+        metadata: {
+          notificationType: "trial",
+          reminderKey,
+          familyId: row.family_id,
+        },
+      });
+
+      await query(
+        `
+          INSERT INTO notification_events (
+            user_id,
+            family_id,
+            notification_type,
+            title,
+            body,
+            deep_link,
+            scheduled_for,
+            sent_at,
+            delivery_status,
+            delivery_channel,
+            metadata
+          )
+          VALUES ($1, $2, 'trial', $3, $4, '/', $5, now(), $6, 'email', $7)
+        `,
+        [
+          row.user_id,
+          row.family_id,
+          email.subject,
+          email.text,
+          row.trial_ends_at,
+          delivery.sent ? "sent" : delivery.skipped ? "skipped" : "failed",
+          JSON.stringify({ reminderKey, daysLeft, delivery }),
+        ],
+      );
+
+      if (delivery.sent) results.trialEmails += 1;
     }
   }
 

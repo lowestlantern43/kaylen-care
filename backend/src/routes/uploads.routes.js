@@ -45,7 +45,7 @@ async function assertWritableChild({ familyId, childId, userId }) {
 
   const access = await getFamilyPlanAccess(familyId);
   if (!access.canEditLogs) {
-    throw forbidden("This family account is currently view-only.");
+    throw forbidden("This family account is view-only for now.");
   }
 
   const child = await query(

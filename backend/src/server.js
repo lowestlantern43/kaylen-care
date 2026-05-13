@@ -17,7 +17,12 @@ if (config.notificationSchedulerEnabled) {
     isRunningReminderScan = true;
     try {
       const result = await runDueReminderScan();
-      if (result.medication || result.appointments) {
+      if (
+        result.medication ||
+        result.appointments ||
+        result.hydration ||
+        result.trialEmails
+      ) {
         console.log("FamilyTrack reminders sent", result);
       }
     } catch (error) {

@@ -25,8 +25,8 @@ export function requirePlanAccess(action) {
       if (!access[flag]) {
         throw forbidden(
           access.reason === "expired"
-            ? "This trial has ended. The family account is now view-only."
-            : "This family account is currently view-only.",
+            ? "This trial has ended, so the family account is view-only for now."
+            : "This family account is view-only for now.",
         );
       }
 

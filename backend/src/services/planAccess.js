@@ -191,11 +191,11 @@ export function computeAccess(record = {}) {
   }
 
   if (manualAccessOverride === "force_locked") {
-    return withFlags({ ...base, label: "Locked", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
+    return withFlags({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
   if (accessStatus === "blocked") {
-    return withFlags({ ...base, label: "Locked", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
+    return withFlags({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
   if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {

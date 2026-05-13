@@ -730,11 +730,11 @@ const planAccessFor = (record = {}) => {
   }
 
   if (manualAccessOverride === "force_locked") {
-    return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
+    return finishAccess({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
   if (accessStatus === "blocked") {
-    return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
+    return finishAccess({ ...base, label: "Access paused", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
   if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
@@ -2969,6 +2969,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [subscription, setSubscription] = useState(null);
   const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
   const [isBillingPortalLoading, setIsBillingPortalLoading] = useState(false);
+  const [showBillingPanel, setShowBillingPanel] = useState(false);
   const [promotionCode, setPromotionCode] = useState("");
   const [childCareOptions, setChildCareOptions] = useState([]);
   const [childProfile, setChildProfile] = useState(emptyChildProfile);
@@ -3188,14 +3189,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   );
 
   const selectedFamilyAccess = selectedFamily?.access || planAccessFor(selectedFamily);
+  const isTrialing = selectedFamilyAccess?.reason === "trial";
+  const trialDaysLeft = Number(selectedFamilyAccess?.trialDaysLeft || 0);
+  const showGentleTrialReminder =
+    isTrialing &&
+    selectedFamilyAccess?.canAddLogs &&
+    trialDaysLeft <= 3 &&
+    Date.now() >= (dismissedUpgradeBanners[selectedFamilyId] || 0);
   const upgradeBannerStorageKey = selectedFamilyId
     ? `familytrack:upgrade-banner-dismissed-until:${session?.user?.id || "user"}:${selectedFamilyId}`
     : "";
   const dismissedUpgradeUntil = dismissedUpgradeBanners[selectedFamilyId] || 0;
-  const showTrialUpgradeBanner =
-    selectedFamilyAccess?.reason === "trial" &&
-    selectedFamilyAccess?.canAddLogs &&
-    Date.now() >= dismissedUpgradeUntil;
+  const showTrialUpgradeBanner = showGentleTrialReminder && Date.now() >= dismissedUpgradeUntil;
   const installDeviceType = isIosDevice()
     ? "ios"
     : installPromptEvent
@@ -6709,7 +6714,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     {selectedChild ? childDisplayName(selectedChild) : "Choose child"}
                   </p>
                   <div className="mt-2">
-                    <PlanBadge record={selectedFamily} />
+                    <button
+                      type="button"
+                      onClick={() => setShowBillingPanel(true)}
+                      className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black shadow-sm transition ${
+                        isTrialing
+                          ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
+                          : planBadgeToneClasses[selectedFamilyAccess.tone] ||
+                            planBadgeToneClasses.slate
+                      }`}
+                    >
+                      {isTrialing
+                        ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+                        : selectedFamilyAccess.label}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -6771,27 +6789,123 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       </div>
       ) : null}
 
+      {showBillingPanel && !showPlatformAdmin ? (
+        <div className="fixed inset-0 z-[80] flex items-end bg-slate-950/30 px-3 py-4 sm:items-center sm:justify-center">
+          <div className="w-full max-w-lg rounded-[1.75rem] border border-sky-100 bg-white p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700">
+                  Billing
+                </p>
+                <h2 className="mt-1 text-xl font-black text-slate-950">
+                  FamilyTrack subscription
+                </h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                  Clear subscription details, managed securely through Stripe.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBillingPanel(false)}
+                className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-sm font-black text-slate-600 shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {[
+                ["Current plan", "FamilyTrack Pro"],
+                [
+                  "Status",
+                  isTrialing
+                    ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+                    : selectedFamilyAccess.label,
+                ],
+                [
+                  "Renewal date",
+                  subscription?.currentPeriodEnd
+                    ? new Date(subscription.currentPeriodEnd).toLocaleDateString()
+                    : "Not available yet",
+                ],
+                [
+                  "Storage add-on",
+                  subscription?.documentVault?.override?.status === "paid"
+                    ? "Active"
+                    : subscription?.documentVault?.override?.status === "included"
+                      ? "Included"
+                      : "Optional",
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={label}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                >
+                  <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                    {label}
+                  </p>
+                  <p className="mt-1 text-sm font-black text-slate-950">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3">
+              <p className="text-sm font-bold leading-6 text-sky-950">
+                {isTrialing
+                  ? "You are currently on a 14-day free trial of FamilyTrack Pro."
+                  : "Your FamilyTrack subscription is managed securely by Stripe."}
+              </p>
+              <p className="mt-1 text-sm font-semibold leading-6 text-sky-800">
+                Your subscription will continue at £{publicPricing.familyMonthlyPriceGbp}/month after the trial unless cancelled. Cancel anytime.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={openBillingPortal}
+                disabled={isBillingPortalLoading || !subscription?.stripeCustomerId}
+                className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-black text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isBillingPortalLoading ? "Opening..." : "Manage subscription"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBillingPanel(false);
+                  setShowAdmin(true);
+                  setSettingsTab("account");
+                }}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
+              >
+                Account settings
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {!showAdmin && !showPlatformAdmin && selectedFamilyAccess ? (
         <div className="mx-auto max-w-6xl px-3 pt-3">
           {showTrialUpgradeBanner ? (
             <div className="relative flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 pr-12 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-black text-sky-900">
-                  Trial: {selectedFamilyAccess.trialDaysLeft || 0} day
-                  {selectedFamilyAccess.trialDaysLeft === 1 ? "" : "s"} left
+                  Trial: {trialDaysLeft} day{trialDaysLeft === 1 ? "" : "s"} left
                 </p>
                 <p className="mt-0.5 font-semibold text-sky-700">
-                  Subscribe when you are ready to keep full editing access. FamilyTrack is £
-                  {publicPricing.familyMonthlyPriceGbp}/mo.
+                  A gentle reminder: FamilyTrack continues at £
+                  {publicPricing.familyMonthlyPriceGbp}/month after the trial unless cancelled.
                 </p>
               </div>
               <button
                 type="button"
-                onClick={startCheckout}
-                disabled={isCheckoutLoading}
-                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                onClick={() => setShowBillingPanel(true)}
+                className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white shadow-sm"
               >
-                {isCheckoutLoading ? "Opening..." : "Subscribe"}
+                View billing
               </button>
               <button
                 type="button"
@@ -6807,11 +6921,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             <div className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-black text-amber-900">
-                  Stripe reported a payment issue
+                  Billing needs a quick check
                 </p>
                 <p className="mt-0.5 font-semibold text-amber-800">
-                  Access is still available for now. Please update billing when
-                  possible.
+                  Your existing information is safe. You can keep viewing records, and update billing when convenient.
                 </p>
               </div>
               <button
@@ -7120,9 +7233,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <h3 className="font-bold text-slate-900">Subscription / Plan</h3>
+                    <h3 className="font-bold text-slate-900">Billing and subscription</h3>
                     <p className="mt-1 text-sm font-semibold text-slate-600">
-                      Family plan: £{publicPricing.familyMonthlyPriceGbp}/mo
+                      FamilyTrack Pro: £{publicPricing.familyMonthlyPriceGbp}/month
                       {publicPricing.promoEnabled && publicPricing.promoLabel
                         ? ` · ${publicPricing.promoLabel}`
                         : ""}
@@ -7139,7 +7252,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     <p className="mt-1 text-sm text-slate-600">
                       Plan:{" "}
                       <span className="font-bold text-slate-900">
-                        {subscription?.plan || "free"}
+                        FamilyTrack Pro
                       </span>
                       {" "}- Status:{" "}
                       <span className="font-bold text-slate-900">
@@ -7153,7 +7266,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </p>
                     ) : (
                       <p className="mt-1 text-sm text-slate-600">
-                        Renewal date: not set yet.
+                        Renewal date: not available yet.
                       </p>
                     )}
                     {subscription?.stripeCouponId ? (
@@ -7182,7 +7295,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       />
                     </label>
                     <p className="text-xs font-semibold text-slate-500">
-                      Leave blank to enter a promotion code on Stripe Checkout.
+                      Leave blank to enter a code directly on Stripe Checkout.
                     </p>
                     <div className="flex flex-col gap-2 sm:flex-row">
                     <button
@@ -7191,7 +7304,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       disabled={isCheckoutLoading}
                       className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isCheckoutLoading ? "Opening Stripe..." : "Subscribe with Stripe"}
+                      {isCheckoutLoading ? "Opening Stripe..." : "Open secure checkout"}
                     </button>
                     <button
                       type="button"
@@ -14111,7 +14224,7 @@ function CompleteStripeSetupScreen({
           />
           <div>
             <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700">
-              Complete setup
+              Secure trial setup
             </p>
             <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
               Start your 14-day trial
@@ -14120,9 +14233,9 @@ function CompleteStripeSetupScreen({
         </div>
 
         <p className="mt-5 text-sm font-semibold leading-6 text-slate-600">
-          FamilyTrack uses Stripe to create the trial subscription first. Your
-          card is collected securely, you are not charged during the trial, and
-          the diary unlocks after Stripe confirms setup.
+          FamilyTrack uses Stripe for secure billing. Your card is collected by
+          Stripe, you are not charged during the trial, and your workspace opens
+          once the trial is confirmed.
         </p>
 
         <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 p-4">
@@ -14131,7 +14244,7 @@ function CompleteStripeSetupScreen({
           </p>
               <p className="mt-2 text-xs font-bold leading-5 text-sky-800">
                 We will check your subscription automatically. If you have just
-                completed checkout, tap Refresh status.
+                returned from Stripe, Refresh status will check again.
               </p>
         </div>
 
