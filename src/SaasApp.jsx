@@ -737,10 +737,24 @@ const planAccessFor = (record = {}) => {
     return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
+  if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
+    const label =
+      accessStatus === "active" || accessStatus === "approved"
+        ? "Active"
+        : accessStatus === "free"
+          ? "Free/internal"
+          : accessStatus === "test"
+            ? "Test account"
+            : accessStatus === "internal"
+              ? "Internal"
+              : "Legacy approved";
+    const tone = accessStatus === "active" || accessStatus === "approved" ? "emerald" : "indigo";
+    return finishAccess({ ...base, label, tone, reason: accessStatus }, fullAccessFlags);
+  }
+
   if (
-    hasStripeSubscription &&
-    (["trialing", "active"].includes(effectiveStatus) ||
-      ["trialing", "active"].includes(status))
+    ["trialing", "active"].includes(effectiveStatus) ||
+    ["trialing", "active"].includes(status)
   ) {
     const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return finishAccess(
@@ -4806,9 +4820,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             "We checked Stripe and refreshed your subscription status.",
         );
       }
+      if (session?.user?.isPlatformAdmin && refreshed?.debug) {
+        console.info("Subscription refresh debug", refreshed.debug);
+      }
       return refreshed;
     } catch (caughtError) {
-      if (!silent) setError(caughtError.message);
+      console.error("Subscription refresh failed", caughtError);
+      if (!silent) {
+        setError(
+          caughtError.message ||
+            "Subscription refresh failed. Check the backend logs for details.",
+        );
+      }
       return null;
     } finally {
       setIsCheckoutLoading(false);

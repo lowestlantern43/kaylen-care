@@ -131,10 +131,14 @@ async function loadSubscriptionAccess(familyId) {
   return { ...subscription, access: buildPlanAccess(subscription) };
 }
 
-async function refreshFamilyStripeSubscription(familyId) {
+async function refreshFamilyStripeSubscription(familyId, userId = "") {
   const { rows } = await query(
     `
-      SELECT stripe_customer_id AS "stripeCustomerId"
+      SELECT
+        stripe_customer_id AS "stripeCustomerId",
+        stripe_subscription_id AS "stripeSubscriptionId",
+        COALESCE(billing_status, status, 'none') AS "billingStatus",
+        COALESCE(access_status, 'none') AS "accessStatus"
       FROM subscriptions
       WHERE family_id = $1
       LIMIT 1
@@ -142,32 +146,92 @@ async function refreshFamilyStripeSubscription(familyId) {
     [familyId],
   );
   const stripeCustomerId = rows[0]?.stripeCustomerId || "";
+  const baseDebug = {
+    familyId,
+    userId,
+    hasStripeCustomerId: Boolean(stripeCustomerId),
+    hasStripeSubscriptionId: Boolean(rows[0]?.stripeSubscriptionId),
+    billingStatus: rows[0]?.billingStatus || "none",
+    accessStatus: rows[0]?.accessStatus || "none",
+  };
 
   if (!stripeCustomerId) {
+    const subscription = await loadSubscriptionAccess(familyId);
+    const debug = {
+      ...baseDebug,
+      computedAccess: subscription.access?.computedAccess,
+      reason: subscription.access?.reason,
+    };
+    console.info("Stripe refresh skipped: no Stripe customer.", debug);
     return {
       synced: null,
-      subscription: await loadSubscriptionAccess(familyId),
-      message: "No Stripe customer is linked to this family yet.",
+      subscription,
+      debug,
+      message: subscription.access?.canAddLogs
+        ? "This family has platform access enabled."
+        : "No Stripe customer is linked to this family yet.",
     };
   }
 
-  const stripeSubscriptions = await listStripeCustomerSubscriptions(stripeCustomerId);
-  const latestSubscription = pickUsableFamilySubscription(
-    stripeSubscriptions.data || [],
-  );
-
-  if (!latestSubscription) {
+  let stripeSubscriptions = null;
+  try {
+    stripeSubscriptions = await listStripeCustomerSubscriptions(stripeCustomerId);
+  } catch (error) {
+    const subscription = await loadSubscriptionAccess(familyId);
+    const debug = {
+      ...baseDebug,
+      computedAccess: subscription.access?.computedAccess,
+      reason: subscription.access?.reason,
+      stripeError: error.message,
+    };
+    console.error("Stripe refresh failed.", debug);
     return {
       synced: null,
-      subscription: await loadSubscriptionAccess(familyId),
-      message: "No Stripe subscription was found for this family.",
+      subscription,
+      debug,
+      message: subscription.access?.canAddLogs
+        ? "Stripe sync failed, but this family has platform access enabled."
+        : error.message,
+    };
+  }
+
+  const latestSubscription = pickUsableFamilySubscription(stripeSubscriptions.data || []);
+
+  if (!latestSubscription) {
+    const subscription = await loadSubscriptionAccess(familyId);
+    const debug = {
+      ...baseDebug,
+      computedAccess: subscription.access?.computedAccess,
+      reason: subscription.access?.reason,
+      stripeSubscriptionCount: stripeSubscriptions.data?.length || 0,
+    };
+    console.info("Stripe refresh found no usable subscription.", debug);
+    return {
+      synced: null,
+      subscription,
+      debug,
+      message: subscription.access?.canAddLogs
+        ? "This family has platform access enabled."
+        : "No Stripe subscription was found for this family.",
     };
   }
 
   const synced = await syncSubscriptionFromStripe(latestSubscription, familyId);
+  const subscription = await loadSubscriptionAccess(familyId);
+  const debug = {
+    ...baseDebug,
+    hasStripeSubscriptionId: Boolean(subscription.stripeSubscriptionId),
+    billingStatus: subscription.billingStatus,
+    accessStatus: subscription.accessStatus,
+    computedAccess: subscription.access?.computedAccess,
+    reason: subscription.access?.reason,
+    latestStripeSubscriptionStatus: latestSubscription.status,
+  };
+  console.info("Stripe refresh completed.", debug);
   return {
     synced,
-    subscription: await loadSubscriptionAccess(familyId),
+    subscription,
+    debug,
     message: ["trialing", "active"].includes(latestSubscription.status)
       ? "Stripe subscription is active."
       : `Stripe subscription is ${latestSubscription.status}.`,
@@ -422,7 +486,10 @@ subscriptionsRouter.post(
   "/refresh",
   requireRole("owner"),
   asyncHandler(async (req, res) => {
-    const refreshed = await refreshFamilyStripeSubscription(req.familyMember.family_id);
+    const refreshed = await refreshFamilyStripeSubscription(
+      req.familyMember.family_id,
+      req.user.id,
+    );
     res.json({ data: refreshed, error: null });
   }),
 );

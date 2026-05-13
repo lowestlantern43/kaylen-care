@@ -198,10 +198,24 @@ export function computeAccess(record = {}) {
     return withFlags({ ...base, label: "Locked", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
+  if (["active", "approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
+    const label =
+      accessStatus === "active" || accessStatus === "approved"
+        ? "Active"
+        : accessStatus === "free"
+          ? "Free/internal"
+          : accessStatus === "test"
+            ? "Test account"
+            : accessStatus === "internal"
+              ? "Internal"
+              : "Legacy approved";
+    const tone = accessStatus === "active" || accessStatus === "approved" ? "emerald" : "indigo";
+    return withFlags({ ...base, label, tone, reason: accessStatus }, FULL_ACCESS);
+  }
+
   if (
-    hasStripeSubscription &&
-    (["trialing", "active"].includes(effectiveStatus) ||
-      ["trialing", "active"].includes(status))
+    ["trialing", "active"].includes(effectiveStatus) ||
+    ["trialing", "active"].includes(status)
   ) {
     const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return withFlags(
