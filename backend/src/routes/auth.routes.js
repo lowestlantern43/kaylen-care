@@ -14,6 +14,7 @@ import {
   createSessionToken,
   setSessionCookie,
 } from "../utils/sessions.js";
+import { frontendUrlFromRequest } from "../utils/frontendUrl.js";
 import {
   optionalDate,
   optionalString,
@@ -181,6 +182,7 @@ authRouter.post(
         customerId: customer.id,
         familyId: result.family.id,
         familyName: result.family.name,
+        frontendUrl: frontendUrlFromRequest(req),
       });
       checkoutUrl = checkout.url;
     }

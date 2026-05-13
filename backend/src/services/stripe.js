@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { config } from "../config.js";
 import { badRequest } from "../utils/httpError.js";
+import { safeFrontendUrl } from "../utils/frontendUrl.js";
 
 const stripeApiBaseUrl = "https://api.stripe.com/v1";
 
@@ -97,11 +98,16 @@ export async function createStripeCheckoutSession({
   metadata = {},
   promotionCodeId = "",
   promotionCode = "",
+  frontendUrl = "",
 }) {
   if (!priceId) {
     throw badRequest("Stripe price is not configured yet. Add STRIPE_PRO_MONTHLY_PRICE_ID to the backend environment.");
   }
 
+  const checkoutFrontendUrl = safeFrontendUrl(frontendUrl);
+  const successQueryJoiner = String(successPath || "?billing=success").includes("?")
+    ? "&"
+    : "?";
   const params = new URLSearchParams();
   params.set("mode", "subscription");
   params.set("customer", customerId);
@@ -118,9 +124,9 @@ export async function createStripeCheckoutSession({
   }
   params.set(
     "success_url",
-    `${config.frontendUrl}${successPath || "?billing=success"}&session_id={CHECKOUT_SESSION_ID}`,
+    `${checkoutFrontendUrl}${successPath || "?billing=success"}${successQueryJoiner}session_id={CHECKOUT_SESSION_ID}`,
   );
-  params.set("cancel_url", `${config.frontendUrl}${cancelPath || "?billing=cancelled"}`);
+  params.set("cancel_url", `${checkoutFrontendUrl}${cancelPath || "?billing=cancelled"}`);
   params.set("client_reference_id", familyId);
   params.set("metadata[family_id]", familyId);
   params.set("metadata[family_name]", familyName);
@@ -146,10 +152,10 @@ export async function createStripeCheckoutSession({
   return stripeRequest("/checkout/sessions", { body: params });
 }
 
-export async function createStripeBillingPortalSession(customerId) {
+export async function createStripeBillingPortalSession(customerId, frontendUrl = "") {
   const params = new URLSearchParams();
   params.set("customer", customerId);
-  params.set("return_url", config.frontendUrl);
+  params.set("return_url", safeFrontendUrl(frontendUrl));
 
   return stripeRequest("/billing_portal/sessions", { body: params });
 }

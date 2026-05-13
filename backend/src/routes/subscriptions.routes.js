@@ -12,6 +12,7 @@ import {
 } from "../services/stripe.js";
 import { ensurePlanAccessSchema } from "../services/planAccess.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { frontendUrlFromRequest } from "../utils/frontendUrl.js";
 
 export const subscriptionsRouter = Router({ mergeParams: true });
 
@@ -225,6 +226,7 @@ subscriptionsRouter.post(
       familyName: family.familyName,
       promotionCodeId: promotionCode?.id || "",
       promotionCode: requestedPromotionCode,
+      frontendUrl: frontendUrlFromRequest(req),
     });
 
     res.json({
@@ -314,6 +316,7 @@ subscriptionsRouter.post(
         included_storage_gb: tier.includedStorageGb,
         stripe_price_id: tier.stripePriceId,
       },
+      frontendUrl: frontendUrlFromRequest(req),
     });
 
     res.json({
@@ -352,7 +355,10 @@ subscriptionsRouter.post(
       return;
     }
 
-    const session = await createStripeBillingPortalSession(stripeCustomerId);
+    const session = await createStripeBillingPortalSession(
+      stripeCustomerId,
+      frontendUrlFromRequest(req),
+    );
 
     res.json({
       data: {
