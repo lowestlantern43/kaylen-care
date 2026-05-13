@@ -79,6 +79,8 @@ subscriptionsRouter.get(
           stripe_customer_id AS "stripeCustomerId",
           stripe_subscription_id AS "stripeSubscriptionId",
           status,
+          COALESCE(billing_status, status, 'none') AS "billingStatus",
+          COALESCE(access_status, 'legacy') AS "accessStatus",
           plan,
           trial_started_at AS "trialStartedAt",
           trial_ends_at AS "trialEndsAt",
@@ -214,9 +216,11 @@ subscriptionsRouter.post(
             family_id,
             stripe_customer_id,
             status,
-            plan
+            plan,
+            billing_status,
+            access_status
           )
-          VALUES ($1, $2, 'incomplete', 'family')
+          VALUES ($1, $2, 'incomplete', 'family', 'none', 'locked')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,
@@ -349,10 +353,12 @@ subscriptionsRouter.post(
           INSERT INTO subscriptions (
             family_id,
             stripe_customer_id,
-            status,
-            plan
-          )
-          VALUES ($1, $2, 'incomplete', 'family')
+          status,
+          plan,
+          billing_status,
+          access_status
+        )
+          VALUES ($1, $2, 'incomplete', 'family', 'none', 'locked')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,

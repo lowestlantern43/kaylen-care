@@ -49,6 +49,8 @@ async function loadMemberships(userId) {
         f.name AS "familyName",
         f.platform_status AS "platformStatus",
         COALESCE(s.status, 'incomplete') AS "subscriptionStatus",
+        COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+        COALESCE(s.access_status, 'legacy') AS "accessStatus",
         COALESCE(s.plan, 'family') AS plan,
         s.stripe_subscription_id AS "stripeSubscriptionId",
         s.trial_ends_at AS "trialEndsAt",
@@ -64,7 +66,7 @@ async function loadMemberships(userId) {
         AND fm.deleted_at IS NULL
         AND f.deleted_at IS NULL
         AND f.platform_status <> 'suspended'
-      GROUP BY fm.family_id, fm.role, f.name, f.platform_status, s.status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at, fm.joined_at
+      GROUP BY fm.family_id, fm.role, f.name, f.platform_status, s.status, s.billing_status, s.access_status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at, fm.joined_at
       ORDER BY fm.joined_at ASC
     `,
     [userId],
@@ -136,9 +138,11 @@ authRouter.post(
           INSERT INTO subscriptions (
             family_id,
             status,
-            plan
+            plan,
+            billing_status,
+            access_status
           )
-          VALUES ($1, 'incomplete', 'family')
+          VALUES ($1, 'incomplete', 'family', 'none', 'locked')
         `,
         [family.id],
       );

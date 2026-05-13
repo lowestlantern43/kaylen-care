@@ -17,6 +17,10 @@ export function requirePlanAccess(action) {
       const access = await getFamilyPlanAccess(familyId);
       req.familyPlanAccess = access;
 
+      if (req.user?.is_platform_admin) {
+        return next();
+      }
+
       const flag = actionChecks[action] || actionChecks.write;
       if (!access[flag]) {
         throw forbidden(

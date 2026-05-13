@@ -68,6 +68,8 @@ export async function syncSubscriptionFromStripe(subscription) {
         stripe_subscription_id,
         status,
         plan,
+        billing_status,
+        access_status,
         trial_started_at,
         trial_ends_at,
         current_period_end,
@@ -80,13 +82,15 @@ export async function syncSubscriptionFromStripe(subscription) {
         stripe_discount_amount_off,
         stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
         status = EXCLUDED.status,
         plan = EXCLUDED.plan,
+        billing_status = EXCLUDED.billing_status,
+        access_status = EXCLUDED.access_status,
         trial_started_at = EXCLUDED.trial_started_at,
         trial_ends_at = EXCLUDED.trial_ends_at,
         current_period_end = EXCLUDED.current_period_end,

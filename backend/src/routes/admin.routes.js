@@ -52,7 +52,8 @@ adminRouter.use(
 const memberRoles = ["owner", "parent", "carer", "viewer"];
 const issueStatuses = ["new", "in_progress", "resolved"];
 const planValues = ["trial", "family", "beta", "professional"];
-const statusValues = ["inactive", "trialing", "active", "past_due", "canceled", "cancelled"];
+const statusValues = ["inactive", "trialing", "active", "past_due", "canceled", "cancelled", "unpaid", "incomplete", "incomplete_expired"];
+const accessStatusValues = ["active", "approved", "legacy", "legacy_approved", "free", "internal", "test", "locked", "blocked"];
 const PUBLIC_PRICING_VERSION = "single-plan-2026-05";
 
 function isMissingFeedbackTable(error) {
@@ -620,6 +621,8 @@ async function listArchivedFamilies() {
           u.full_name AS "ownerName",
         u.email AS "ownerEmail",
         COALESCE(s.status, 'inactive') AS "subscriptionStatus",
+        COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+        COALESCE(s.access_status, 'legacy') AS "accessStatus",
         COALESCE(s.plan, 'trial') AS plan,
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
@@ -1569,6 +1572,8 @@ adminRouter.get(
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
           COALESCE(s.status, 'inactive') AS "subscriptionStatus",
+          COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+          COALESCE(s.access_status, 'legacy') AS "accessStatus",
           COALESCE(s.plan, 'trial') AS plan,
           s.trial_ends_at AS "trialEndsAt",
           s.access_paused_at AS "accessPausedAt",
@@ -1598,7 +1603,7 @@ adminRouter.get(
         LEFT JOIN children c ON c.family_id = f.id AND c.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.family_id = f.id AND cl.deleted_at IS NULL
         WHERE f.deleted_at IS NULL
-        GROUP BY f.id, u.full_name, u.email, s.status, s.plan, s.trial_ends_at, s.access_paused_at, s.access_pause_reason
+        GROUP BY f.id, u.full_name, u.email, s.status, s.billing_status, s.access_status, s.plan, s.trial_ends_at, s.access_paused_at, s.access_pause_reason
         ORDER BY f.created_at DESC
         LIMIT 100
       `,
@@ -1640,6 +1645,8 @@ adminRouter.get(
           u.full_name AS "ownerName",
           u.email AS "ownerEmail",
           COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+          COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+          COALESCE(s.access_status, 'legacy') AS "accessStatus",
           COALESCE(s.plan, 'trial') AS plan,
           s.trial_started_at AS "trialStartedAt",
           s.trial_ends_at AS "trialEndsAt",
@@ -2064,6 +2071,12 @@ adminRouter.patch(
       plan,
     );
     const trialEndsAt = optionalString(req.body, "trialEndsAt");
+    const accessStatus = requireEnum(
+      req.body,
+      "accessStatus",
+      accessStatusValues,
+      "Access status",
+    );
     const accessPaused = Boolean(req.body.accessPaused);
     const accessPauseReason = optionalString(req.body, "accessPauseReason") || "";
 
@@ -2082,16 +2095,20 @@ adminRouter.patch(
           family_id,
           plan,
           status,
+          billing_status,
+          access_status,
           trial_started_at,
           trial_ends_at,
           access_paused_at,
           access_pause_reason
         )
-        VALUES ($1, $2, $3, now(), $4, CASE WHEN $5 THEN now() ELSE NULL END, $6)
+        VALUES ($1, $2, $3, $3, $4, now(), $5, CASE WHEN $6 THEN now() ELSE NULL END, $7)
         ON CONFLICT (family_id)
         DO UPDATE SET
           plan = EXCLUDED.plan,
           status = EXCLUDED.status,
+          billing_status = EXCLUDED.billing_status,
+          access_status = EXCLUDED.access_status,
           trial_started_at = COALESCE(subscriptions.trial_started_at, EXCLUDED.trial_started_at),
           trial_ends_at = EXCLUDED.trial_ends_at,
           access_paused_at = EXCLUDED.access_paused_at,
@@ -2100,6 +2117,8 @@ adminRouter.patch(
           family_id AS "familyId",
           plan,
           status AS "subscriptionStatus",
+          billing_status AS "billingStatus",
+          access_status AS "accessStatus",
           trial_started_at AS "trialStartedAt",
           trial_ends_at AS "trialEndsAt",
           access_paused_at AS "accessPausedAt",
@@ -2110,6 +2129,7 @@ adminRouter.patch(
         familyId,
         plan,
         status,
+        accessStatus,
         trialEndsAt || null,
         accessPaused,
         accessPauseReason,
@@ -2121,7 +2141,7 @@ adminRouter.patch(
       entityType: "subscription",
       entityId: familyId,
       action: "platform_plan_updated",
-      metadata: { plan, status, trialEndsAt, accessPaused, accessPauseReason },
+      metadata: { plan, status, accessStatus, trialEndsAt, accessPaused, accessPauseReason },
     });
 
     res.json({
@@ -2698,13 +2718,15 @@ adminRouter.get(
           count(DISTINCT cl.id)::int AS "logCount",
           primary_subscription.plan AS "plan",
           primary_subscription.status AS "subscriptionStatus",
+          primary_subscription.billing_status AS "billingStatus",
+          primary_subscription.access_status AS "accessStatus",
           primary_subscription.trial_ends_at AS "trialEndsAt",
           primary_subscription.access_paused_at AS "accessPausedAt"
         FROM users u
         LEFT JOIN family_members fm ON fm.user_id = u.id AND fm.deleted_at IS NULL
         LEFT JOIN care_logs cl ON cl.created_by_user_id = u.id AND cl.deleted_at IS NULL
         LEFT JOIN LATERAL (
-          SELECT s.plan, s.status, s.trial_ends_at, s.access_paused_at
+          SELECT s.plan, s.status, s.billing_status, s.access_status, s.trial_ends_at, s.access_paused_at
           FROM family_members pfm
           INNER JOIN subscriptions s ON s.family_id = pfm.family_id
           WHERE pfm.user_id = u.id
@@ -2713,7 +2735,7 @@ adminRouter.get(
           LIMIT 1
         ) primary_subscription ON true
         WHERE u.deleted_at IS NULL
-        GROUP BY u.id, primary_subscription.plan, primary_subscription.status, primary_subscription.trial_ends_at, primary_subscription.access_paused_at
+        GROUP BY u.id, primary_subscription.plan, primary_subscription.status, primary_subscription.billing_status, primary_subscription.access_status, primary_subscription.trial_ends_at, primary_subscription.access_paused_at
         ORDER BY u.created_at DESC
         LIMIT 100
       `,
@@ -2774,6 +2796,8 @@ adminRouter.get(
             f.name AS "familyName",
             f.platform_status AS "familyPlatformStatus",
             COALESCE(s.status, 'trialing') AS "subscriptionStatus",
+            COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+            COALESCE(s.access_status, 'legacy') AS "accessStatus",
             COALESCE(s.plan, 'trial') AS plan,
             s.trial_ends_at AS "trialEndsAt",
             s.access_paused_at AS "accessPausedAt"

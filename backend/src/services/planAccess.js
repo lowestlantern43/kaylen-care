@@ -7,6 +7,8 @@ ALTER TABLE subscriptions
   ADD COLUMN IF NOT EXISTS trial_ends_at timestamptz,
   ADD COLUMN IF NOT EXISTS access_paused_at timestamptz,
   ADD COLUMN IF NOT EXISTS access_pause_reason text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS billing_status text,
+  ADD COLUMN IF NOT EXISTS access_status text NOT NULL DEFAULT 'legacy',
   ADD COLUMN IF NOT EXISTS stripe_promotion_code_id text,
   ADD COLUMN IF NOT EXISTS stripe_promotion_code text,
   ADD COLUMN IF NOT EXISTS stripe_coupon_id text,
@@ -44,12 +46,17 @@ SET
     ELSE status
   END,
   trial_started_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_started_at, created_at, now()) ELSE trial_started_at END,
-  trial_ends_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_ends_at, COALESCE(created_at, now()) + interval '30 days') ELSE trial_ends_at END
+  trial_ends_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_ends_at, COALESCE(created_at, now()) + interval '30 days') ELSE trial_ends_at END,
+  billing_status = COALESCE(billing_status, status, 'none'),
+  access_status = COALESCE(NULLIF(access_status, ''), 'legacy')
 WHERE plan IS NULL
    OR trim(plan) = ''
    OR plan = 'free'
    OR status IS NULL
-   OR trim(status) = '';
+   OR trim(status) = ''
+   OR billing_status IS NULL
+   OR access_status IS NULL
+   OR trim(access_status) = '';
 `;
 
 let setupPromise = null;
@@ -107,6 +114,12 @@ export function normaliseStatus(status, plan) {
 export function buildPlanAccess(record = {}) {
   const plan = normalisePlan(record.plan);
   const status = normaliseStatus(record.status || record.subscriptionStatus, plan);
+  const billingStatus = String(
+    record.billingStatus || record.billing_status || status || "none",
+  ).toLowerCase();
+  const accessStatus = String(
+    record.accessStatus || record.access_status || "legacy",
+  ).toLowerCase();
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || null;
   const stripeSubscriptionId =
     record.stripeSubscriptionId || record.stripe_subscription_id || "";
@@ -132,6 +145,19 @@ export function buildPlanAccess(record = {}) {
   const legacyActive =
     !hasStripeSubscription && plan === "family" && status === "active";
   const beta = plan === "beta";
+  const explicitlyAllowed = [
+    "active",
+    "approved",
+    "legacy",
+    "legacy_approved",
+    "free",
+    "internal",
+    "test",
+  ].includes(accessStatus);
+  const explicitlyLocked = ["locked", "blocked"].includes(accessStatus);
+  const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
+    billingStatus,
+  );
 
   let label = "Inactive";
   let tone = "slate";
@@ -142,7 +168,11 @@ export function buildPlanAccess(record = {}) {
   let canAddChild = false;
   let canInviteCarer = false;
 
-  if (paused) {
+  if (explicitlyLocked) {
+    label = "Locked";
+    tone = "rose";
+    reason = "locked";
+  } else if (paused) {
     label = "View only";
     tone = "amber";
     reason = "paused";
@@ -150,6 +180,22 @@ export function buildPlanAccess(record = {}) {
     label = "Beta Tester";
     tone = "indigo";
     reason = "beta";
+    canAddLogs = true;
+    canEditLogs = true;
+    canDeleteLogs = true;
+    canAddChild = true;
+    canInviteCarer = true;
+  } else if (explicitlyAllowed && !explicitlyUnpaid) {
+    label =
+      accessStatus === "free"
+        ? "Free/internal"
+        : accessStatus === "test"
+          ? "Test account"
+          : accessStatus === "internal"
+            ? "Internal"
+            : "Legacy approved";
+    tone = accessStatus === "legacy" || accessStatus === "legacy_approved" ? "emerald" : "indigo";
+    reason = accessStatus;
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
@@ -188,6 +234,8 @@ export function buildPlanAccess(record = {}) {
   return {
     plan,
     status,
+    billingStatus,
+    accessStatus,
     trialEndsAt,
     trialDaysLeft,
     label,
@@ -210,6 +258,8 @@ export async function getFamilyPlanAccess(familyId) {
       SELECT
         COALESCE(s.plan, 'family') AS plan,
         COALESCE(s.status, 'incomplete') AS status,
+        COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+        COALESCE(s.access_status, 'legacy') AS "accessStatus",
         s.stripe_subscription_id AS "stripeSubscriptionId",
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
@@ -221,7 +271,7 @@ export async function getFamilyPlanAccess(familyId) {
       LEFT JOIN family_members fm ON fm.family_id = f.id AND fm.deleted_at IS NULL
       WHERE f.id = $1
         AND f.deleted_at IS NULL
-      GROUP BY f.id, s.plan, s.status, s.trial_ends_at, s.access_paused_at
+      GROUP BY f.id, s.plan, s.status, s.billing_status, s.access_status, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
       LIMIT 1
     `,
     [familyId],

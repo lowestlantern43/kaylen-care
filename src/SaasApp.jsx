@@ -667,6 +667,12 @@ const planAccessFor = (record = {}) => {
   const status = String(
     record.subscriptionStatus || record.status || "incomplete",
   ).toLowerCase();
+  const billingStatus = String(
+    record.billingStatus || record.billing_status || status || "none",
+  ).toLowerCase();
+  const accessStatus = String(
+    record.accessStatus || record.access_status || "legacy",
+  ).toLowerCase();
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || "";
   const stripeSubscriptionId =
     record.stripeSubscriptionId || record.stripe_subscription_id || "";
@@ -678,6 +684,19 @@ const planAccessFor = (record = {}) => {
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
+  const explicitlyAllowed = [
+    "active",
+    "approved",
+    "legacy",
+    "legacy_approved",
+    "free",
+    "internal",
+    "test",
+  ].includes(accessStatus);
+  const explicitlyLocked = ["locked", "blocked"].includes(accessStatus);
+  const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
+    billingStatus,
+  );
   const cancelled = [
     "canceled",
     "cancelled",
@@ -686,6 +705,17 @@ const planAccessFor = (record = {}) => {
     "incomplete_expired",
     "inactive",
   ].includes(status);
+
+  if (explicitlyLocked) {
+    return {
+      label: "Locked",
+      tone: "rose",
+      reason: "locked",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
 
   if (paused) {
     return {
@@ -703,6 +733,27 @@ const planAccessFor = (record = {}) => {
       label: "Beta Tester",
       tone: "indigo",
       reason: "beta",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  if (explicitlyAllowed && !explicitlyUnpaid) {
+    return {
+      label:
+        accessStatus === "free"
+          ? "Free/internal"
+          : accessStatus === "test"
+            ? "Test account"
+            : accessStatus === "internal"
+              ? "Internal"
+              : "Legacy approved",
+      tone:
+        accessStatus === "legacy" || accessStatus === "legacy_approved"
+          ? "emerald"
+          : "indigo",
+      reason: accessStatus,
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
@@ -2801,6 +2852,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       : family.emergency_contacts || [],
     role: family.role,
     subscriptionStatus: family.subscriptionStatus || family.status || "trialing",
+    billingStatus: family.billingStatus || family.billing_status || family.subscriptionStatus || family.status || "none",
+    accessStatus: family.accessStatus || family.access_status || "legacy",
     plan: family.plan || "trial",
     trialEndsAt: family.trialEndsAt || family.trial_ends_at || "",
     accessPausedAt: family.accessPausedAt || family.access_paused_at || "",
@@ -2980,6 +3033,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [platformPlanForm, setPlatformPlanForm] = useState({
     plan: "trial",
     status: "trialing",
+    accessStatus: "legacy",
     trialEndsAt: "",
     accessPaused: false,
   });
@@ -4949,6 +5003,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setPlatformPlanForm({
         plan: detail.family?.plan || "trial",
         status: detail.family?.subscriptionStatus || "trialing",
+        accessStatus: detail.family?.accessStatus || "legacy",
         trialEndsAt: detail.family?.trialEndsAt
           ? String(detail.family.trialEndsAt).slice(0, 10)
           : "",
@@ -5191,6 +5246,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       await api.adminUpdateFamilyPlan(selectedPlatformFamily.family.id, {
         plan: payload.plan,
         status: payload.status,
+        accessStatus: payload.accessStatus || "legacy",
         trialEndsAt: payload.trialEndsAt,
         accessPaused: Boolean(payload.accessPaused),
         accessPauseReason: payload.accessPaused ? "Paused by owner platform" : "",
@@ -6377,7 +6433,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     );
   }
 
-  if (selectedFamilyAccess.reason === "checkout_required") {
+  if (
+    selectedFamilyAccess.reason === "checkout_required" &&
+    !session?.user?.isPlatformAdmin
+  ) {
     return (
       <CompleteStripeSetupScreen
         price={publicPricing.familyMonthlyPriceGbp}
@@ -11197,6 +11256,27 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                 </select>
                               </label>
                               <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
+                                Access override
+                                <select
+                                  className={inputClass}
+                                  value={platformPlanForm.accessStatus}
+                                  onChange={(event) =>
+                                    setPlatformPlanForm((form) => ({
+                                      ...form,
+                                      accessStatus: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  <option value="legacy">Legacy approved</option>
+                                  <option value="active">Active override</option>
+                                  <option value="free">Free/internal</option>
+                                  <option value="internal">Internal account</option>
+                                  <option value="test">Test account</option>
+                                  <option value="locked">Locked</option>
+                                  <option value="blocked">Blocked</option>
+                                </select>
+                              </label>
+                              <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
                                 Trial end date
                                 <input
                                   className={inputClass}
@@ -12388,6 +12468,27 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           <option value="past_due">Past due</option>
                           <option value="cancelled">Cancelled</option>
                           <option value="inactive">Inactive</option>
+                        </select>
+                      </label>
+                      <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">
+                        Access override
+                        <select
+                          className={inputClass}
+                          value={platformPlanForm.accessStatus}
+                          onChange={(event) =>
+                            setPlatformPlanForm((form) => ({
+                              ...form,
+                              accessStatus: event.target.value,
+                            }))
+                          }
+                        >
+                          <option value="legacy">Legacy approved</option>
+                          <option value="active">Active override</option>
+                          <option value="free">Free/internal</option>
+                          <option value="internal">Internal account</option>
+                          <option value="test">Test account</option>
+                          <option value="locked">Locked</option>
+                          <option value="blocked">Blocked</option>
                         </select>
                       </label>
                       <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500 sm:col-span-2">

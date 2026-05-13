@@ -47,6 +47,8 @@ familiesRouter.get(
           f.emergency_contacts AS "emergencyContacts",
           fm.role,
           COALESCE(s.status, 'incomplete') AS "subscriptionStatus",
+          COALESCE(s.billing_status, s.status, 'none') AS "billingStatus",
+          COALESCE(s.access_status, 'legacy') AS "accessStatus",
           COALESCE(s.plan, 'family') AS plan,
           s.stripe_subscription_id AS "stripeSubscriptionId",
           s.trial_ends_at AS "trialEndsAt",
@@ -62,7 +64,7 @@ familiesRouter.get(
         WHERE fm.user_id = $1
           AND fm.deleted_at IS NULL
           AND f.deleted_at IS NULL
-        GROUP BY f.id, fm.role, s.status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
+        GROUP BY f.id, fm.role, s.status, s.billing_status, s.access_status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
         ORDER BY f.created_at ASC
       `,
       [req.user.id],
@@ -117,9 +119,11 @@ familiesRouter.post(
           INSERT INTO subscriptions (
             family_id,
             status,
-            plan
+            plan,
+            billing_status,
+            access_status
           )
-          VALUES ($1, 'incomplete', 'family')
+          VALUES ($1, 'incomplete', 'family', 'none', 'locked')
         `,
         [created.rows[0].id],
       );
