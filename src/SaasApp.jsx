@@ -3194,6 +3194,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     });
   const platformQuickJumpRef = useRef(null);
   const platformSearchInputRef = useRef(null);
+  const subscriptionRefreshAttemptsRef = useRef(new Set());
 
   const clearToast = () => {
     if (toastTimeoutRef.current) {
@@ -3623,6 +3624,21 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       ignore = true;
     };
   }, [selectedFamilyId]);
+
+  useEffect(() => {
+    if (!selectedFamilyId || session?.user?.isPlatformAdmin) return;
+    if (selectedFamilyAccess.reason !== "checkout_required") return;
+    if (!selectedFamily?.stripeCustomerId) return;
+    if (subscriptionRefreshAttemptsRef.current.has(selectedFamilyId)) return;
+
+    subscriptionRefreshAttemptsRef.current.add(selectedFamilyId);
+    refreshSubscriptionStatus({ silent: true });
+  }, [
+    selectedFamilyId,
+    selectedFamily?.stripeCustomerId,
+    selectedFamilyAccess.reason,
+    session?.user?.isPlatformAdmin,
+  ]);
 
   useEffect(() => {
     let ignore = false;
@@ -4793,6 +4809,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       const checkout = await api.createCheckoutSession(selectedFamilyId, {
         promotionCode: promotionCode.trim(),
       });
+      if (checkout.alreadyActive || checkout.subscription?.access?.canAddLogs) {
+        setSubscription(checkout.subscription);
+        const loadedFamilies = await api.listFamilies();
+        setFamilies(loadedFamilies.map(normalizeFamily));
+        setAccountMessage(checkout.message || "Subscription active. Your account is unlocked.");
+        setIsCheckoutLoading(false);
+        return;
+      }
+      if (!checkout.checkoutUrl) {
+        throw new Error(
+          checkout.message ||
+            "Stripe did not return a Checkout link. Please refresh your status.",
+        );
+      }
       window.location.assign(checkout.checkoutUrl);
     } catch (caughtError) {
       setError(caughtError.message);
@@ -4814,6 +4844,32 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       window.location.assign(checkout.checkoutUrl);
     } catch (caughtError) {
       setError(caughtError.message);
+      setIsCheckoutLoading(false);
+    }
+  };
+
+  const refreshSubscriptionStatus = async ({ silent = false } = {}) => {
+    if (!selectedFamilyId) return null;
+
+    setIsCheckoutLoading(true);
+    if (!silent) setError("");
+
+    try {
+      const refreshed = await api.refreshSubscription(selectedFamilyId);
+      if (refreshed?.subscription) setSubscription(refreshed.subscription);
+      const loadedFamilies = await api.listFamilies();
+      setFamilies(loadedFamilies.map(normalizeFamily));
+      if (!silent) {
+        setAccountMessage(
+          refreshed?.message ||
+            "We checked Stripe and refreshed your subscription status.",
+        );
+      }
+      return refreshed;
+    } catch (caughtError) {
+      if (!silent) setError(caughtError.message);
+      return null;
+    } finally {
       setIsCheckoutLoading(false);
     }
   };
@@ -6577,13 +6633,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     selectedFamilyAccess.reason === "checkout_required" &&
     !session?.user?.isPlatformAdmin
   ) {
+    if (selectedFamily?.stripeCustomerId && isCheckoutLoading) {
+      return (
+        <div className="min-h-screen bg-slate-50 px-6 py-10 text-slate-700">
+          <div className="mx-auto max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            Checking your Stripe subscription...
+          </div>
+        </div>
+      );
+    }
     return (
       <CompleteStripeSetupScreen
         price={publicPricing.familyMonthlyPriceGbp}
         error={error}
         isCheckoutLoading={isCheckoutLoading}
         onStartCheckout={startCheckout}
-        onRefresh={() => window.location.reload()}
+        onRefresh={() => refreshSubscriptionStatus()}
         onLogout={onLogout}
       />
     );
@@ -14061,9 +14126,8 @@ function CompleteStripeSetupScreen({
             14-day free trial. £{price}/month after trial unless cancelled.
           </p>
               <p className="mt-2 text-xs font-bold leading-5 text-sky-800">
-                If you have already completed Stripe Checkout, refresh your status
-                after the webhook has confirmed the subscription. Access stays
-                locked until Stripe confirms a trialing or active subscription.
+                We will check your subscription automatically. If you have just
+                completed checkout, tap Refresh status.
               </p>
         </div>
 

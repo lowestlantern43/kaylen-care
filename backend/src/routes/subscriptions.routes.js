@@ -8,11 +8,12 @@ import {
   createStripeCheckoutSession,
   createStripeCustomer,
   findActiveStripePromotionCode,
+  listStripeCustomerSubscriptions,
   normalisePromotionCode,
   retrieveStripeCheckoutSession,
   retrieveStripeSubscription,
 } from "../services/stripe.js";
-import { ensurePlanAccessSchema } from "../services/planAccess.js";
+import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { frontendUrlFromRequest } from "../utils/frontendUrl.js";
@@ -68,6 +69,111 @@ async function getDocumentVaultTier(tierId) {
   return tiers.find((tier) => tier.id === tierId) || null;
 }
 
+function pickUsableFamilySubscription(subscriptions = []) {
+  const familySubscriptions = subscriptions.filter(
+    (item) =>
+      item?.metadata?.add_on !== "document_vault" &&
+      ["trialing", "active", "past_due", "incomplete", "unpaid", "canceled"].includes(
+        item?.status,
+      ),
+  );
+  const priority = {
+    trialing: 0,
+    active: 1,
+    past_due: 2,
+    incomplete: 3,
+    unpaid: 4,
+    canceled: 5,
+  };
+
+  return familySubscriptions.sort((a, b) => {
+    const priorityA = priority[a.status] ?? 99;
+    const priorityB = priority[b.status] ?? 99;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return Number(b.created || 0) - Number(a.created || 0);
+  })[0] || null;
+}
+
+async function loadSubscriptionAccess(familyId) {
+  const { rows } = await query(
+    `
+      SELECT
+        family_id AS "familyId",
+        stripe_customer_id AS "stripeCustomerId",
+        stripe_subscription_id AS "stripeSubscriptionId",
+        status,
+        COALESCE(billing_status, status, 'none') AS "billingStatus",
+        COALESCE(access_status, 'legacy') AS "accessStatus",
+        COALESCE(manual_access_override, 'none') AS "manualAccessOverride",
+        plan,
+        trial_started_at AS "trialStartedAt",
+        trial_ends_at AS "trialEndsAt",
+        access_paused_at AS "accessPausedAt",
+        current_period_end AS "currentPeriodEnd",
+        cancel_at_period_end AS "cancelAtPeriodEnd",
+        stripe_synced_at AS "stripeSyncedAt"
+      FROM subscriptions
+      WHERE family_id = $1
+      LIMIT 1
+    `,
+    [familyId],
+  );
+
+  const subscription = rows[0] || {
+    familyId,
+    status: "incomplete",
+    billingStatus: "none",
+    accessStatus: "legacy",
+    manualAccessOverride: "none",
+    plan: "family",
+  };
+
+  return { ...subscription, access: buildPlanAccess(subscription) };
+}
+
+async function refreshFamilyStripeSubscription(familyId) {
+  const { rows } = await query(
+    `
+      SELECT stripe_customer_id AS "stripeCustomerId"
+      FROM subscriptions
+      WHERE family_id = $1
+      LIMIT 1
+    `,
+    [familyId],
+  );
+  const stripeCustomerId = rows[0]?.stripeCustomerId || "";
+
+  if (!stripeCustomerId) {
+    return {
+      synced: null,
+      subscription: await loadSubscriptionAccess(familyId),
+      message: "No Stripe customer is linked to this family yet.",
+    };
+  }
+
+  const stripeSubscriptions = await listStripeCustomerSubscriptions(stripeCustomerId);
+  const latestSubscription = pickUsableFamilySubscription(
+    stripeSubscriptions.data || [],
+  );
+
+  if (!latestSubscription) {
+    return {
+      synced: null,
+      subscription: await loadSubscriptionAccess(familyId),
+      message: "No Stripe subscription was found for this family.",
+    };
+  }
+
+  const synced = await syncSubscriptionFromStripe(latestSubscription, familyId);
+  return {
+    synced,
+    subscription: await loadSubscriptionAccess(familyId),
+    message: ["trialing", "active"].includes(latestSubscription.status)
+      ? "Stripe subscription is active."
+      : `Stripe subscription is ${latestSubscription.status}.`,
+  };
+}
+
 subscriptionsRouter.get(
   "/",
   requireRole("owner"),
@@ -108,6 +214,10 @@ subscriptionsRouter.get(
       status: "incomplete",
       plan: "family",
     };
+    const subscriptionWithAccess = {
+      ...subscription,
+      access: buildPlanAccess(subscription),
+    };
     const [settings, familyVault, usage] = await Promise.all([
       query(
         `
@@ -142,7 +252,7 @@ subscriptionsRouter.get(
 
     res.json({
       data: {
-        ...subscription,
+        ...subscriptionWithAccess,
         documentVault: {
           settings: {
             enabled: documentVaultSettings.enabled !== false,
@@ -203,6 +313,22 @@ subscriptionsRouter.post(
     const family = rows[0];
     let stripeCustomerId = family.stripeCustomerId;
 
+    if (stripeCustomerId) {
+      const refreshed = await refreshFamilyStripeSubscription(family.familyId);
+      if (refreshed.subscription?.access?.canAddLogs) {
+        res.json({
+          data: {
+            checkoutUrl: null,
+            alreadyActive: true,
+            subscription: refreshed.subscription,
+            message: refreshed.message,
+          },
+          error: null,
+        });
+        return;
+      }
+    }
+
     if (!stripeCustomerId) {
       const customer = await createStripeCustomer({
         email: req.user.email,
@@ -242,9 +368,19 @@ subscriptionsRouter.post(
     res.json({
       data: {
         checkoutUrl: session.url,
+        alreadyActive: false,
       },
       error: null,
     });
+  }),
+);
+
+subscriptionsRouter.post(
+  "/refresh",
+  requireRole("owner"),
+  asyncHandler(async (req, res) => {
+    const refreshed = await refreshFamilyStripeSubscription(req.familyMember.family_id);
+    res.json({ data: refreshed, error: null });
   }),
 );
 

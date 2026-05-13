@@ -304,6 +304,10 @@ export const api = {
       body: JSON.stringify({ email, role }),
     }),
   getSubscription: (familyId) => request(`/families/${familyId}/subscription`),
+  refreshSubscription: (familyId) =>
+    request(`/families/${familyId}/subscription/refresh`, {
+      method: "POST",
+    }),
   notificationConfig: () => request("/notifications/config"),
   notificationSettings: () => request("/notifications/settings"),
   updateNotificationSettings: (payload) =>
