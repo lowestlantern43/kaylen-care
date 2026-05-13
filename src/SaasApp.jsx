@@ -4726,10 +4726,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const startCheckout = async () => {
-    if (!selectedFamilyId) return;
+    if (!session?.user?.id) {
+      setError("You need to be logged in before starting Stripe Checkout.");
+      return;
+    }
+    if (!selectedFamilyId) {
+      setError("No family account is selected for Stripe Checkout.");
+      return;
+    }
 
     setIsCheckoutLoading(true);
     setError("");
+    console.info("Starting Stripe checkout", {
+      userId: session.user.id,
+      familyId: selectedFamilyId,
+      apiBaseUrl: import.meta.env.VITE_API_BASE_URL || "/api",
+    });
 
     try {
       const checkout = await api.createCheckoutSession(selectedFamilyId, {
@@ -4743,14 +4755,17 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         setIsCheckoutLoading(false);
         return;
       }
-      if (!checkout.checkoutUrl) {
+      const checkoutUrl = checkout.url || checkout.checkoutUrl;
+      if (!checkoutUrl) {
         throw new Error(
           checkout.message ||
             "Stripe did not return a Checkout link. Please refresh your status.",
         );
       }
-      window.location.assign(checkout.checkoutUrl);
+      console.info("Redirecting to Stripe checkout", { familyId: selectedFamilyId });
+      window.location.assign(checkoutUrl);
     } catch (caughtError) {
+      console.error("Stripe checkout failed", caughtError);
       setError(caughtError.message);
       setIsCheckoutLoading(false);
     }

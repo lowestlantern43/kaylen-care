@@ -1011,7 +1011,7 @@ adminRouter.get(
           hasDocuments50GbPriceId: Boolean(config.stripeDocuments50GbPriceId),
           hasDocuments100GbPriceId: Boolean(config.stripeDocuments100GbPriceId),
           priceId: config.stripePriceId || null,
-          priceEnv: "STRIPE_PRO_MONTHLY_PRICE_ID",
+          priceEnv: "STRIPE_MAIN_PRICE_ID",
           documentPriceEnvs: [
             "STRIPE_DOCUMENTS_50GB_PRICE_ID",
             "STRIPE_DOCUMENTS_100GB_PRICE_ID",

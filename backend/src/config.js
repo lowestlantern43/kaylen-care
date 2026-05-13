@@ -13,6 +13,7 @@ export const config = {
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripePriceId:
+    process.env.STRIPE_MAIN_PRICE_ID ||
     process.env.STRIPE_PRO_MONTHLY_PRICE_ID ||
     process.env.STRIPE_FAMILY_PRICE_ID ||
     process.env.STRIPE_PRICE_ID ||

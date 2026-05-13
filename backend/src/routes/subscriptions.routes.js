@@ -277,6 +277,27 @@ subscriptionsRouter.post(
   "/checkout",
   requireRole("owner"),
   asyncHandler(async (req, res) => {
+    console.info("Stripe checkout creation requested.", {
+      userId: req.user?.id,
+      familyId: req.familyMember?.family_id,
+      hasStripeKey: Boolean(config.stripeSecretKey),
+      hasPriceId: Boolean(config.stripePriceId),
+      frontendUrl: frontendUrlFromRequest(req),
+    });
+
+    if (!req.user?.id) {
+      throw badRequest("You must be logged in before starting Stripe Checkout.");
+    }
+    if (!req.familyMember?.family_id) {
+      throw badRequest("No family account was selected for Stripe Checkout.");
+    }
+    if (!config.stripeSecretKey) {
+      throw badRequest("Stripe secret key is missing on the backend.");
+    }
+    if (!config.stripePriceId) {
+      throw badRequest("Stripe main subscription price ID is missing. Set STRIPE_MAIN_PRICE_ID.");
+    }
+
     const requestedPromotionCode = normalisePromotionCode(
       req.body?.promotionCode || "",
     );
@@ -311,6 +332,9 @@ subscriptionsRouter.post(
     );
 
     const family = rows[0];
+    if (!family) {
+      throw badRequest("Family account was not found for Stripe Checkout.");
+    }
     let stripeCustomerId = family.stripeCustomerId;
 
     if (stripeCustomerId) {
@@ -370,10 +394,22 @@ subscriptionsRouter.post(
       promotionCodeId: promotionCode?.id || "",
       promotionCode: requestedPromotionCode,
       frontendUrl: frontendUrlFromRequest(req),
+      metadata: {
+        userId: req.user.id,
+      },
+    });
+
+    console.info("Stripe checkout session created.", {
+      userId: req.user.id,
+      familyId: family.familyId,
+      customerId: stripeCustomerId,
+      sessionId: session.id,
+      hasUrl: Boolean(session.url),
     });
 
     res.json({
       data: {
+        url: session.url,
         checkoutUrl: session.url,
         alreadyActive: false,
       },

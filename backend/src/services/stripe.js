@@ -101,7 +101,7 @@ export async function createStripeCheckoutSession({
   frontendUrl = "",
 }) {
   if (!priceId) {
-    throw badRequest("Stripe price is not configured yet. Add STRIPE_PRO_MONTHLY_PRICE_ID to the backend environment.");
+    throw badRequest("Stripe price is not configured yet. Add STRIPE_MAIN_PRICE_ID to the backend environment.");
   }
 
   const checkoutFrontendUrl = safeFrontendUrl(frontendUrl);
