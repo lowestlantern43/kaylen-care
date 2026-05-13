@@ -9,10 +9,14 @@ import {
   createStripeCustomer,
   findActiveStripePromotionCode,
   normalisePromotionCode,
+  retrieveStripeCheckoutSession,
+  retrieveStripeSubscription,
 } from "../services/stripe.js";
 import { ensurePlanAccessSchema } from "../services/planAccess.js";
+import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { frontendUrlFromRequest } from "../utils/frontendUrl.js";
+import { badRequest, forbidden } from "../utils/httpError.js";
 
 export const subscriptionsRouter = Router({ mergeParams: true });
 
@@ -232,6 +236,63 @@ subscriptionsRouter.post(
     res.json({
       data: {
         checkoutUrl: session.url,
+      },
+      error: null,
+    });
+  }),
+);
+
+subscriptionsRouter.post(
+  "/checkout/sync",
+  requireRole("owner"),
+  asyncHandler(async (req, res) => {
+    const sessionId = String(req.body?.sessionId || "").trim();
+    if (!sessionId || !sessionId.startsWith("cs_")) {
+      throw badRequest("Stripe Checkout session ID is missing.");
+    }
+
+    const session = await retrieveStripeCheckoutSession(sessionId);
+    const sessionFamilyId =
+      session.client_reference_id || session.metadata?.family_id || "";
+
+    if (sessionFamilyId !== req.familyMember.family_id) {
+      throw forbidden("That Stripe Checkout session does not belong to this family.");
+    }
+
+    const subscription =
+      typeof session.subscription === "string"
+        ? await retrieveStripeSubscription(session.subscription)
+        : session.subscription;
+    if (!subscription) {
+      throw badRequest("Stripe has not attached a subscription to this Checkout session yet.");
+    }
+
+    const synced = await syncSubscriptionFromStripe(subscription);
+
+    const { rows } = await query(
+      `
+        SELECT
+          family_id AS "familyId",
+          stripe_customer_id AS "stripeCustomerId",
+          stripe_subscription_id AS "stripeSubscriptionId",
+          status,
+          plan,
+          trial_started_at AS "trialStartedAt",
+          trial_ends_at AS "trialEndsAt",
+          access_paused_at AS "accessPausedAt",
+          current_period_end AS "currentPeriodEnd",
+          cancel_at_period_end AS "cancelAtPeriodEnd"
+        FROM subscriptions
+        WHERE family_id = $1
+        LIMIT 1
+      `,
+      [req.familyMember.family_id],
+    );
+
+    res.json({
+      data: {
+        synced,
+        subscription: rows[0] || null,
       },
       error: null,
     });

@@ -115,6 +115,8 @@ export function buildPlanAccess(record = {}) {
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const isStripeTrial =
     hasStripeSubscription && plan === "family" && status === "trialing";
+  const legacyTrial =
+    !hasStripeSubscription && plan === "family" && status === "trialing";
   const cancelled = [
     "canceled",
     "cancelled",
@@ -127,6 +129,8 @@ export function buildPlanAccess(record = {}) {
     hasStripeSubscription &&
     plan === "family" &&
     status === "active";
+  const legacyActive =
+    !hasStripeSubscription && plan === "family" && status === "active";
   const beta = plan === "beta";
 
   let label = "Inactive";
@@ -151,34 +155,34 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (!hasStripeSubscription) {
-    label = "Finish setup";
-    tone = "amber";
-    reason = "checkout_required";
   } else if (cancelled) {
     label = status === "incomplete" ? "Finish setup" : "Subscription inactive";
     tone = status === "incomplete" ? "amber" : "rose";
     reason = status === "incomplete" ? "checkout_required" : "cancelled";
-  } else if (isStripeTrial) {
+  } else if (isStripeTrial || legacyTrial) {
     label = trialDaysLeft > 0
       ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
       : "Trial active";
     tone = "sky";
-    reason = "trial";
+    reason = legacyTrial ? "legacy_trial" : "trial";
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (activePaid) {
-    label = "Active";
+  } else if (activePaid || legacyActive) {
+    label = legacyActive ? "Active legacy account" : "Active";
     tone = "emerald";
-    reason = "active";
+    reason = legacyActive ? "legacy_active" : "active";
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
+  } else if (!hasStripeSubscription) {
+    label = "Finish setup";
+    tone = "amber";
+    reason = "checkout_required";
   }
 
   return {

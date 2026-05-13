@@ -677,6 +677,7 @@ const planAccessFor = (record = {}) => {
     : 0;
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
+  const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
   const cancelled = [
     "canceled",
     "cancelled",
@@ -708,17 +709,6 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (!hasStripeSubscription) {
-    return {
-      label: "Finish setup",
-      tone: "amber",
-      reason: "checkout_required",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
   if (cancelled) {
     return {
       label: status === "incomplete" ? "Finish setup" : "Subscription inactive",
@@ -730,28 +720,39 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (isStripeTrial) {
+  if (isStripeTrial || legacyTrial) {
     return {
       label:
         trialDaysLeft > 0
           ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
           : "Trial active",
       tone: "sky",
-      reason: "trial",
+      reason: legacyTrial ? "legacy_trial" : "trial",
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
     };
   }
 
-  if (hasStripeSubscription && plan === "family" && status === "active") {
+  if (plan === "family" && status === "active") {
     return {
-      label: "Active",
+      label: hasStripeSubscription ? "Active" : "Active legacy account",
       tone: "emerald",
-      reason: "active",
+      reason: hasStripeSubscription ? "active" : "legacy_active",
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
+    };
+  }
+
+  if (!hasStripeSubscription) {
+    return {
+      label: "Finish setup",
+      tone: "amber",
+      reason: "checkout_required",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
     };
   }
 
@@ -3531,9 +3532,54 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     const params = new URLSearchParams(window.location.search);
     const billingResult = params.get("billing");
     const documentVaultResult = params.get("documentVault");
+    const checkoutSessionId = params.get("session_id");
     if (!billingResult && !documentVaultResult) return;
+    if (
+      (billingResult === "success" || documentVaultResult === "success") &&
+      checkoutSessionId &&
+      !selectedFamilyId
+    ) {
+      return;
+    }
 
-    if (billingResult === "success" || documentVaultResult === "success") {
+    const syncCheckoutReturn = async () => {
+      if (!selectedFamilyId) return;
+
+      if ((billingResult === "success" || documentVaultResult === "success") && checkoutSessionId) {
+        try {
+          setIsCheckoutLoading(true);
+          const synced = await api.syncCheckoutSession(selectedFamilyId, {
+            sessionId: checkoutSessionId,
+          });
+          if (synced?.subscription) setSubscription(synced.subscription);
+          setAccountMessage(
+            documentVaultResult === "success"
+              ? "Document Vault has been confirmed by Stripe."
+              : "Your 14-day trial is set up. Welcome to FamilyTrack.",
+          );
+        } catch (caughtError) {
+          setAccountMessage(
+            caughtError.message ||
+              "Stripe is still confirming checkout. Please refresh in a moment.",
+          );
+        } finally {
+          setIsCheckoutLoading(false);
+        }
+      }
+
+      api
+        .getSubscription(selectedFamilyId)
+        .then((loadedSubscription) => setSubscription(loadedSubscription))
+        .catch(() => null);
+      api
+        .listFamilies()
+        .then((loadedFamilies) =>
+          setFamilies(loadedFamilies.map(normalizeFamily)),
+        )
+        .catch(() => null);
+    };
+
+    if ((billingResult === "success" || documentVaultResult === "success") && !checkoutSessionId) {
       setAccountMessage(
         documentVaultResult === "success"
           ? "Thanks - Stripe is confirming the Document Vault add-on. Access will update automatically once payment is confirmed."
@@ -3545,16 +3591,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     }
 
     if (selectedFamilyId) {
-      api
-        .getSubscription(selectedFamilyId)
-        .then((loadedSubscription) => setSubscription(loadedSubscription))
-        .catch(() => null);
-      api
-        .listFamilies()
-        .then((loadedFamilies) =>
-          setFamilies(loadedFamilies.map(normalizeFamily)),
-        )
-        .catch(() => null);
+      syncCheckoutReturn();
     }
 
     window.history.replaceState({}, "", window.location.pathname);

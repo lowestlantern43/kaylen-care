@@ -160,6 +160,14 @@ export async function createStripeBillingPortalSession(customerId, frontendUrl =
   return stripeRequest("/billing_portal/sessions", { body: params });
 }
 
+export async function retrieveStripeCheckoutSession(sessionId) {
+  const encodedSessionId = encodeURIComponent(sessionId);
+  return stripeRequest(
+    `/checkout/sessions/${encodedSessionId}?expand[]=subscription`,
+    { method: "GET" },
+  );
+}
+
 export async function listStripeCustomerSubscriptions(customerId) {
   return stripeRequest(
     `/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=10`,
