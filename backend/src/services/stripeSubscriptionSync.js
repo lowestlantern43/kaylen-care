@@ -13,11 +13,46 @@ function normaliseStripeTimestamp(timestamp) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
 }
 
+async function familyIdFromStripeSubscription(subscription) {
+  const metadataFamilyId = subscription?.metadata?.family_id;
+  if (metadataFamilyId) return metadataFamilyId;
+
+  const customerId =
+    typeof subscription?.customer === "string"
+      ? subscription.customer
+      : subscription?.customer?.id;
+
+  if (!customerId) return "";
+
+  const { rows } = await query(
+    `
+      SELECT family_id AS "familyId"
+      FROM subscriptions
+      WHERE stripe_customer_id = $1
+      ORDER BY created_at DESC NULLS LAST
+      LIMIT 1
+    `,
+    [customerId],
+  );
+
+  return rows[0]?.familyId || "";
+}
+
 export async function syncSubscriptionFromStripe(subscription) {
   await ensurePlanAccessSchema();
 
-  const familyId = subscription?.metadata?.family_id;
-  if (!familyId) return null;
+  const familyId = await familyIdFromStripeSubscription(subscription);
+  if (!familyId) {
+    console.warn("Stripe subscription sync skipped: no family_id metadata or customer mapping.", {
+      subscriptionId: subscription?.id,
+      customerId:
+        typeof subscription?.customer === "string"
+          ? subscription.customer
+          : subscription?.customer?.id,
+      status: subscription?.status,
+    });
+    return null;
+  }
 
   if (subscription.metadata?.add_on === "document_vault") {
     const override = {
@@ -48,6 +83,11 @@ export async function syncSubscriptionFromStripe(subscription) {
       `,
       [JSON.stringify(override), familyId],
     );
+    console.info("Stripe Document Vault add-on synced.", {
+      familyId,
+      subscriptionId: subscription.id,
+      status: subscription.status,
+    });
     return { familyId, status: subscription.status, plan: "document_vault" };
   }
 
@@ -70,6 +110,7 @@ export async function syncSubscriptionFromStripe(subscription) {
         plan,
         billing_status,
         access_status,
+        stripe_synced_at,
         trial_started_at,
         trial_ends_at,
         current_period_end,
@@ -82,7 +123,7 @@ export async function syncSubscriptionFromStripe(subscription) {
         stripe_discount_amount_off,
         stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, now(), $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
@@ -91,6 +132,7 @@ export async function syncSubscriptionFromStripe(subscription) {
         plan = EXCLUDED.plan,
         billing_status = EXCLUDED.billing_status,
         access_status = EXCLUDED.access_status,
+        stripe_synced_at = EXCLUDED.stripe_synced_at,
         trial_started_at = EXCLUDED.trial_started_at,
         trial_ends_at = EXCLUDED.trial_ends_at,
         current_period_end = EXCLUDED.current_period_end,
@@ -132,6 +174,17 @@ export async function syncSubscriptionFromStripe(subscription) {
       discount.stripeDiscountCurrency,
     ],
   );
+
+  console.info("Stripe family subscription synced.", {
+    familyId,
+    subscriptionId: subscription.id,
+    customerId:
+      typeof subscription.customer === "string"
+        ? subscription.customer
+        : subscription.customer?.id,
+    status,
+    plan,
+  });
 
   return { familyId, status, plan };
 }

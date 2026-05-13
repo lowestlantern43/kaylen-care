@@ -72,6 +72,12 @@ Stripe webhooks should post to `/api/stripe/webhook` and include subscription,
 checkout session, and invoice events. Missing Stripe config now shows a clear
 admin/developer error instead of failing silently.
 
+Also set `PUBLIC_APP_URL=https://familytrack.care` in the backend environment so
+Stripe Checkout returns to the live app instead of localhost. Set
+`PLATFORM_ADMIN_EMAILS=owner@example.com` as a comma-separated recovery list for
+owner/admin accounts; these accounts bypass customer billing checks for the
+owner platform.
+
 Owner/admins can adjust public pricing, promo visibility, trial length display,
 and Secure Document Storage tiers from the Owner Platform storage/pricing area.
 Do not put Stripe secret keys or secret webhook values in frontend `VITE_*`

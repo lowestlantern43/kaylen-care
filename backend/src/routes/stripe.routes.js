@@ -1,24 +1,12 @@
 import { Router } from "express";
-import { query } from "../db/pool.js";
 import {
-  extractStripeDiscountInfo,
-  normalisePromotionCode,
   retrieveStripeSubscription,
   verifyStripeWebhookSignature,
 } from "../services/stripe.js";
-import { ensurePlanAccessSchema } from "../services/planAccess.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 
 export const stripeRouter = Router();
-
-function normalisePeriodEnd(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toISOString() : null;
-}
-
-function normaliseStripeTimestamp(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toISOString() : null;
-}
 
 async function updateSubscriptionFromStripe(subscription) {
   await syncSubscriptionFromStripe(subscription);
@@ -46,6 +34,10 @@ stripeRouter.post(
     verifyStripeWebhookSignature(rawBody, req.headers["stripe-signature"]);
 
     const event = JSON.parse(rawBody.toString("utf8"));
+    console.info("Stripe webhook received.", {
+      type: event.type,
+      id: event.id,
+    });
 
     if (
       [
@@ -60,6 +52,12 @@ stripeRouter.post(
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       if (session.mode === "subscription" && session.subscription) {
+        console.info("Stripe checkout completed.", {
+          sessionId: session.id,
+          customerId: session.customer,
+          subscriptionId: session.subscription,
+          familyId: session.client_reference_id || session.metadata?.family_id,
+        });
         const subscription = await retrieveStripeSubscription(session.subscription);
         await updateSubscriptionFromStripe(subscription);
       }

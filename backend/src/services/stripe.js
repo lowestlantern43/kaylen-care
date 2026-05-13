@@ -131,6 +131,7 @@ export async function createStripeCheckoutSession({
   params.set("metadata[family_id]", familyId);
   params.set("metadata[family_name]", familyName);
   params.set("metadata[plan]", plan);
+  if (priceId) params.set("metadata[price_id]", priceId);
   Object.entries(metadata).forEach(([key, value]) => {
     if (value !== null && typeof value !== "undefined" && value !== "") {
       params.set(`metadata[${key}]`, String(value));
@@ -140,6 +141,7 @@ export async function createStripeCheckoutSession({
   params.set("subscription_data[metadata][family_id]", familyId);
   params.set("subscription_data[metadata][family_name]", familyName);
   params.set("subscription_data[metadata][plan]", plan);
+  if (priceId) params.set("subscription_data[metadata][price_id]", priceId);
   Object.entries(metadata).forEach(([key, value]) => {
     if (value !== null && typeof value !== "undefined" && value !== "") {
       params.set(`subscription_data[metadata][${key}]`, String(value));

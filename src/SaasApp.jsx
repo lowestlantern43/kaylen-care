@@ -682,6 +682,8 @@ const planAccessFor = (record = {}) => {
     ? Math.max(0, Math.ceil((trialEndDate.getTime() - Date.now()) / DAY_MS))
     : 0;
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
+  const stripeAllowsAccess =
+    hasStripeSubscription && plan === "family" && ["active", "trialing"].includes(status);
   const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
   const explicitlyAllowed = [
@@ -693,7 +695,8 @@ const planAccessFor = (record = {}) => {
     "internal",
     "test",
   ].includes(accessStatus);
-  const explicitlyLocked = ["locked", "blocked"].includes(accessStatus);
+  const explicitlyLocked =
+    accessStatus === "blocked" || (accessStatus === "locked" && !stripeAllowsAccess);
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -733,6 +736,31 @@ const planAccessFor = (record = {}) => {
       label: "Beta Tester",
       tone: "indigo",
       reason: "beta",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  if (stripeAllowsAccess && status === "trialing") {
+    return {
+      label:
+        trialDaysLeft > 0
+          ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+          : "Trial active",
+      tone: "sky",
+      reason: "trial",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  if (stripeAllowsAccess && status === "active") {
+    return {
+      label: "Active",
+      tone: "emerald",
+      reason: "active",
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
@@ -3166,6 +3194,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const dismissedUpgradeUntil = dismissedUpgradeBanners[selectedFamilyId] || 0;
   const showTrialUpgradeBanner =
     selectedFamilyAccess?.reason === "trial" &&
+    selectedFamilyAccess?.canAddLogs &&
     Date.now() >= dismissedUpgradeUntil;
   const installDeviceType = isIosDevice()
     ? "ios"
@@ -3602,6 +3631,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       if ((billingResult === "success" || documentVaultResult === "success") && checkoutSessionId) {
         try {
           setIsCheckoutLoading(true);
+          setAccountMessage("Checking your Stripe subscription...");
           const synced = await api.syncCheckoutSession(selectedFamilyId, {
             sessionId: checkoutSessionId,
           });
@@ -3627,9 +3657,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         .catch(() => null);
       api
         .listFamilies()
-        .then((loadedFamilies) =>
-          setFamilies(loadedFamilies.map(normalizeFamily)),
-        )
+        .then((loadedFamilies) => {
+          const normalisedFamilies = loadedFamilies.map(normalizeFamily);
+          setFamilies(normalisedFamilies);
+          const refreshedFamily = normalisedFamilies.find(
+            (family) => family.familyId === selectedFamilyId,
+          );
+          if (refreshedFamily?.access?.canAddLogs) {
+            setAccountMessage(
+              documentVaultResult === "success"
+                ? "Document Vault is active."
+                : "Subscription active. Your account is unlocked.",
+            );
+          }
+        })
         .catch(() => null);
     };
 
@@ -12449,6 +12490,16 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           "trialing",
                       ],
                       [
+                        "Billing status",
+                        selectedPlatformFamily.family?.billingStatus ||
+                          selectedPlatformFamily.family?.subscriptionStatus ||
+                          "none",
+                      ],
+                      [
+                        "Access status",
+                        selectedPlatformFamily.family?.accessStatus || "legacy",
+                      ],
+                      [
                         "Renewal",
                         selectedPlatformFamily.family?.currentPeriodEnd
                           ? new Date(
@@ -12460,6 +12511,19 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         "Stripe customer",
                         selectedPlatformFamily.family?.stripeCustomerId ||
                           "Not connected",
+                      ],
+                      [
+                        "Stripe subscription",
+                        selectedPlatformFamily.family?.stripeSubscriptionId ||
+                          "Not connected",
+                      ],
+                      [
+                        "Last Stripe sync",
+                        selectedPlatformFamily.family?.stripeSyncedAt
+                          ? formatPlatformDateTime(
+                              selectedPlatformFamily.family.stripeSyncedAt,
+                            )
+                          : "Not synced yet",
                       ],
                     ].map(([label, value]) => (
                       <div

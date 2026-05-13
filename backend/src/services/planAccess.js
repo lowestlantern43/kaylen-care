@@ -9,6 +9,7 @@ ALTER TABLE subscriptions
   ADD COLUMN IF NOT EXISTS access_pause_reason text NOT NULL DEFAULT '',
   ADD COLUMN IF NOT EXISTS billing_status text,
   ADD COLUMN IF NOT EXISTS access_status text NOT NULL DEFAULT 'legacy',
+  ADD COLUMN IF NOT EXISTS stripe_synced_at timestamptz,
   ADD COLUMN IF NOT EXISTS stripe_promotion_code_id text,
   ADD COLUMN IF NOT EXISTS stripe_promotion_code text,
   ADD COLUMN IF NOT EXISTS stripe_coupon_id text,
@@ -126,6 +127,8 @@ export function buildPlanAccess(record = {}) {
   const paused = Boolean(record.accessPausedAt || record.access_paused_at);
   const trialDaysLeft = daysUntil(trialEndsAt);
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
+  const stripeAllowsAccess =
+    hasStripeSubscription && plan === "family" && ["active", "trialing"].includes(status);
   const isStripeTrial =
     hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial =
@@ -154,7 +157,8 @@ export function buildPlanAccess(record = {}) {
     "internal",
     "test",
   ].includes(accessStatus);
-  const explicitlyLocked = ["locked", "blocked"].includes(accessStatus);
+  const explicitlyLocked =
+    accessStatus === "blocked" || (accessStatus === "locked" && !stripeAllowsAccess);
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -180,6 +184,26 @@ export function buildPlanAccess(record = {}) {
     label = "Beta Tester";
     tone = "indigo";
     reason = "beta";
+    canAddLogs = true;
+    canEditLogs = true;
+    canDeleteLogs = true;
+    canAddChild = true;
+    canInviteCarer = true;
+  } else if (stripeAllowsAccess && status === "trialing") {
+    label = trialDaysLeft > 0
+      ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+      : "Trial active";
+    tone = "sky";
+    reason = "trial";
+    canAddLogs = true;
+    canEditLogs = true;
+    canDeleteLogs = true;
+    canAddChild = true;
+    canInviteCarer = true;
+  } else if (stripeAllowsAccess && status === "active") {
+    label = "Active";
+    tone = "emerald";
+    reason = "active";
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;

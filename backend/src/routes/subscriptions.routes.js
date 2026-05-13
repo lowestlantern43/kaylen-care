@@ -87,6 +87,7 @@ subscriptionsRouter.get(
           access_paused_at AS "accessPausedAt",
           current_period_end AS "currentPeriodEnd",
           cancel_at_period_end AS "cancelAtPeriodEnd",
+          stripe_synced_at AS "stripeSyncedAt",
           stripe_promotion_code_id AS "stripePromotionCodeId",
           stripe_promotion_code AS "stripePromotionCode",
           stripe_coupon_id AS "stripeCouponId",
@@ -280,12 +281,15 @@ subscriptionsRouter.post(
           stripe_customer_id AS "stripeCustomerId",
           stripe_subscription_id AS "stripeSubscriptionId",
           status,
+          COALESCE(billing_status, status, 'none') AS "billingStatus",
+          COALESCE(access_status, 'legacy') AS "accessStatus",
           plan,
           trial_started_at AS "trialStartedAt",
           trial_ends_at AS "trialEndsAt",
           access_paused_at AS "accessPausedAt",
           current_period_end AS "currentPeriodEnd",
-          cancel_at_period_end AS "cancelAtPeriodEnd"
+          cancel_at_period_end AS "cancelAtPeriodEnd",
+          stripe_synced_at AS "stripeSyncedAt"
         FROM subscriptions
         WHERE family_id = $1
         LIMIT 1
