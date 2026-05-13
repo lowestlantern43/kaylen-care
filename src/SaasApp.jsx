@@ -673,8 +673,9 @@ const planAccessFor = (record = {}) => {
   const trialDaysLeft = trialEndDate
     ? Math.max(0, Math.ceil((trialEndDate.getTime() - Date.now()) / DAY_MS))
     : 0;
-  const isTrial = plan === "trial" || status === "trialing";
-  const trialExpired = isTrial && trialDaysLeft <= 0;
+  const isLocalTrial = plan === "trial";
+  const isStripeTrial = plan === "family" && status === "trialing";
+  const trialExpired = isLocalTrial && trialDaysLeft <= 0;
   const cancelled = ["canceled", "cancelled", "unpaid", "incomplete_expired"].includes(status);
   const childCount = Number(record.childCount || record.child_count || 0);
   const memberCount = Number(record.memberCount || record.member_count || 0);
@@ -712,7 +713,21 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (isTrial && !trialExpired) {
+  if (isStripeTrial) {
+    return {
+      label:
+        trialDaysLeft > 0
+          ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+          : "Trial active",
+      tone: "sky",
+      reason: "trial",
+      canAddLogs: true,
+      canAddChild: true,
+      canInviteCarer: true,
+    };
+  }
+
+  if (isLocalTrial && !trialExpired) {
     return {
       label: `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`,
       tone: "sky",
@@ -723,7 +738,7 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (isTrial && trialExpired) {
+  if (isLocalTrial && trialExpired) {
     return {
       label: "View only",
       tone: "amber",
@@ -2030,8 +2045,12 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
 
       if (isSignup && data?.requiresCheckout && data?.family?.id) {
         setIsOpeningCheckout(true);
-        const checkout = await api.createCheckoutSession(data.family.id);
-        window.location.assign(checkout.checkoutUrl);
+        try {
+          const checkout = await api.createCheckoutSession(data.family.id);
+          window.location.assign(checkout.checkoutUrl);
+        } catch {
+          onAuthenticated(data);
+        }
         return;
       }
 
@@ -6332,6 +6351,19 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (selectedFamilyAccess.reason === "checkout_required") {
+    return (
+      <CompleteStripeSetupScreen
+        price={publicPricing.familyMonthlyPriceGbp}
+        error={error}
+        isCheckoutLoading={isCheckoutLoading}
+        onStartCheckout={startCheckout}
+        onRefresh={() => window.location.reload()}
+        onLogout={onLogout}
+      />
     );
   }
 
@@ -13658,6 +13690,80 @@ export default function SaasApp() {
       onLogout={logout}
       publicPricing={publicPricing}
     />
+  );
+}
+
+function CompleteStripeSetupScreen({
+  price,
+  error,
+  isCheckoutLoading,
+  onStartCheckout,
+  onRefresh,
+  onLogout,
+}) {
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-indigo-50 px-5 py-8 text-slate-900">
+      <div className="mx-auto max-w-lg rounded-[2rem] border border-sky-100 bg-white p-6 shadow-xl sm:p-8">
+        <div className="flex items-start gap-4">
+          <img
+            src="/familytrack-care-icon-180.png"
+            alt=""
+            className="h-14 w-14 rounded-2xl border border-sky-100 bg-white shadow-sm"
+          />
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700">
+              Complete setup
+            </p>
+            <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
+              Start your 14-day trial
+            </h1>
+          </div>
+        </div>
+
+        <p className="mt-5 text-sm font-semibold leading-6 text-slate-600">
+          FamilyTrack uses Stripe to create the trial subscription first. Your
+          card is collected securely, you are not charged during the trial, and
+          the diary unlocks after Stripe confirms setup.
+        </p>
+
+        <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 p-4">
+          <p className="text-sm font-black text-sky-950">
+            14-day free trial. £{price}/month after trial unless cancelled.
+          </p>
+          <p className="mt-2 text-xs font-bold leading-5 text-sky-800">
+            If you have already completed Stripe Checkout, refresh your status
+            after the webhook has confirmed the subscription.
+          </p>
+        </div>
+
+        {error ? (
+          <p className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-6 grid gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onStartCheckout}
+            disabled={isCheckoutLoading}
+            className={buttonClass}
+          >
+            {isCheckoutLoading ? "Opening Stripe..." : "Start trial"}
+          </button>
+          <button type="button" onClick={onRefresh} className={secondaryButtonClass}>
+            Refresh status
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onLogout}
+          className="mt-4 text-sm font-black text-slate-500 underline decoration-slate-300 underline-offset-4"
+        >
+          Log out
+        </button>
+      </div>
+    </div>
   );
 }
 

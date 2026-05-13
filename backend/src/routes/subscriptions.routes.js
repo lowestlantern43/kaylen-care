@@ -7,9 +7,7 @@ import {
   createStripeBillingPortalSession,
   createStripeCheckoutSession,
   createStripeCustomer,
-  extractStripeDiscountInfo,
   findActiveStripePromotionCode,
-  listStripeCustomerSubscriptions,
   normalisePromotionCode,
 } from "../services/stripe.js";
 import { ensurePlanAccessSchema } from "../services/planAccess.js";
@@ -24,14 +22,6 @@ subscriptionsRouter.use(
     next();
   }),
 );
-
-function normalisePeriodEnd(timestamp) {
-  return timestamp ? new Date(timestamp * 1000).toISOString() : null;
-}
-
-function getPlanName(subscription) {
-  return subscription.metadata?.plan || "family";
-}
 
 function normaliseDocumentVaultTiers(tiers = []) {
   const cleanTiers = Array.isArray(tiers)
@@ -73,92 +63,6 @@ async function getDocumentVaultTier(tierId) {
   return tiers.find((tier) => tier.id === tierId) || null;
 }
 
-async function syncSubscriptionRowFromStripe(subscription, familyId) {
-  const discount = extractStripeDiscountInfo(subscription);
-  const promotionCode =
-    discount.stripePromotionCode ||
-    normalisePromotionCode(subscription.metadata?.promotion_code || "");
-
-  const { rows } = await query(
-    `
-      UPDATE subscriptions
-      SET
-        stripe_customer_id = $1,
-        stripe_subscription_id = $2,
-        status = $3,
-        plan = $4,
-        current_period_end = $5,
-        cancel_at_period_end = $6,
-        stripe_promotion_code_id = $8,
-        stripe_promotion_code = NULLIF($9, ''),
-        stripe_coupon_id = $10,
-        stripe_coupon_name = $11,
-        stripe_discount_percent_off = $12,
-        stripe_discount_amount_off = $13,
-        stripe_discount_currency = $14
-      WHERE family_id = $7
-      RETURNING
-        family_id AS "familyId",
-        stripe_customer_id AS "stripeCustomerId",
-        stripe_subscription_id AS "stripeSubscriptionId",
-        status,
-        plan,
-        current_period_end AS "currentPeriodEnd",
-        cancel_at_period_end AS "cancelAtPeriodEnd",
-        stripe_promotion_code_id AS "stripePromotionCodeId",
-        stripe_promotion_code AS "stripePromotionCode",
-        stripe_coupon_id AS "stripeCouponId",
-        stripe_coupon_name AS "stripeCouponName",
-        stripe_discount_percent_off AS "stripeDiscountPercentOff",
-        stripe_discount_amount_off AS "stripeDiscountAmountOff",
-        stripe_discount_currency AS "stripeDiscountCurrency"
-    `,
-    [
-      subscription.customer,
-      subscription.id,
-      subscription.status || "inactive",
-      ["active", "trialing", "past_due"].includes(subscription.status)
-        ? "family"
-        : getPlanName(subscription),
-      normalisePeriodEnd(subscription.current_period_end),
-      Boolean(subscription.cancel_at_period_end),
-      familyId,
-      discount.stripePromotionCodeId,
-      promotionCode,
-      discount.stripeCouponId,
-      discount.stripeCouponName,
-      discount.stripeDiscountPercentOff,
-      discount.stripeDiscountAmountOff,
-      discount.stripeDiscountCurrency,
-    ],
-  );
-
-  return rows[0];
-}
-
-async function syncFamilySubscriptionIfNeeded(subscriptionRow) {
-  if (!subscriptionRow?.stripeCustomerId) return subscriptionRow;
-
-  const shouldSync =
-    !subscriptionRow.stripeSubscriptionId ||
-    !["active", "trialing"].includes(subscriptionRow.status);
-
-  if (!shouldSync) return subscriptionRow;
-
-  const subscriptions = await listStripeCustomerSubscriptions(
-    subscriptionRow.stripeCustomerId,
-  );
-  const bestMatch = subscriptions.data?.find((subscription) =>
-    ["active", "trialing", "past_due", "incomplete"].includes(
-      subscription.status,
-    ) && subscription.metadata?.add_on !== "document_vault",
-  );
-
-  if (!bestMatch) return subscriptionRow;
-
-  return syncSubscriptionRowFromStripe(bestMatch, subscriptionRow.familyId);
-}
-
 subscriptionsRouter.get(
   "/",
   requireRole("owner"),
@@ -190,13 +94,11 @@ subscriptionsRouter.get(
       [req.familyMember.family_id],
     );
 
-    const subscription = await syncFamilySubscriptionIfNeeded(
-      rows[0] || {
-        familyId: req.familyMember.family_id,
-        status: "trialing",
-        plan: "trial",
-      },
-    );
+    const subscription = rows[0] || {
+      familyId: req.familyMember.family_id,
+      status: "incomplete",
+      plan: "family",
+    };
     const [settings, familyVault, usage] = await Promise.all([
       query(
         `

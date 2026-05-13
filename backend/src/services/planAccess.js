@@ -112,8 +112,9 @@ export function buildPlanAccess(record = {}) {
   const childCount = Number(record.childCount || record.child_count || 0);
   const memberCount = Number(record.memberCount || record.member_count || 0);
   const trialDaysLeft = daysUntil(trialEndsAt);
-  const isTrial = plan === "trial" || status === "trialing";
-  const trialExpired = isTrial && trialDaysLeft <= 0;
+  const isLocalTrial = plan === "trial";
+  const isStripeTrial = plan === "family" && status === "trialing";
+  const trialExpired = isLocalTrial && trialDaysLeft <= 0;
   const cancelled = ["canceled", "unpaid", "incomplete_expired"].includes(status);
   const activePaid = ["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status);
   const beta = plan === "beta";
@@ -144,7 +145,18 @@ export function buildPlanAccess(record = {}) {
     label = "Cancelled";
     tone = "rose";
     reason = "cancelled";
-  } else if (isTrial && !trialExpired) {
+  } else if (isStripeTrial) {
+    label = trialDaysLeft > 0
+      ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+      : "Trial active";
+    tone = "sky";
+    reason = "trial";
+    canAddLogs = true;
+    canEditLogs = true;
+    canDeleteLogs = true;
+    canAddChild = true;
+    canInviteCarer = true;
+  } else if (isLocalTrial && !trialExpired) {
     label = `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`;
     tone = "sky";
     reason = "trial";
@@ -153,7 +165,7 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = childCount < 1;
     canInviteCarer = memberCount < 2;
-  } else if (isTrial && trialExpired) {
+  } else if (isLocalTrial && trialExpired) {
     label = "View only";
     tone = "amber";
     reason = "expired";

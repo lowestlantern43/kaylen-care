@@ -15,6 +15,10 @@ function normalisePeriodEnd(timestamp) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
 }
 
+function normaliseStripeTimestamp(timestamp) {
+  return timestamp ? new Date(timestamp * 1000).toISOString() : null;
+}
+
 async function updateSubscriptionFromStripe(subscription) {
   await ensurePlanAccessSchema();
 
@@ -69,6 +73,8 @@ async function updateSubscriptionFromStripe(subscription) {
         stripe_subscription_id,
         status,
         plan,
+        trial_started_at,
+        trial_ends_at,
         current_period_end,
         cancel_at_period_end,
         stripe_promotion_code_id,
@@ -79,13 +85,15 @@ async function updateSubscriptionFromStripe(subscription) {
         stripe_discount_amount_off,
         stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10, $11, $12, $13, $14)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
         stripe_subscription_id = EXCLUDED.stripe_subscription_id,
         status = EXCLUDED.status,
         plan = EXCLUDED.plan,
+        trial_started_at = EXCLUDED.trial_started_at,
+        trial_ends_at = EXCLUDED.trial_ends_at,
         current_period_end = EXCLUDED.current_period_end,
         cancel_at_period_end = EXCLUDED.cancel_at_period_end,
         stripe_promotion_code_id = EXCLUDED.stripe_promotion_code_id,
@@ -110,6 +118,8 @@ async function updateSubscriptionFromStripe(subscription) {
       subscription.id,
       status,
       plan,
+      normaliseStripeTimestamp(subscription.trial_start),
+      normaliseStripeTimestamp(subscription.trial_end),
       normalisePeriodEnd(subscription.current_period_end),
       Boolean(subscription.cancel_at_period_end),
       discount.stripePromotionCodeId,
