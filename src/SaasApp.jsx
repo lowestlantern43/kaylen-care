@@ -662,11 +662,40 @@ const asSafeDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
+const fullAccessFlags = {
+  canAddLogs: true,
+  canAddChild: true,
+  canInviteCarer: true,
+};
+
+const noWriteAccessFlags = {
+  canAddLogs: false,
+  canAddChild: false,
+  canInviteCarer: false,
+};
+
+const finishAccess = (base, flags) => {
+  const computedAccess =
+    flags.canAddLogs || flags.canAddChild || flags.canInviteCarer
+      ? "full"
+      : base.reason === "checkout_required"
+        ? "needs_subscription"
+        : base.reason === "locked"
+          ? "locked"
+          : "view_only";
+
+  return {
+    ...base,
+    computedAccess,
+    viewOnly: computedAccess !== "full",
+    ...flags,
+  };
+};
+
 const planAccessFor = (record = {}) => {
   const plan = String(record.plan || "trial").toLowerCase() === "free" ? "trial" : String(record.plan || "trial").toLowerCase();
-  const status = String(
-    record.subscriptionStatus || record.status || "incomplete",
-  ).toLowerCase();
+  const rawStatus = String(record.subscriptionStatus || record.status || "incomplete").toLowerCase();
+  const status = rawStatus === "cancelled" ? "canceled" : rawStatus;
   const billingStatus = String(
     record.billingStatus || record.billing_status || status || "none",
   ).toLowerCase();
@@ -685,178 +714,95 @@ const planAccessFor = (record = {}) => {
     ? Math.max(0, Math.ceil((trialEndDate.getTime() - Date.now()) / DAY_MS))
     : 0;
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
-  const stripeAllowsAccess =
-    hasStripeSubscription && plan === "family" && ["active", "trialing"].includes(status);
-  const billingAllowsAccess =
-    ["active", "trialing"].includes(billingStatus) ||
-    ["active", "trialing"].includes(status);
-  const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
-  const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
-  const explicitlyAllowed = [
-    "force_active",
-    "legacy",
-    "legacy_approved",
-    "free",
-    "internal",
-    "test",
-  ].includes(manualAccessOverride) || [
-    "active",
-    "approved",
-    "legacy",
-    "legacy_approved",
-    "free",
-    "internal",
-    "test",
-  ].includes(accessStatus);
-  const explicitlyLocked =
-    manualAccessOverride === "force_locked" || accessStatus === "blocked";
-  const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
+  const effectiveStatus = billingStatus || status || "none";
+  const base = {
+    plan,
+    status,
     billingStatus,
-  );
-  const cancelled = [
-    "canceled",
-    "cancelled",
-    "unpaid",
-    "incomplete",
-    "incomplete_expired",
-    "inactive",
-  ].includes(status);
-
-  if (explicitlyLocked) {
-    return {
-      label: "Locked",
-      tone: "rose",
-      reason: "locked",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  if (paused) {
-    return {
-      label: "View only",
-      tone: "amber",
-      reason: "paused",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  if (plan === "beta") {
-    return {
-      label: "Beta Tester",
-      tone: "indigo",
-      reason: "beta",
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if ((stripeAllowsAccess || billingAllowsAccess) && (status === "trialing" || billingStatus === "trialing")) {
-    return {
-      label:
-        trialDaysLeft > 0
-          ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-          : "Trial active",
-      tone: "sky",
-      reason: "trial",
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if ((stripeAllowsAccess || billingAllowsAccess) && (status === "active" || billingStatus === "active")) {
-    return {
-      label: "Active",
-      tone: "emerald",
-      reason: "active",
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if (explicitlyAllowed && !explicitlyUnpaid) {
-    return {
-      label:
-        manualAccessOverride === "free" || accessStatus === "free"
-          ? "Free/internal"
-          : manualAccessOverride === "test" || accessStatus === "test"
-            ? "Test account"
-            : manualAccessOverride === "internal" || accessStatus === "internal"
-              ? "Internal"
-              : "Legacy approved",
-      tone:
-        ["legacy", "legacy_approved"].includes(manualAccessOverride) ||
-        accessStatus === "legacy" || accessStatus === "legacy_approved"
-          ? "emerald"
-          : "indigo",
-      reason: manualAccessOverride !== "none" ? manualAccessOverride : accessStatus,
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if (cancelled) {
-    return {
-      label: status === "incomplete" ? "Finish setup" : "Subscription inactive",
-      tone: status === "incomplete" ? "amber" : "rose",
-      reason: status === "incomplete" ? "checkout_required" : "cancelled",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  if (isStripeTrial || legacyTrial) {
-    return {
-      label:
-        trialDaysLeft > 0
-          ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
-          : "Trial active",
-      tone: "sky",
-      reason: legacyTrial ? "legacy_trial" : "trial",
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if (plan === "family" && status === "active") {
-    return {
-      label: hasStripeSubscription ? "Active" : "Active legacy account",
-      tone: "emerald",
-      reason: hasStripeSubscription ? "active" : "legacy_active",
-      canAddLogs: true,
-      canAddChild: true,
-      canInviteCarer: true,
-    };
-  }
-
-  if (!hasStripeSubscription) {
-    return {
-      label: "Finish setup",
-      tone: "amber",
-      reason: "checkout_required",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  return {
-    label: status === "inactive" ? "Inactive" : "View only",
-    tone: status === "inactive" ? "slate" : "amber",
-    reason: status || "inactive",
-    canAddLogs: false,
-    canAddChild: false,
-    canInviteCarer: false,
+    accessStatus,
+    manualAccessOverride,
+    trialEndsAt,
+    trialDaysLeft,
   };
+
+  if (record.isPlatformAdmin || record.is_platform_admin || record.role === "admin") {
+    return finishAccess({ ...base, label: "Admin", tone: "indigo", reason: "admin" }, fullAccessFlags);
+  }
+
+  if (manualAccessOverride === "force_locked") {
+    return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
+  }
+
+  if (["force_active", "legacy", "legacy_approved", "free", "internal", "test"].includes(manualAccessOverride)) {
+    const label =
+      manualAccessOverride === "force_active"
+        ? "Active"
+        : manualAccessOverride === "free"
+          ? "Free/internal"
+          : manualAccessOverride === "test"
+            ? "Test account"
+            : manualAccessOverride === "internal"
+              ? "Internal"
+              : "Legacy approved";
+    return finishAccess({ ...base, label, tone: "emerald", reason: manualAccessOverride }, fullAccessFlags);
+  }
+
+  if (["approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
+    const label =
+      accessStatus === "free"
+          ? "Free/internal"
+          : accessStatus === "test"
+            ? "Test account"
+            : accessStatus === "internal"
+              ? "Internal"
+              : "Legacy approved";
+    return finishAccess({ ...base, label, tone: "emerald", reason: accessStatus }, fullAccessFlags);
+  }
+
+  if (accessStatus === "blocked") {
+    return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
+  }
+
+  if (["trialing", "active"].includes(effectiveStatus) || ["trialing", "active"].includes(status)) {
+    const isTrialing = effectiveStatus === "trialing" || status === "trialing";
+    return finishAccess(
+      {
+        ...base,
+        label: isTrialing
+          ? trialDaysLeft > 0
+            ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
+            : "Trial active"
+          : "Active",
+        tone: isTrialing ? "sky" : "emerald",
+        reason: isTrialing ? "trial" : "active",
+      },
+      fullAccessFlags,
+    );
+  }
+
+  if (paused || ["past_due", "canceled", "cancelled", "unpaid"].includes(effectiveStatus)) {
+    return finishAccess(
+      {
+        ...base,
+        label: "View only",
+        tone: "amber",
+        reason: paused ? "paused" : effectiveStatus,
+      },
+      noWriteAccessFlags,
+    );
+  }
+
+  if (!hasStripeSubscription || ["none", "incomplete", "incomplete_expired", "inactive"].includes(effectiveStatus)) {
+    return finishAccess(
+      { ...base, label: "Finish setup", tone: "amber", reason: "checkout_required" },
+      noWriteAccessFlags,
+    );
+  }
+
+  return finishAccess(
+    { ...base, label: "View only", tone: "amber", reason: effectiveStatus || "inactive" },
+    noWriteAccessFlags,
+  );
 };
 
 function PlanBadge({ record, className = "" }) {
@@ -11597,6 +11543,34 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                 Clear locked override
                               </button>
                             ) : null}
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updatePlatformFamilyPlan({
+                                    accessStatus: "active",
+                                    manualAccessOverride: "force_active",
+                                  })
+                                }
+                                disabled={isPlatformSaving}
+                                className="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-bold text-emerald-700 disabled:opacity-60"
+                              >
+                                Force active
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updatePlatformFamilyPlan({
+                                    accessStatus: "blocked",
+                                    manualAccessOverride: "force_locked",
+                                  })
+                                }
+                                disabled={isPlatformSaving}
+                                className="rounded-xl border border-rose-200 bg-white px-3 py-2 text-sm font-bold text-rose-700 disabled:opacity-60"
+                              >
+                                Force locked
+                              </button>
+                            </div>
                             {selectedPlatformFamily.family.stripeCustomerUrl ? (
                               <a
                                 href={selectedPlatformFamily.family.stripeCustomerUrl}

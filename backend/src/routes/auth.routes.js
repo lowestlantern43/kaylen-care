@@ -148,9 +148,10 @@ authRouter.post(
             status,
             plan,
             billing_status,
-            access_status
+            access_status,
+            manual_access_override
           )
-          VALUES ($1, 'incomplete', 'family', 'none', 'locked')
+          VALUES ($1, 'incomplete', 'family', 'none', 'none', 'none')
         `,
         [family.id],
       );

@@ -346,11 +346,18 @@ subscriptionsRouter.post(
             status,
             plan,
             billing_status,
-            access_status
+            access_status,
+            manual_access_override
           )
-          VALUES ($1, $2, 'incomplete', 'family', 'none', 'locked')
+          VALUES ($1, $2, 'incomplete', 'family', 'none', 'none', 'none')
           ON CONFLICT (family_id)
-          DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
+          DO UPDATE SET
+            stripe_customer_id = EXCLUDED.stripe_customer_id,
+            access_status = CASE
+              WHEN subscriptions.billing_status IN ('trialing', 'active') THEN 'active'
+              ELSE COALESCE(NULLIF(subscriptions.access_status, ''), 'none')
+            END,
+            manual_access_override = COALESCE(NULLIF(subscriptions.manual_access_override, ''), 'none')
         `,
         [family.familyId, stripeCustomerId],
       );
@@ -500,10 +507,11 @@ subscriptionsRouter.post(
             stripe_customer_id,
           status,
           plan,
-          billing_status,
-          access_status
-        )
-          VALUES ($1, $2, 'incomplete', 'family', 'none', 'locked')
+            billing_status,
+            access_status,
+            manual_access_override
+          )
+          VALUES ($1, $2, 'incomplete', 'family', 'none', 'none', 'none')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,

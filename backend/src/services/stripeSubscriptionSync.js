@@ -125,7 +125,7 @@ export async function syncSubscriptionFromStripe(subscription, fallbackFamilyId 
         stripe_discount_amount_off,
         stripe_discount_currency
       )
-      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'locked' END, 'none', now(), $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
+      VALUES ($1, $2, $3, $4, $5, $4, CASE WHEN $4 IN ('active', 'trialing') THEN 'active' ELSE 'none' END, 'none', now(), $6, $7, $8, $9, $10, NULLIF($11, ''), $12, $13, $14, $15, $16)
       ON CONFLICT (family_id)
       DO UPDATE SET
         stripe_customer_id = EXCLUDED.stripe_customer_id,
