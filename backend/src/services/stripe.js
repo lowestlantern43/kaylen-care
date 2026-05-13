@@ -77,7 +77,9 @@ export function extractStripeDiscountInfo(subscription = {}) {
     stripePromotionCodeId:
       typeof promotionCode === "string" ? promotionCode : promotionCode?.id || null,
     stripePromotionCode:
-      typeof promotionCode === "object" ? promotionCode.code || null : null,
+      promotionCode && typeof promotionCode === "object"
+        ? promotionCode.code || null
+        : null,
     stripeCouponId: coupon?.id || null,
     stripeCouponName: coupon?.name || null,
     stripeDiscountPercentOff: coupon?.percent_off ?? null,
