@@ -356,6 +356,8 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  verifyStripeSession: (sessionId) =>
+    request(`/stripe/verify-session?session_id=${encodeURIComponent(sessionId)}`),
   createDocumentVaultCheckoutSession: (familyId, payload = {}) =>
     request(`/families/${familyId}/subscription/document-vault/checkout`, {
       method: "POST",

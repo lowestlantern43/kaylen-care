@@ -733,37 +733,15 @@ const planAccessFor = (record = {}) => {
     return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
-  if (["force_active", "legacy", "legacy_approved", "free", "internal", "test"].includes(manualAccessOverride)) {
-    const label =
-      manualAccessOverride === "force_active"
-        ? "Active"
-        : manualAccessOverride === "free"
-          ? "Free/internal"
-          : manualAccessOverride === "test"
-            ? "Test account"
-            : manualAccessOverride === "internal"
-              ? "Internal"
-              : "Legacy approved";
-    return finishAccess({ ...base, label, tone: "emerald", reason: manualAccessOverride }, fullAccessFlags);
-  }
-
-  if (["approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
-    const label =
-      accessStatus === "free"
-          ? "Free/internal"
-          : accessStatus === "test"
-            ? "Test account"
-            : accessStatus === "internal"
-              ? "Internal"
-              : "Legacy approved";
-    return finishAccess({ ...base, label, tone: "emerald", reason: accessStatus }, fullAccessFlags);
-  }
-
   if (accessStatus === "blocked") {
     return finishAccess({ ...base, label: "Locked", tone: "rose", reason: "locked" }, noWriteAccessFlags);
   }
 
-  if (["trialing", "active"].includes(effectiveStatus) || ["trialing", "active"].includes(status)) {
+  if (
+    hasStripeSubscription &&
+    (["trialing", "active"].includes(effectiveStatus) ||
+      ["trialing", "active"].includes(status))
+  ) {
     const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return finishAccess(
       {
@@ -3639,16 +3617,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     const billingResult = params.get("billing");
     const documentVaultResult = params.get("documentVault");
     const checkoutSessionId = params.get("session_id");
-    if (!billingResult && !documentVaultResult) return;
+    const isBillingSuccessPath = window.location.pathname.replace(/\/$/, "") === "/billing/success";
+    const isBillingCancelPath = window.location.pathname.replace(/\/$/, "") === "/billing/cancelled";
+    if (!billingResult && !documentVaultResult && !isBillingSuccessPath && !isBillingCancelPath) return;
     const syncCheckoutReturn = async () => {
       let syncedFamilyId = selectedFamilyId;
-      if ((billingResult === "success" || documentVaultResult === "success") && checkoutSessionId) {
+      if ((billingResult === "success" || documentVaultResult === "success" || isBillingSuccessPath) && checkoutSessionId) {
         try {
           setIsCheckoutLoading(true);
-          setAccountMessage("Checking your Stripe subscription...");
-          const synced = await api.syncBillingCheckoutSession({
-            sessionId: checkoutSessionId,
-          });
+          setAccountMessage("Activating subscription...");
+          const synced = documentVaultResult === "success"
+            ? await api.syncBillingCheckoutSession({ sessionId: checkoutSessionId })
+            : await api.verifyStripeSession(checkoutSessionId);
           if (synced?.subscription) setSubscription(synced.subscription);
           if (synced?.family?.familyId) {
             syncedFamilyId = synced.family.familyId;
@@ -3660,7 +3640,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           setAccountMessage(
             documentVaultResult === "success"
               ? "Document Vault has been confirmed by Stripe."
-              : "Your 14-day trial is set up. Welcome to FamilyTrack.",
+              : "Subscription active. Your account is unlocked.",
           );
         } catch (caughtError) {
           setAccountMessage(
@@ -3702,14 +3682,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         .catch(() => null);
     };
 
-    if ((billingResult === "success" || documentVaultResult === "success") && !checkoutSessionId) {
+    if ((billingResult === "success" || documentVaultResult === "success" || isBillingSuccessPath) && !checkoutSessionId) {
       setAccountMessage(
         documentVaultResult === "success"
           ? "Thanks - Stripe is confirming the Document Vault add-on. Access will update automatically once payment is confirmed."
           : "Thanks - Stripe is confirming the subscription. Access will update automatically once the payment is confirmed.",
       );
     }
-    if (billingResult === "cancelled" || documentVaultResult === "cancelled") {
+    if (billingResult === "cancelled" || documentVaultResult === "cancelled" || isBillingCancelPath) {
       setAccountMessage("Checkout was cancelled. You can upgrade whenever you are ready.");
     }
 

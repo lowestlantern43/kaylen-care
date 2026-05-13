@@ -194,37 +194,15 @@ export function computeAccess(record = {}) {
     return withFlags({ ...base, label: "Locked", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
-  if (["force_active", "legacy", "legacy_approved", "free", "internal", "test"].includes(manualAccessOverride)) {
-    const label =
-      manualAccessOverride === "force_active"
-        ? "Active"
-        : manualAccessOverride === "free"
-          ? "Free/internal"
-          : manualAccessOverride === "test"
-            ? "Test account"
-            : manualAccessOverride === "internal"
-              ? "Internal"
-              : "Legacy approved";
-    return withFlags({ ...base, label, tone: "emerald", reason: manualAccessOverride }, FULL_ACCESS);
-  }
-
-  if (["approved", "legacy", "legacy_approved", "free", "internal", "test"].includes(accessStatus)) {
-    const label =
-      accessStatus === "free"
-          ? "Free/internal"
-          : accessStatus === "test"
-            ? "Test account"
-            : accessStatus === "internal"
-              ? "Internal"
-              : "Legacy approved";
-    return withFlags({ ...base, label, tone: "emerald", reason: accessStatus }, FULL_ACCESS);
-  }
-
   if (accessStatus === "blocked") {
     return withFlags({ ...base, label: "Locked", tone: "rose", reason: "locked" }, NO_WRITE_ACCESS);
   }
 
-  if (["trialing", "active"].includes(effectiveStatus) || ["trialing", "active"].includes(status)) {
+  if (
+    hasStripeSubscription &&
+    (["trialing", "active"].includes(effectiveStatus) ||
+      ["trialing", "active"].includes(status))
+  ) {
     const isTrialing = effectiveStatus === "trialing" || status === "trialing";
     return withFlags(
       {

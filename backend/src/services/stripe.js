@@ -105,7 +105,7 @@ export async function createStripeCheckoutSession({
   }
 
   const checkoutFrontendUrl = safeFrontendUrl(frontendUrl);
-  const successDestination = successPath || "/billing/success?billing=success";
+  const successDestination = successPath || "/billing/success";
   const cancelDestination = cancelPath || "/billing/cancelled?billing=cancelled";
   const successQueryJoiner = String(successDestination).includes("?")
     ? "&"
