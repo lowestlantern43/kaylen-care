@@ -116,11 +116,9 @@ familiesRouter.post(
           INSERT INTO subscriptions (
             family_id,
             status,
-            plan,
-            trial_started_at,
-            trial_ends_at
+            plan
           )
-          VALUES ($1, 'trialing', 'trial', now(), now() + interval '30 days')
+          VALUES ($1, 'incomplete', 'family')
         `,
         [created.rows[0].id],
       );

@@ -307,15 +307,13 @@ subscriptionsRouter.post(
             family_id,
             stripe_customer_id,
             status,
-            plan,
-            trial_started_at,
-            trial_ends_at
+            plan
           )
-          VALUES ($1, $2, 'trialing', 'trial', now(), now() + ($3::int * interval '1 day'))
+          VALUES ($1, $2, 'incomplete', 'family')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,
-        [family.familyId, stripeCustomerId, config.proTrialDays],
+        [family.familyId, stripeCustomerId],
       );
     }
 
@@ -387,15 +385,13 @@ subscriptionsRouter.post(
             family_id,
             stripe_customer_id,
             status,
-            plan,
-            trial_started_at,
-            trial_ends_at
+            plan
           )
-          VALUES ($1, $2, 'trialing', 'trial', now(), now() + ($3::int * interval '1 day'))
+          VALUES ($1, $2, 'incomplete', 'family')
           ON CONFLICT (family_id)
           DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id
         `,
-        [family.familyId, stripeCustomerId, config.proTrialDays],
+        [family.familyId, stripeCustomerId],
       );
     }
 

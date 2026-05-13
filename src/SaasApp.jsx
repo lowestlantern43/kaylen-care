@@ -734,6 +734,17 @@ const planAccessFor = (record = {}) => {
     };
   }
 
+  if (status === "incomplete") {
+    return {
+      label: "Finish setup",
+      tone: "amber",
+      reason: "checkout_required",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
+
   if (["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status)) {
     return {
       label: status === "past_due" ? "Payment issue" : "Active",
@@ -1995,6 +2006,7 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
   });
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isOpeningCheckout, setIsOpeningCheckout] = useState(false);
 
   const isSignup = mode === "signup";
 
@@ -2015,6 +2027,13 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
             email: form.email,
             password: form.password,
           });
+
+      if (isSignup && data?.requiresCheckout && data?.family?.id) {
+        setIsOpeningCheckout(true);
+        const checkout = await api.createCheckoutSession(data.family.id);
+        window.location.assign(checkout.checkoutUrl);
+        return;
+      }
 
       onAuthenticated(data);
     } catch (caughtError) {
@@ -2044,7 +2063,7 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
             </div>
             <p className="mt-3 text-sm font-medium leading-6 text-slate-600">
               {isSignup
-                ? "Create your family workspace and add your first child."
+                ? "Create your family workspace, then set up your 14-day Stripe trial before using the diary."
                 : "Log in to your family workspace."}
             </p>
           </div>
@@ -2124,11 +2143,13 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
               </p>
             ) : null}
 
-            <button className={buttonClass} disabled={isSubmitting}>
-              {isSubmitting
-                ? "Please wait..."
+            <button className={buttonClass} disabled={isSubmitting || isOpeningCheckout}>
+              {isOpeningCheckout
+                ? "Opening secure checkout..."
+                : isSubmitting
+                  ? "Please wait..."
                 : isSignup
-                  ? "Create family workspace"
+                  ? "Start trial with secure checkout"
                   : "Log in"}
             </button>
           </form>
@@ -5204,6 +5225,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       });
       setPlatformActionMessage("Public pricing updated.");
     } catch (caughtError) {
+      setIsOpeningCheckout(false);
       setError(caughtError.message);
     } finally {
       setIsPlatformSaving(false);

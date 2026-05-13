@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { config } from "../config.js";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -132,13 +131,11 @@ authRouter.post(
             INSERT INTO subscriptions (
               family_id,
               status,
-              plan,
-              trial_started_at,
-              trial_ends_at
+              plan
             )
-            VALUES ($1, 'trialing', 'trial', now(), now() + ($2::int * interval '1 day'))
+            VALUES ($1, 'incomplete', 'family')
           `,
-          [family.id, config.proTrialDays],
+          [family.id],
         );
 
         if (childFirstName) {
@@ -171,8 +168,10 @@ authRouter.post(
     res.status(201).json({
       data: {
         user: publicUser(result.user),
+        memberships: await loadMemberships(result.user.id),
         family: result.family,
         child: result.child,
+        requiresCheckout: Boolean(result.family),
       },
       error: null,
     });

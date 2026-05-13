@@ -157,6 +157,10 @@ export function buildPlanAccess(record = {}) {
     label = "View only";
     tone = "amber";
     reason = "expired";
+  } else if (status === "incomplete") {
+    label = "Finish setup";
+    tone = "amber";
+    reason = "checkout_required";
   } else if (activePaid) {
     label = status === "past_due" ? "Payment issue" : "Active";
     tone = status === "past_due" ? "amber" : "emerald";
