@@ -54,7 +54,7 @@ Required backend variables:
 ```bash
 STRIPE_SECRET_KEY=sk_live_...
 STRIPE_WEBHOOK_SECRET=whsec_...
-STRIPE_PRO_MONTHLY_PRICE_ID=price_...              # FamilyTrack Pro - Monthly - £4.99
+STRIPE_PRO_MONTHLY_PRICE_ID=price_...              # FamilyTrack monthly subscription - £4.99
 STRIPE_DOCUMENTS_50GB_PRICE_ID=price_...           # FamilyTrack Documents - 50GB - £2
 STRIPE_DOCUMENTS_100GB_PRICE_ID=price_...          # FamilyTrack Documents - 100GB - £3
 FAMILYTRACK_PRO_TRIAL_DAYS=14
@@ -64,7 +64,7 @@ FAMILY_PLAN_MONTHLY_PRICE_GBP=4.99
 In Stripe, open **Product catalog**, choose the product/price, and copy the
 Price ID that starts with `price_`. Use:
 
-- `STRIPE_PRO_MONTHLY_PRICE_ID` for **FamilyTrack Pro - Monthly - £4.99**
+- `STRIPE_PRO_MONTHLY_PRICE_ID` for **FamilyTrack monthly subscription - £4.99**
 - `STRIPE_DOCUMENTS_50GB_PRICE_ID` for **FamilyTrack Documents - 50GB - £2**
 - `STRIPE_DOCUMENTS_100GB_PRICE_ID` for **FamilyTrack Documents - 100GB - £3**
 

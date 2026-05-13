@@ -42,7 +42,7 @@
 2. Add Stripe checkout session creation.
 3. Add Stripe billing portal session creation.
 4. Add Stripe webhook verification and subscription table updates.
-5. Add server-side premium access checks.
+5. Add server-side subscription access checks.
 6. Show subscription status and billing action to owners.
 
 ## Phase 6: Files and Exports
@@ -81,7 +81,7 @@ Rules:
 - Every care log query must include `family_id`.
 - When creating a care log, the backend must verify the child belongs to the family.
 - When updating/deleting a care log, the backend must verify the log belongs to the family.
-- Subscription state must be checked server-side for premium-only features.
+- Subscription state must be checked server-side for paid access features.
 - Viewer role cannot create, edit, delete, invite, or manage billing.
 - Carer role cannot manage children, members, or subscriptions.
 - Only owner role can manage billing and member roles.

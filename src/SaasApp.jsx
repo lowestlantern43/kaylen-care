@@ -17,10 +17,10 @@ const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
 const DEFAULT_PUBLIC_PRICING = {
   familyMonthlyPriceGbp: 4.99,
-  proMonthlyPriceGbp: 4.99,
   oneOffEventPriceGbp: 0,
   promoEnabled: false,
   promoLabel: "",
+  promoCode: "",
   trialDays: 14,
   documentVault: {
     enabled: true,
@@ -1535,12 +1535,11 @@ function PublicFooter() {
 function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING }) {
   const page = publicPages["/"];
   const familyPrice = Number(pricing.familyMonthlyPriceGbp || 0);
-  const proPrice = Number(pricing.proMonthlyPriceGbp || familyPrice || 0);
-  const oneOffPrice = Number(pricing.oneOffEventPriceGbp || 0);
   const trialDays = Number(pricing.trialDays || 14);
   const documentVaultTiers = pricing.documentVault?.enabled === false
     ? []
     : pricing.documentVault?.tiers || [];
+  const firstStorageTier = documentVaultTiers[0];
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
@@ -1697,50 +1696,94 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
                 Simple pricing
               </p>
               <h2 className="mt-2 text-3xl font-black tracking-tight text-slate-950">
-                Start free, upgrade when it helps
+                One clear plan, optional document storage
               </h2>
+              <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-600">
+                Start with the full FamilyTrack app. Add secure document storage
+                only if you need it for EHCPs, hospital letters, care plans and
+                other files.
+              </p>
             </div>
             {pricing.promoEnabled && pricing.promoLabel ? (
               <span className="rounded-full bg-emerald-50 px-4 py-2 text-xs font-black uppercase tracking-[0.12em] text-emerald-700">
                 {pricing.promoLabel}
+                {pricing.promoCode ? `: ${pricing.promoCode}` : ""}
               </span>
             ) : null}
           </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-3">
-            <article className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-700">
-                Family plan
-              </p>
-              <p className="mt-2 text-3xl font-black text-slate-950">
-                £{familyPrice}/mo
-              </p>
-              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                {trialDays}-day free trial with card required. Full care tracking,
-                reports, PDF exports, multiple children, sharing and Care Snapshot.
-              </p>
+          <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+            <article className="rounded-[1.75rem] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-5 shadow-sm sm:p-6">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-700">
+                    FamilyTrack subscription
+                  </p>
+                  <p className="mt-3 text-5xl font-black tracking-tight text-slate-950">
+                    £{familyPrice}
+                    <span className="text-lg font-black text-slate-500">/month</span>
+                  </p>
+                  <p className="mt-3 max-w-xl text-sm font-bold leading-6 text-slate-700">
+                    {trialDays}-day free trial. £{familyPrice}/month after trial
+                    unless cancelled. Cancel anytime.
+                  </p>
+                </div>
+                <button type="button" onClick={onStartFree} className={`${buttonClass} sm:w-auto`}>
+                  Start free trial
+                </button>
+              </div>
+              <div className="mt-5 grid gap-2 sm:grid-cols-2">
+                {[
+                  "Full care tracking",
+                  "Medication, food, drink, sleep and toileting",
+                  "Behaviour, health and growth tracking",
+                  "Reports, trends, PDFs and Care Snapshot",
+                  "Multiple children and family sharing",
+                  "Mobile-first logging",
+                ].map((item) => (
+                  <div
+                    key={item}
+                    className="rounded-2xl border border-white/80 bg-white/75 px-3 py-2 text-sm font-bold text-slate-700 shadow-sm"
+                  >
+                    {item}
+                  </div>
+                ))}
+              </div>
             </article>
-            <article className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
+
+            <article className="rounded-[1.75rem] border border-cyan-100 bg-cyan-50 p-5 shadow-sm sm:p-6">
               <p className="text-xs font-black uppercase tracking-[0.14em] text-cyan-700">
+                Optional add-on
+              </p>
+              <h3 className="mt-2 text-2xl font-black text-slate-950">
                 Secure Document Storage
-              </p>
-              <p className="mt-2 text-3xl font-black text-slate-950">
-                from £{documentVaultTiers[0]?.monthlyPriceGbp ?? 0}/mo
-              </p>
+              </h3>
               <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                Optional storage for EHCPs, hospital letters, care plans,
-                medication forms, reports and appointments.
+                Store EHCPs, hospital letters, care plans, medication forms,
+                reports and appointment files when you need extra space.
               </p>
-            </article>
-            <article className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
-              <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700">
-                Professional / future
-              </p>
-              <p className="mt-2 text-3xl font-black text-slate-950">
-                £{proPrice}/mo
-              </p>
-              <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                For future professional or expanded care use. One-off events
-                {oneOffPrice > 0 ? ` from £${oneOffPrice}.` : " can be priced separately."}
+              <div className="mt-4 space-y-2">
+                {(documentVaultTiers.length
+                  ? documentVaultTiers
+                  : firstStorageTier
+                    ? [firstStorageTier]
+                    : []
+                ).map((tier) => (
+                  <div
+                    key={tier.id || tier.label}
+                    className="flex items-center justify-between gap-3 rounded-2xl border border-cyan-100 bg-white px-3 py-3 shadow-sm"
+                  >
+                    <span className="text-sm font-black text-slate-800">
+                      {tier.includedStorageGb}GB
+                    </span>
+                    <span className="text-sm font-black text-cyan-800">
+                      +£{tier.monthlyPriceGbp}/month
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-4 text-xs font-bold leading-5 text-cyan-800">
+                Visible during trial. Uploading is enabled when a storage add-on
+                is active.
               </p>
             </article>
           </div>
@@ -2927,10 +2970,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     });
   const [platformPublicPricingForm, setPlatformPublicPricingForm] = useState({
     familyMonthlyPriceGbp: "4.99",
-    proMonthlyPriceGbp: "4.99",
     oneOffEventPriceGbp: "0",
     promoEnabled: false,
     promoLabel: "",
+    promoCode: "",
     trialDays: "14",
   });
   const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
@@ -4615,10 +4658,10 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       if (publicPricing) {
         setPlatformPublicPricingForm({
           familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 4.99),
-          proMonthlyPriceGbp: String(publicPricing.proMonthlyPriceGbp ?? 4.99),
           oneOffEventPriceGbp: String(publicPricing.oneOffEventPriceGbp ?? 0),
           promoEnabled: Boolean(publicPricing.promoEnabled),
           promoLabel: publicPricing.promoLabel || "",
+          promoCode: publicPricing.promoCode || "",
           trialDays: String(publicPricing.trialDays ?? 14),
         });
       }
@@ -5142,20 +5185,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     try {
       const pricing = await api.adminUpdatePublicPricing({
         familyMonthlyPriceGbp: platformPublicPricingForm.familyMonthlyPriceGbp,
-        proMonthlyPriceGbp: platformPublicPricingForm.proMonthlyPriceGbp,
         oneOffEventPriceGbp: platformPublicPricingForm.oneOffEventPriceGbp,
         promoEnabled: Boolean(platformPublicPricingForm.promoEnabled),
         promoLabel: platformPublicPricingForm.promoLabel,
+        promoCode: platformPublicPricingForm.promoCode,
         trialDays: platformPublicPricingForm.trialDays,
       });
       const overview = await api.adminOverview();
       setPlatformData((current) => ({ ...current, overview }));
       setPlatformPublicPricingForm({
         familyMonthlyPriceGbp: String(pricing.familyMonthlyPriceGbp ?? 4.99),
-        proMonthlyPriceGbp: String(pricing.proMonthlyPriceGbp ?? 4.99),
         oneOffEventPriceGbp: String(pricing.oneOffEventPriceGbp ?? 0),
         promoEnabled: Boolean(pricing.promoEnabled),
         promoLabel: pricing.promoLabel || "",
+        promoCode: pricing.promoCode || "",
         trialDays: String(pricing.trialDays ?? 14),
       });
       setPlatformActionMessage("Public pricing updated.");
@@ -6406,7 +6449,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   {selectedFamilyAccess.trialDaysLeft === 1 ? "" : "s"} left
                 </p>
                 <p className="mt-0.5 font-semibold text-sky-700">
-                  Upgrade when you are ready to keep full editing access. Family plan £
+                  Subscribe when you are ready to keep full editing access. FamilyTrack is £
                   {publicPricing.familyMonthlyPriceGbp}/mo.
                 </p>
               </div>
@@ -6416,7 +6459,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 disabled={isCheckoutLoading}
                 className="rounded-xl bg-sky-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
               >
-                {isCheckoutLoading ? "Opening..." : "Upgrade now"}
+                {isCheckoutLoading ? "Opening..." : "Subscribe"}
               </button>
               <button
                 type="button"
@@ -6435,7 +6478,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   This account is currently view-only
                 </p>
                 <p className="mt-0.5 font-semibold text-amber-800">
-                  Existing logs, reports and Care Snapshot stay available. Upgrade
+                  Existing logs, reports and Care Snapshot stay available. Subscribe
                   to add and edit care records.
                 </p>
               </div>
@@ -6445,7 +6488,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 disabled={isCheckoutLoading}
                 className="rounded-xl bg-amber-700 px-4 py-2 text-sm font-black text-white shadow-sm disabled:opacity-60"
               >
-                {isCheckoutLoading ? "Opening..." : "Upgrade"}
+                {isCheckoutLoading ? "Opening..." : "Subscribe"}
               </button>
             </div>
           ) : null}
@@ -6837,7 +6880,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       disabled={isCheckoutLoading}
                       className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      {isCheckoutLoading ? "Opening Stripe..." : "Upgrade with Stripe"}
+                      {isCheckoutLoading ? "Opening Stripe..." : "Subscribe with Stripe"}
                     </button>
                     <button
                       type="button"
@@ -9207,10 +9250,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                               }))
                             }
                           >
-                            <option value="trial">Trial - 30 days</option>
+                            <option value="trial">Trial</option>
                             <option value="beta">Beta tester</option>
-                            <option value="family">Family plan</option>
-                            <option value="professional">Professional / future</option>
+                            <option value="family">Main subscription</option>
                           </select>
                         </label>
                       </div>
@@ -9430,9 +9472,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-3">
                         {[
-                          ["Family monthly (£)", "familyMonthlyPriceGbp"],
-                          ["Pro monthly (£)", "proMonthlyPriceGbp"],
-                          ["One-off event (£)", "oneOffEventPriceGbp"],
+                          ["Monthly subscription (£)", "familyMonthlyPriceGbp"],
+                          ["One-off/event price text (£)", "oneOffEventPriceGbp"],
                           ["Trial length (days)", "trialDays"],
                         ].map(([label, field]) => (
                           <label
@@ -9456,7 +9497,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           </label>
                         ))}
                       </div>
-                      <div className="mt-3 grid gap-3 md:grid-cols-[auto_1fr] md:items-end">
+                      <div className="mt-3 grid gap-3 md:grid-cols-[auto_1fr_1fr] md:items-end">
                         <label className="flex items-center gap-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
                           <input
                             type="checkbox"
@@ -9480,6 +9521,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                               setPlatformPublicPricingForm((form) => ({
                                 ...form,
                                 promoLabel: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
+                          Coupon / promo code
+                          <input
+                            className="mt-1 min-h-[44px] w-full min-w-0 rounded-xl border border-emerald-100 bg-emerald-50/50 px-3 py-2 text-sm font-bold uppercase normal-case tracking-normal text-slate-900 outline-none focus:ring-2 focus:ring-emerald-100"
+                            placeholder="e.g. BETA50"
+                            value={platformPublicPricingForm.promoCode}
+                            onChange={(event) =>
+                              setPlatformPublicPricingForm((form) => ({
+                                ...form,
+                                promoCode: event.target.value,
                               }))
                             }
                           />
@@ -9823,7 +9878,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         platformData.overview?.stripeSetup?.hasSecretKey,
                       ],
                       [
-                        "Pro monthly price ID",
+                        "Main subscription price ID",
                         platformData.overview?.stripeSetup?.hasPriceId,
                       ],
                       [
@@ -9855,14 +9910,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <div className="mt-4 grid gap-3 lg:grid-cols-3">
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                       <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
-                        FamilyTrack Pro Price ID
+                        Main subscription Price ID
                       </p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-800">
                         {platformData.overview?.stripeSetup?.priceId ||
                           `Add ${platformData.overview?.stripeSetup?.priceEnv || "STRIPE_PRO_MONTHLY_PRICE_ID"}=price_...`}
                       </p>
                       <p className="mt-2 text-xs font-semibold text-slate-500">
-                        Product: FamilyTrack Pro - Monthly - £4.99. Trial:{" "}
+                        Product: FamilyTrack monthly subscription. Trial:{" "}
                         {platformData.overview?.stripeSetup?.trialDays || 14} days.
                       </p>
                     </div>
@@ -11040,9 +11095,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                   }
                                 >
                                   <option value="trial">Trial</option>
-                                  <option value="family">Family</option>
+                                  <option value="family">Main subscription</option>
                                   <option value="beta">Beta</option>
-                                  <option value="professional">Professional</option>
                                 </select>
                               </label>
                               <label className="text-xs font-bold uppercase tracking-[0.14em] text-slate-500">
@@ -12235,9 +12289,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           }
                         >
                           <option value="trial">Trial</option>
-                          <option value="family">Family</option>
+                          <option value="family">Main subscription</option>
                           <option value="beta">Beta</option>
-                          <option value="professional">Professional</option>
                         </select>
                       </label>
                       <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">

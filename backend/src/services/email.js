@@ -18,7 +18,7 @@ function buildEmailHtml({ subject, text }) {
     .split(/\r?\n/)
     .map((line) => line.trimEnd());
   const firstUrl = lines.find((line) => /^https?:\/\//i.test(line.trim()));
-  const iconUrl = `${config.frontendUrl.replace(/\/$/, "")}/familytrack-care-icon-180.png`;
+  const iconUrl = config.emailLogoUrl;
   const bodyHtml = lines
     .map((line) => {
       const trimmed = line.trim();
@@ -54,7 +54,7 @@ function buildEmailHtml({ subject, text }) {
                     <table role="presentation" cellspacing="0" cellpadding="0">
                       <tr>
                         <td style="vertical-align:middle">
-                          <img src="${escapeHtml(iconUrl)}" alt="FamilyTrack" width="44" height="44" style="display:block;border-radius:14px;border:1px solid #bfdbfe;background:#ffffff">
+                          <img src="${escapeHtml(iconUrl)}" alt="FamilyTrack care icon" width="44" height="44" style="display:block;width:44px;height:44px;border-radius:14px;border:1px solid #bfdbfe;background:#ffffff;outline:none;text-decoration:none">
                         </td>
                         <td style="vertical-align:middle;padding-left:12px">
                           <div style="color:#0369a1;font-weight:900;font-size:14px;letter-spacing:.12em;text-transform:uppercase">

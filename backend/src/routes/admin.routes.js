@@ -142,10 +142,10 @@ async function ensurePublicPricingSettings() {
     [
       JSON.stringify({
         familyMonthlyPriceGbp: config.familyPlanMonthlyPriceGbp,
-        proMonthlyPriceGbp: config.familyPlanMonthlyPriceGbp,
         oneOffEventPriceGbp: 0,
         promoEnabled: false,
         promoLabel: "",
+        promoCode: "",
         trialDays: config.proTrialDays,
       }),
     ],
@@ -157,14 +157,12 @@ function normalisePublicPricingSettings(value = {}) {
     familyMonthlyPriceGbp: Number.isFinite(Number(value.familyMonthlyPriceGbp))
       ? Math.max(0, Number(value.familyMonthlyPriceGbp))
       : config.familyPlanMonthlyPriceGbp,
-    proMonthlyPriceGbp: Number.isFinite(Number(value.proMonthlyPriceGbp))
-      ? Math.max(0, Number(value.proMonthlyPriceGbp))
-      : config.familyPlanMonthlyPriceGbp,
     oneOffEventPriceGbp: Number.isFinite(Number(value.oneOffEventPriceGbp))
       ? Math.max(0, Number(value.oneOffEventPriceGbp))
       : 0,
     promoEnabled: value.promoEnabled === true,
     promoLabel: typeof value.promoLabel === "string" ? value.promoLabel.trim() : "",
+    promoCode: typeof value.promoCode === "string" ? value.promoCode.trim() : "",
     trialDays: Number.isFinite(Number(value.trialDays))
       ? Math.max(0, Number(value.trialDays))
       : config.proTrialDays,
@@ -1100,10 +1098,10 @@ adminRouter.patch(
   asyncHandler(async (req, res) => {
     const value = normalisePublicPricingSettings({
       familyMonthlyPriceGbp: req.body?.familyMonthlyPriceGbp,
-      proMonthlyPriceGbp: req.body?.proMonthlyPriceGbp,
       oneOffEventPriceGbp: req.body?.oneOffEventPriceGbp,
       promoEnabled: Boolean(req.body?.promoEnabled),
       promoLabel: optionalString(req.body, "promoLabel"),
+      promoCode: optionalString(req.body, "promoCode"),
       trialDays: req.body?.trialDays,
     });
 

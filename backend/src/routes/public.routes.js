@@ -10,14 +10,12 @@ function normalisePublicPricing(value = {}) {
     familyMonthlyPriceGbp: Number.isFinite(Number(value.familyMonthlyPriceGbp))
       ? Number(value.familyMonthlyPriceGbp)
       : config.familyPlanMonthlyPriceGbp,
-    proMonthlyPriceGbp: Number.isFinite(Number(value.proMonthlyPriceGbp))
-      ? Number(value.proMonthlyPriceGbp)
-      : config.familyPlanMonthlyPriceGbp,
     oneOffEventPriceGbp: Number.isFinite(Number(value.oneOffEventPriceGbp))
       ? Number(value.oneOffEventPriceGbp)
       : 0,
     promoEnabled: value.promoEnabled === true,
     promoLabel: typeof value.promoLabel === "string" ? value.promoLabel : "",
+    promoCode: typeof value.promoCode === "string" ? value.promoCode : "",
     trialDays: Number.isFinite(Number(value.trialDays))
       ? Number(value.trialDays)
       : config.proTrialDays,

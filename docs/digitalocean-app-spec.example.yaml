@@ -83,6 +83,10 @@ services:
         value: "14"
         scope: RUN_TIME
         type: GENERAL
+      - key: EMAIL_LOGO_URL
+        value: https://familytrack.care/familytrack-care-icon-180.png
+        scope: RUN_TIME
+        type: GENERAL
 
 static_sites:
   - name: web

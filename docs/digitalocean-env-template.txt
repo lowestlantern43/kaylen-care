@@ -20,6 +20,7 @@ STRIPE_PRO_MONTHLY_PRICE_ID=replace-with-familytrack-pro-monthly-price-id
 STRIPE_DOCUMENTS_50GB_PRICE_ID=replace-with-documents-50gb-price-id
 STRIPE_DOCUMENTS_100GB_PRICE_ID=replace-with-documents-100gb-price-id
 FAMILYTRACK_PRO_TRIAL_DAYS=14
+EMAIL_LOGO_URL=https://familytrack.care/familytrack-care-icon-180.png
 DO_SPACES_KEY=replace-with-your-spaces-access-key
 DO_SPACES_SECRET=replace-with-your-spaces-secret-key
 DO_SPACES_BUCKET=replace-with-your-spaces-bucket

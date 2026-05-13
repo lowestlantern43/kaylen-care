@@ -26,6 +26,9 @@ export const config = {
   proTrialDays: Number(process.env.FAMILYTRACK_PRO_TRIAL_DAYS || 14),
   supportEmail: process.env.SUPPORT_EMAIL || "hello@familytrack.care",
   emailFrom: process.env.EMAIL_FROM || "FamilyTrack <hello@familytrack.care>",
+  emailLogoUrl:
+    process.env.EMAIL_LOGO_URL ||
+    "https://familytrack.care/familytrack-care-icon-180.png",
   emailProvider: process.env.EMAIL_PROVIDER || "resend",
   resendApiKey: process.env.RESEND_API_KEY || "",
   emailWebhookUrl: process.env.EMAIL_WEBHOOK_URL || "",
