@@ -3657,10 +3657,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               : "Subscription active. Your account is unlocked.",
           );
         } catch (caughtError) {
-          setAccountMessage(
+          const message =
             caughtError.message ||
-              "Stripe is still confirming checkout. Please refresh in a moment.",
-          );
+            "Stripe is still confirming checkout. Please refresh in a moment.";
+          console.error("Stripe checkout return verification failed", {
+            message,
+            status: caughtError.status,
+            code: caughtError.code,
+            url: caughtError.url,
+            details: caughtError.details,
+          });
+          setError(message);
+          setAccountMessage(message);
         } finally {
           setIsCheckoutLoading(false);
         }

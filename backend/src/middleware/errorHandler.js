@@ -33,7 +33,9 @@ export function errorHandler(error, req, res, next) {
     data: null,
     error: {
       code: "server_error",
-      message: req.user?.is_platform_admin || req.originalUrl?.startsWith("/api/stripe")
+      message: req.user?.is_platform_admin ||
+        req.originalUrl?.startsWith("/api/stripe") ||
+        req.originalUrl?.startsWith("/stripe")
         ? error.message || "Something went wrong."
         : "Something went wrong.",
     },

@@ -21,7 +21,12 @@ async function request(path, options = {}) {
   if (!response.ok) {
     const message =
       payload?.error?.message || "Something went wrong. Please try again.";
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    error.code = payload?.error?.code || "request_failed";
+    error.details = payload?.error?.details || null;
+    error.url = `${API_BASE_URL}${path}`;
+    throw error;
   }
 
   return payload.data;
