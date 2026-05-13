@@ -684,6 +684,9 @@ const planAccessFor = (record = {}) => {
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const stripeAllowsAccess =
     hasStripeSubscription && plan === "family" && ["active", "trialing"].includes(status);
+  const billingAllowsAccess =
+    ["active", "trialing"].includes(billingStatus) ||
+    ["active", "trialing"].includes(status);
   const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial = !hasStripeSubscription && plan === "family" && status === "trialing";
   const explicitlyAllowed = [
@@ -696,7 +699,8 @@ const planAccessFor = (record = {}) => {
     "test",
   ].includes(accessStatus);
   const explicitlyLocked =
-    accessStatus === "blocked" || (accessStatus === "locked" && !stripeAllowsAccess);
+    accessStatus === "blocked" ||
+    (accessStatus === "locked" && !stripeAllowsAccess && !billingAllowsAccess);
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -742,7 +746,7 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (stripeAllowsAccess && status === "trialing") {
+  if ((stripeAllowsAccess || billingAllowsAccess) && (status === "trialing" || billingStatus === "trialing")) {
     return {
       label:
         trialDaysLeft > 0
@@ -756,7 +760,7 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (stripeAllowsAccess && status === "active") {
+  if ((stripeAllowsAccess || billingAllowsAccess) && (status === "active" || billingStatus === "active")) {
     return {
       label: "Active",
       tone: "emerald",
@@ -1571,6 +1575,20 @@ const emptyImportantEvent = {
   actionTaken: "",
   outcome: "",
 };
+
+const normalisePlatformFamilyDetail = (detail = {}) => ({
+  family: detail?.family || null,
+  members: Array.isArray(detail?.members) ? detail.members.filter(Boolean) : [],
+  children: Array.isArray(detail?.children) ? detail.children.filter(Boolean) : [],
+  recentLogs: Array.isArray(detail?.recentLogs)
+    ? detail.recentLogs.filter(Boolean)
+    : [],
+  auditLogs: Array.isArray(detail?.auditLogs)
+    ? detail.auditLogs.filter(Boolean)
+    : [],
+  issues: Array.isArray(detail?.issues) ? detail.issues.filter(Boolean) : [],
+  documentStorage: detail?.documentStorage || null,
+});
 
 function PublicNav({ onStartFree, onLogin }) {
   return (
@@ -5066,7 +5084,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     setPlatformActionMessage("");
 
     try {
-      const detail = await api.adminFamilyDetail(familyId);
+      const detail = normalisePlatformFamilyDetail(
+        await api.adminFamilyDetail(familyId),
+      );
       setSelectedPlatformFamily(detail);
       setPlatformFamilyDetailTab((current) => current || "overview");
       setPlatformPlanForm({
@@ -5129,7 +5149,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       const detail = await api.adminFamilyDetail(familyId);
       setPlatformSnapshot({
         source: "family",
-        family: detail.family,
+        family: detail.family || null,
         members: detail.members || [],
         children: detail.children || [],
         recentLogs: detail.recentLogs || [],
@@ -5210,7 +5230,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     setError("");
 
     try {
-      setPlatformViewAsFamily(await api.adminFamilyDetail(familyId));
+      setPlatformViewAsFamily(
+        normalisePlatformFamilyDetail(await api.adminFamilyDetail(familyId)),
+      );
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -12223,6 +12245,37 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           }}
         >
           <section className="ml-auto flex h-full w-full max-w-4xl flex-col overflow-hidden rounded-[1.5rem] border border-indigo-100 bg-white shadow-2xl">
+            {!selectedPlatformFamily.family ? (
+              <div className="flex h-full flex-col">
+                <div className="border-b border-slate-100 bg-white px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[10px] font-black uppercase tracking-[0.16em] text-amber-700">
+                        Owner platform
+                      </p>
+                      <h3 className="text-lg font-black text-slate-950">
+                        Missing family record
+                      </h3>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPlatformFamily(null)}
+                      className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4">
+                  <AdminEmptyState
+                    title="This admin record is incomplete"
+                    message="The family detail could not be loaded. This can happen with legacy or orphaned data. The owner platform will keep running so you can inspect other accounts."
+                    tone="amber"
+                  />
+                </div>
+              </div>
+            ) : (
+            <>
             <div className="sticky top-0 z-10 border-b border-slate-100 bg-white/95 px-4 py-3 backdrop-blur">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div className="min-w-0">
@@ -12951,6 +13004,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </div>
               ) : null}
             </div>
+            </>
+            )}
           </section>
         </div>
       ) : null}

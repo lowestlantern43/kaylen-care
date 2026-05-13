@@ -129,6 +129,9 @@ export function buildPlanAccess(record = {}) {
   const hasStripeSubscription = Boolean(stripeSubscriptionId);
   const stripeAllowsAccess =
     hasStripeSubscription && plan === "family" && ["active", "trialing"].includes(status);
+  const billingAllowsAccess =
+    ["active", "trialing"].includes(billingStatus) ||
+    ["active", "trialing"].includes(status);
   const isStripeTrial =
     hasStripeSubscription && plan === "family" && status === "trialing";
   const legacyTrial =
@@ -158,7 +161,8 @@ export function buildPlanAccess(record = {}) {
     "test",
   ].includes(accessStatus);
   const explicitlyLocked =
-    accessStatus === "blocked" || (accessStatus === "locked" && !stripeAllowsAccess);
+    accessStatus === "blocked" ||
+    (accessStatus === "locked" && !stripeAllowsAccess && !billingAllowsAccess);
   const explicitlyUnpaid = ["past_due", "canceled", "cancelled", "unpaid"].includes(
     billingStatus,
   );
@@ -189,7 +193,7 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (stripeAllowsAccess && status === "trialing") {
+  } else if ((stripeAllowsAccess || billingAllowsAccess) && (status === "trialing" || billingStatus === "trialing")) {
     label = trialDaysLeft > 0
       ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
       : "Trial active";
@@ -200,7 +204,7 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (stripeAllowsAccess && status === "active") {
+  } else if ((stripeAllowsAccess || billingAllowsAccess) && (status === "active" || billingStatus === "active")) {
     label = "Active";
     tone = "emerald";
     reason = "active";
