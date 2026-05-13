@@ -45,6 +45,10 @@ export const config = {
     `mailto:${process.env.SUPPORT_EMAIL || "hello@familytrack.care"}`,
   notificationSchedulerEnabled:
     String(process.env.ENABLE_NOTIFICATION_SCHEDULER || "").toLowerCase() === "true",
+  platformAdminEmails: String(process.env.PLATFORM_ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean),
   nodeEnv: process.env.NODE_ENV || "development",
   isProduction: process.env.NODE_ENV === "production",
 };

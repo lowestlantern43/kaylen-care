@@ -1,4 +1,5 @@
 import { query } from "../db/pool.js";
+import { config } from "../config.js";
 import { sessionCookieName, verifySessionToken } from "../utils/sessions.js";
 import { forbidden, unauthorized } from "../utils/httpError.js";
 
@@ -37,7 +38,12 @@ export async function requireAuth(req, res, next) {
       throw forbidden("This account is currently suspended.");
     }
 
-    req.user = rows[0];
+    req.user = {
+      ...rows[0],
+      is_platform_admin:
+        Boolean(rows[0].is_platform_admin) ||
+        config.platformAdminEmails.includes(String(rows[0].email || "").toLowerCase()),
+    };
     next();
   } catch (error) {
     next(error.status ? error : unauthorized());

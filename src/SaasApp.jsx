@@ -3663,13 +3663,27 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
   useEffect(() => {
     if (!session?.user?.id || !session.user.isPlatformAdmin) return;
-    if (window.location.pathname.replace(/\/$/, "") !== "/admin/stats") return;
+    const adminPath = window.location.pathname.replace(/\/$/, "");
+    if (adminPath !== "/admin" && adminPath !== "/admin/stats") return;
 
-    setPlatformAdminTab("stats");
+    if (adminPath === "/admin/stats") setPlatformAdminTab("stats");
     if (!showPlatformAdmin && !isPlatformLoading) {
       openPlatformAdmin();
     }
   }, [session?.user?.id, session?.user?.isPlatformAdmin]);
+
+  useEffect(() => {
+    if (!session?.user?.id || !session.user.isPlatformAdmin) return;
+    if (selectedFamily || showPlatformAdmin || isPlatformLoading) return;
+
+    openPlatformAdmin();
+  }, [
+    session?.user?.id,
+    session?.user?.isPlatformAdmin,
+    selectedFamily?.familyId,
+    showPlatformAdmin,
+    isPlatformLoading,
+  ]);
 
   useEffect(() => {
     if (!showPlatformAdmin || !platformData.overview || !session?.user?.id) {
@@ -6390,17 +6404,31 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     );
   }
 
-  if (!selectedFamily) {
+  if (!selectedFamily && !showPlatformAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 px-6 py-10">
         <div className="mx-auto max-w-md rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl">
           <h1 className="text-xl font-bold text-slate-900">
-            Create family workspace
+            {session?.user?.isPlatformAdmin
+              ? "Owner platform"
+              : "Create family workspace"}
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Your account is ready. Add your family workspace to continue.
+            {session?.user?.isPlatformAdmin
+              ? "Open the owner platform to manage FamilyTrack accounts, billing and support."
+              : "Your account is ready. Add your family workspace to continue."}
           </p>
 
+          {session?.user?.isPlatformAdmin ? (
+            <button
+              type="button"
+              className={`${buttonClass} mt-6`}
+              onClick={openPlatformAdmin}
+              disabled={isPlatformLoading}
+            >
+              {isPlatformLoading ? "Opening..." : "Owner Platform"}
+            </button>
+          ) : (
           <form className="mt-6 space-y-4" onSubmit={addFamily}>
             <div>
               <label className="text-sm font-semibold text-slate-700">
@@ -6424,6 +6452,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               {isSavingFamily ? "Creating..." : "Create workspace"}
             </button>
           </form>
+          )}
 
           <button className={`${secondaryButtonClass} mt-4`} onClick={onLogout}>
             Log out
@@ -6449,16 +6478,29 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     );
   }
 
-  if (!selectedChild) {
+  if (!selectedChild && !showPlatformAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 px-6 py-10 text-slate-900">
         <div className="mx-auto max-w-md rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl">
-          <h1 className="text-xl font-bold text-slate-900">Add first child</h1>
+          <h1 className="text-xl font-bold text-slate-900">
+            {session?.user?.isPlatformAdmin ? "Owner platform" : "Add first child"}
+          </h1>
           <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
-            {selectedFamily.familyName} is ready. Add the first child to start
-            logging care notes.
+            {session?.user?.isPlatformAdmin
+              ? "You can manage FamilyTrack from the owner platform without adding a child to this admin account."
+              : `${selectedFamily.familyName} is ready. Add the first child to start logging care notes.`}
           </p>
 
+          {session?.user?.isPlatformAdmin ? (
+            <button
+              type="button"
+              className={`${buttonClass} mt-6`}
+              onClick={openPlatformAdmin}
+              disabled={isPlatformLoading}
+            >
+              {isPlatformLoading ? "Opening..." : "Owner Platform"}
+            </button>
+          ) : (
           <form className="mt-6 space-y-4" onSubmit={addChild}>
             <div>
               <label className="text-sm font-semibold text-slate-700">
@@ -6490,6 +6532,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               </p>
             ) : null}
           </form>
+          )}
         </div>
       </div>
     );

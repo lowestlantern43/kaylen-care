@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { config } from "../config.js";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -27,11 +28,15 @@ import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.
 export const authRouter = Router();
 
 function publicUser(row) {
+  const isPlatformAdmin =
+    Boolean(row.is_platform_admin) ||
+    config.platformAdminEmails.includes(String(row.email || "").toLowerCase());
+
   return {
     id: row.id,
     email: row.email,
     fullName: row.full_name,
-    isPlatformAdmin: row.is_platform_admin,
+    isPlatformAdmin,
     platformStatus: row.platform_status,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
