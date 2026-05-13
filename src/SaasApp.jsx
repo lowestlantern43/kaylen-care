@@ -665,20 +665,26 @@ const asSafeDate = (value) => {
 const planAccessFor = (record = {}) => {
   const plan = String(record.plan || "trial").toLowerCase() === "free" ? "trial" : String(record.plan || "trial").toLowerCase();
   const status = String(
-    record.subscriptionStatus || record.status || "trialing",
+    record.subscriptionStatus || record.status || "incomplete",
   ).toLowerCase();
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || "";
+  const stripeSubscriptionId =
+    record.stripeSubscriptionId || record.stripe_subscription_id || "";
   const paused = Boolean(record.accessPausedAt || record.access_paused_at);
   const trialEndDate = asSafeDate(trialEndsAt);
   const trialDaysLeft = trialEndDate
     ? Math.max(0, Math.ceil((trialEndDate.getTime() - Date.now()) / DAY_MS))
     : 0;
-  const isLocalTrial = plan === "trial";
-  const isStripeTrial = plan === "family" && status === "trialing";
-  const trialExpired = isLocalTrial && trialDaysLeft <= 0;
-  const cancelled = ["canceled", "cancelled", "unpaid", "incomplete_expired"].includes(status);
-  const childCount = Number(record.childCount || record.child_count || 0);
-  const memberCount = Number(record.memberCount || record.member_count || 0);
+  const hasStripeSubscription = Boolean(stripeSubscriptionId);
+  const isStripeTrial = hasStripeSubscription && plan === "family" && status === "trialing";
+  const cancelled = [
+    "canceled",
+    "cancelled",
+    "unpaid",
+    "incomplete",
+    "incomplete_expired",
+    "inactive",
+  ].includes(status);
 
   if (paused) {
     return {
@@ -702,11 +708,22 @@ const planAccessFor = (record = {}) => {
     };
   }
 
+  if (!hasStripeSubscription) {
+    return {
+      label: "Finish setup",
+      tone: "amber",
+      reason: "checkout_required",
+      canAddLogs: false,
+      canAddChild: false,
+      canInviteCarer: false,
+    };
+  }
+
   if (cancelled) {
     return {
-      label: "Cancelled",
-      tone: "rose",
-      reason: "cancelled",
+      label: status === "incomplete" ? "Finish setup" : "Subscription inactive",
+      tone: status === "incomplete" ? "amber" : "rose",
+      reason: status === "incomplete" ? "checkout_required" : "cancelled",
       canAddLogs: false,
       canAddChild: false,
       canInviteCarer: false,
@@ -727,44 +744,11 @@ const planAccessFor = (record = {}) => {
     };
   }
 
-  if (isLocalTrial && !trialExpired) {
+  if (hasStripeSubscription && plan === "family" && status === "active") {
     return {
-      label: `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`,
-      tone: "sky",
-      reason: "trial",
-      canAddLogs: true,
-      canAddChild: childCount < 1,
-      canInviteCarer: memberCount < 2,
-    };
-  }
-
-  if (isLocalTrial && trialExpired) {
-    return {
-      label: "View only",
-      tone: "amber",
-      reason: "expired",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  if (status === "incomplete") {
-    return {
-      label: "Finish setup",
-      tone: "amber",
-      reason: "checkout_required",
-      canAddLogs: false,
-      canAddChild: false,
-      canInviteCarer: false,
-    };
-  }
-
-  if (["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status)) {
-    return {
-      label: status === "past_due" ? "Payment issue" : "Active",
-      tone: status === "past_due" ? "amber" : "emerald",
-      reason: status === "past_due" ? "past_due" : "active",
+      label: "Active",
+      tone: "emerald",
+      reason: "active",
       canAddLogs: true,
       canAddChild: true,
       canInviteCarer: true,
@@ -13732,10 +13716,11 @@ function CompleteStripeSetupScreen({
           <p className="text-sm font-black text-sky-950">
             14-day free trial. £{price}/month after trial unless cancelled.
           </p>
-          <p className="mt-2 text-xs font-bold leading-5 text-sky-800">
-            If you have already completed Stripe Checkout, refresh your status
-            after the webhook has confirmed the subscription.
-          </p>
+              <p className="mt-2 text-xs font-bold leading-5 text-sky-800">
+                If you have already completed Stripe Checkout, refresh your status
+                after the webhook has confirmed the subscription. Access stays
+                locked until Stripe confirms a trialing or active subscription.
+              </p>
         </div>
 
         {error ? (

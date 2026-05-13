@@ -46,8 +46,9 @@ familiesRouter.get(
           f.address,
           f.emergency_contacts AS "emergencyContacts",
           fm.role,
-          COALESCE(s.status, 'trialing') AS "subscriptionStatus",
-          COALESCE(s.plan, 'trial') AS plan,
+          COALESCE(s.status, 'incomplete') AS "subscriptionStatus",
+          COALESCE(s.plan, 'family') AS plan,
+          s.stripe_subscription_id AS "stripeSubscriptionId",
           s.trial_ends_at AS "trialEndsAt",
           s.access_paused_at AS "accessPausedAt",
           count(DISTINCT c.id)::int AS "childCount",
@@ -61,7 +62,7 @@ familiesRouter.get(
         WHERE fm.user_id = $1
           AND fm.deleted_at IS NULL
           AND f.deleted_at IS NULL
-        GROUP BY f.id, fm.role, s.status, s.plan, s.trial_ends_at, s.access_paused_at
+        GROUP BY f.id, fm.role, s.status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at
         ORDER BY f.created_at ASC
       `,
       [req.user.id],

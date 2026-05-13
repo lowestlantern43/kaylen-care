@@ -36,20 +36,20 @@ ALTER TABLE subscriptions
 UPDATE subscriptions
 SET
   plan = CASE
-    WHEN plan IS NULL OR trim(plan) = '' OR plan = 'free' THEN 'trial'
+    WHEN plan IS NULL OR trim(plan) = '' OR plan = 'free' THEN 'family'
     ELSE plan
   END,
   status = CASE
-    WHEN status IS NULL OR trim(status) = '' OR status = 'inactive' THEN 'trialing'
+    WHEN status IS NULL OR trim(status) = '' THEN 'incomplete'
     ELSE status
   END,
-  trial_started_at = COALESCE(trial_started_at, created_at, now()),
-  trial_ends_at = COALESCE(trial_ends_at, COALESCE(created_at, now()) + interval '30 days')
+  trial_started_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_started_at, created_at, now()) ELSE trial_started_at END,
+  trial_ends_at = CASE WHEN stripe_subscription_id IS NOT NULL THEN COALESCE(trial_ends_at, COALESCE(created_at, now()) + interval '30 days') ELSE trial_ends_at END
 WHERE plan IS NULL
    OR trim(plan) = ''
    OR plan = 'free'
-   OR trial_started_at IS NULL
-   OR trial_ends_at IS NULL;
+   OR status IS NULL
+   OR trim(status) = '';
 `;
 
 let setupPromise = null;
@@ -108,15 +108,25 @@ export function buildPlanAccess(record = {}) {
   const plan = normalisePlan(record.plan);
   const status = normaliseStatus(record.status || record.subscriptionStatus, plan);
   const trialEndsAt = record.trialEndsAt || record.trial_ends_at || null;
+  const stripeSubscriptionId =
+    record.stripeSubscriptionId || record.stripe_subscription_id || "";
   const paused = Boolean(record.accessPausedAt || record.access_paused_at);
-  const childCount = Number(record.childCount || record.child_count || 0);
-  const memberCount = Number(record.memberCount || record.member_count || 0);
   const trialDaysLeft = daysUntil(trialEndsAt);
-  const isLocalTrial = plan === "trial";
-  const isStripeTrial = plan === "family" && status === "trialing";
-  const trialExpired = isLocalTrial && trialDaysLeft <= 0;
-  const cancelled = ["canceled", "unpaid", "incomplete_expired"].includes(status);
-  const activePaid = ["family", "professional"].includes(plan) && ["active", "trialing", "past_due"].includes(status);
+  const hasStripeSubscription = Boolean(stripeSubscriptionId);
+  const isStripeTrial =
+    hasStripeSubscription && plan === "family" && status === "trialing";
+  const cancelled = [
+    "canceled",
+    "cancelled",
+    "unpaid",
+    "incomplete",
+    "incomplete_expired",
+    "inactive",
+  ].includes(status);
+  const activePaid =
+    hasStripeSubscription &&
+    plan === "family" &&
+    status === "active";
   const beta = plan === "beta";
 
   let label = "Inactive";
@@ -141,10 +151,14 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
+  } else if (!hasStripeSubscription) {
+    label = "Finish setup";
+    tone = "amber";
+    reason = "checkout_required";
   } else if (cancelled) {
-    label = "Cancelled";
-    tone = "rose";
-    reason = "cancelled";
+    label = status === "incomplete" ? "Finish setup" : "Subscription inactive";
+    tone = status === "incomplete" ? "amber" : "rose";
+    reason = status === "incomplete" ? "checkout_required" : "cancelled";
   } else if (isStripeTrial) {
     label = trialDaysLeft > 0
       ? `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
@@ -156,27 +170,10 @@ export function buildPlanAccess(record = {}) {
     canDeleteLogs = true;
     canAddChild = true;
     canInviteCarer = true;
-  } else if (isLocalTrial && !trialExpired) {
-    label = `Trial - ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`;
-    tone = "sky";
-    reason = "trial";
-    canAddLogs = true;
-    canEditLogs = true;
-    canDeleteLogs = true;
-    canAddChild = childCount < 1;
-    canInviteCarer = memberCount < 2;
-  } else if (isLocalTrial && trialExpired) {
-    label = "View only";
-    tone = "amber";
-    reason = "expired";
-  } else if (status === "incomplete") {
-    label = "Finish setup";
-    tone = "amber";
-    reason = "checkout_required";
   } else if (activePaid) {
-    label = status === "past_due" ? "Payment issue" : "Active";
-    tone = status === "past_due" ? "amber" : "emerald";
-    reason = status === "past_due" ? "past_due" : "active";
+    label = "Active";
+    tone = "emerald";
+    reason = "active";
     canAddLogs = true;
     canEditLogs = true;
     canDeleteLogs = true;
@@ -207,8 +204,9 @@ export async function getFamilyPlanAccess(familyId) {
   const { rows } = await query(
     `
       SELECT
-        COALESCE(s.plan, 'trial') AS plan,
-        COALESCE(s.status, 'trialing') AS status,
+        COALESCE(s.plan, 'family') AS plan,
+        COALESCE(s.status, 'incomplete') AS status,
+        s.stripe_subscription_id AS "stripeSubscriptionId",
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
         count(DISTINCT c.id)::int AS "childCount",

@@ -47,8 +47,9 @@ async function loadMemberships(userId) {
         fm.role,
         f.name AS "familyName",
         f.platform_status AS "platformStatus",
-        COALESCE(s.status, 'trialing') AS "subscriptionStatus",
-        COALESCE(s.plan, 'trial') AS plan,
+        COALESCE(s.status, 'incomplete') AS "subscriptionStatus",
+        COALESCE(s.plan, 'family') AS plan,
+        s.stripe_subscription_id AS "stripeSubscriptionId",
         s.trial_ends_at AS "trialEndsAt",
         s.access_paused_at AS "accessPausedAt",
         count(DISTINCT c.id)::int AS "childCount",
@@ -62,7 +63,7 @@ async function loadMemberships(userId) {
         AND fm.deleted_at IS NULL
         AND f.deleted_at IS NULL
         AND f.platform_status <> 'suspended'
-      GROUP BY fm.family_id, fm.role, f.name, f.platform_status, s.status, s.plan, s.trial_ends_at, s.access_paused_at, fm.joined_at
+      GROUP BY fm.family_id, fm.role, f.name, f.platform_status, s.status, s.plan, s.stripe_subscription_id, s.trial_ends_at, s.access_paused_at, fm.joined_at
       ORDER BY fm.joined_at ASC
     `,
     [userId],
@@ -77,7 +78,7 @@ authRouter.post(
     const email = requireEmail(req.body);
     const password = requirePassword(req.body);
     const fullName = requireString(req.body, "fullName", "Full name");
-    const familyName = optionalString(req.body, "familyName");
+    const familyName = requireString(req.body, "familyName", "Family name");
     const childFirstName = optionalString(req.body, "childFirstName");
     const childDateOfBirth = optionalDate(req.body, "childDateOfBirth");
     const passwordHash = await hashPassword(password);
@@ -113,47 +114,45 @@ authRouter.post(
       let family = null;
       let child = null;
 
-      if (familyName) {
-        const createdFamily = await client.query(
+      const createdFamily = await client.query(
+        `
+          INSERT INTO families (name, created_by_user_id)
+          VALUES ($1, $2)
+          RETURNING id, name
+        `,
+        [familyName, user.id],
+      );
+
+      family = createdFamily.rows[0];
+
+      await client.query(
+        "INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')",
+        [family.id, user.id],
+      );
+
+      await client.query(
+        `
+          INSERT INTO subscriptions (
+            family_id,
+            status,
+            plan
+          )
+          VALUES ($1, 'incomplete', 'family')
+        `,
+        [family.id],
+      );
+
+      if (childFirstName) {
+        const createdChild = await client.query(
           `
-            INSERT INTO families (name, created_by_user_id)
-            VALUES ($1, $2)
-            RETURNING id, name
+            INSERT INTO children (family_id, first_name, date_of_birth, created_by_user_id)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, first_name AS "firstName", date_of_birth::text AS "dateOfBirth"
           `,
-          [familyName, user.id],
+          [family.id, childFirstName, childDateOfBirth, user.id],
         );
 
-        family = createdFamily.rows[0];
-
-        await client.query(
-          "INSERT INTO family_members (family_id, user_id, role) VALUES ($1, $2, 'owner')",
-          [family.id, user.id],
-        );
-
-        await client.query(
-          `
-            INSERT INTO subscriptions (
-              family_id,
-              status,
-              plan
-            )
-            VALUES ($1, 'incomplete', 'family')
-          `,
-          [family.id],
-        );
-
-        if (childFirstName) {
-          const createdChild = await client.query(
-            `
-              INSERT INTO children (family_id, first_name, date_of_birth, created_by_user_id)
-              VALUES ($1, $2, $3, $4)
-              RETURNING id, first_name AS "firstName", date_of_birth::text AS "dateOfBirth"
-            `,
-            [family.id, childFirstName, childDateOfBirth, user.id],
-          );
-
-          child = createdChild.rows[0];
-        }
+        child = createdChild.rows[0];
       }
 
       return { user, family, child };
