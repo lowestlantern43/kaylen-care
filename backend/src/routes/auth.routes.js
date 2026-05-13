@@ -4,6 +4,10 @@ import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, unauthorized } from "../utils/httpError.js";
 import { sendAppEmail, welcomeEmail } from "../services/email.js";
+import {
+  createStripeCheckoutSession,
+  createStripeCustomer,
+} from "../services/stripe.js";
 import { hashPassword, verifyPassword } from "../utils/passwords.js";
 import {
   clearSessionCookie,
@@ -155,6 +159,33 @@ authRouter.post(
       return { user, family, child };
     });
 
+    let checkoutUrl = "";
+
+    if (result.family) {
+      const customer = await createStripeCustomer({
+        email: result.user.email,
+        name: result.user.full_name,
+        familyId: result.family.id,
+        familyName: result.family.name,
+      });
+
+      await query(
+        `
+          UPDATE subscriptions
+          SET stripe_customer_id = $1
+          WHERE family_id = $2
+        `,
+        [customer.id, result.family.id],
+      );
+
+      const checkout = await createStripeCheckoutSession({
+        customerId: customer.id,
+        familyId: result.family.id,
+        familyName: result.family.name,
+      });
+      checkoutUrl = checkout.url;
+    }
+
     setSessionCookie(res, createSessionToken(result.user));
     const welcome = welcomeEmail({ fullName: result.user.full_name });
     sendAppEmail({
@@ -172,6 +203,7 @@ authRouter.post(
         family: result.family,
         child: result.child,
         requiresCheckout: Boolean(result.family),
+        checkoutUrl,
       },
       error: null,
     });

@@ -2033,6 +2033,7 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
   const submit = async (event) => {
     event.preventDefault();
     setIsSubmitting(true);
+    setIsOpeningCheckout(false);
     setError("");
 
     try {
@@ -2045,17 +2046,18 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
 
       if (isSignup && data?.requiresCheckout && data?.family?.id) {
         setIsOpeningCheckout(true);
-        try {
-          const checkout = await api.createCheckoutSession(data.family.id);
-          window.location.assign(checkout.checkoutUrl);
-        } catch {
-          onAuthenticated(data);
+        if (data.checkoutUrl) {
+          window.location.assign(data.checkoutUrl);
+          return;
         }
+        const checkout = await api.createCheckoutSession(data.family.id);
+        window.location.assign(checkout.checkoutUrl);
         return;
       }
 
       onAuthenticated(data);
     } catch (caughtError) {
+      setIsOpeningCheckout(false);
       setError(caughtError.message);
     } finally {
       setIsSubmitting(false);
