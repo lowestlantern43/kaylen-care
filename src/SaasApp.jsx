@@ -3483,16 +3483,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         return;
       }
 
-      const registration = await navigator.serviceWorker.register("/familytrack-sw.js");
+      const registration = await navigator.serviceWorker.register("/familytrack-sw.js", {
+        updateViaCache: "none",
+      });
+      await registration.update?.();
       const readyRegistration = await navigator.serviceWorker.ready;
       let subscription = await readyRegistration.pushManager.getSubscription();
 
-      if (!subscription) {
-        subscription = await readyRegistration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(latestConfig.publicKey),
-        });
+      if (subscription) {
+        await api.disablePushSubscription(subscription.endpoint).catch(() => null);
+        await subscription.unsubscribe().catch(() => null);
       }
+
+      subscription = await readyRegistration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(latestConfig.publicKey),
+      });
 
       await api.savePushSubscription({
         subscription: subscription.toJSON(),
@@ -3508,9 +3514,17 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         pushEnabled: true,
       });
       setNotificationSettings(normaliseNotificationSettings(saved));
-      setNotificationStatusMessage("Push reminders are enabled on this device.");
-      showToast({ message: "Notifications enabled", type: "success" });
-      api.sendTestNotification().catch(() => null);
+      const testResult = await api.sendTestNotification();
+      const message = testResult?.sent
+        ? "Push reminders are enabled. A test notification was sent to this device."
+        : "Push reminders were saved, but no test notification was delivered.";
+      setNotificationStatusMessage(message);
+      showToast({
+        message: testResult?.sent
+          ? "Test notification sent"
+          : "Notifications saved - test not delivered",
+        type: testResult?.sent ? "success" : "warning",
+      });
     } catch (pushError) {
       const message =
         pushError.message || "Notifications could not be enabled on this device.";
@@ -4883,6 +4897,31 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       console.error("Stripe checkout failed", caughtError);
       setError(caughtError.message);
       setIsCheckoutLoading(false);
+    }
+  };
+
+  const sendNotificationTest = async () => {
+    setIsNotificationBusy(true);
+    setNotificationStatusMessage("");
+
+    try {
+      const result = await api.sendTestNotification();
+      const message = result?.sent
+        ? "Test notification sent to this device."
+        : "No active push subscription was found for this device.";
+      setNotificationStatusMessage(message);
+      showToast({
+        message: result?.sent ? "Test notification sent" : "No device subscription found",
+        type: result?.sent ? "success" : "warning",
+      });
+    } catch (testError) {
+      const message =
+        testError.message ||
+        "Test notification could not be sent. Try turning push off and enabling it again.";
+      setNotificationStatusMessage(message);
+      showToast({ message, type: "error" });
+    } finally {
+      setIsNotificationBusy(false);
     }
   };
 
@@ -8711,14 +8750,24 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                       {notificationSettings.pushEnabled ? (
-                        <button
-                          type="button"
-                          onClick={disablePushNotifications}
-                          disabled={isNotificationBusy}
-                          className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:opacity-60"
-                        >
-                          {isNotificationBusy ? "Updating..." : "Turn push off"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={sendNotificationTest}
+                            disabled={isNotificationBusy}
+                            className="rounded-xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-60"
+                          >
+                            {isNotificationBusy ? "Sending..." : "Send test notification"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={disablePushNotifications}
+                            disabled={isNotificationBusy}
+                            className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:opacity-60"
+                          >
+                            {isNotificationBusy ? "Updating..." : "Turn push off"}
+                          </button>
+                        </>
                       ) : (
                         <button
                           type="button"

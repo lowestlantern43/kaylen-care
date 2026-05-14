@@ -173,6 +173,16 @@ notificationsRouter.post(
       type: "test",
     });
 
+    if (result.skipped) {
+      throw badRequest(result.reason || "Push notifications are not configured.");
+    }
+
+    if (!result.sent) {
+      throw badRequest(
+        "No active push subscription was found for this device. Turn push off and enable notifications again.",
+      );
+    }
+
     res.json({ data: result, error: null });
   }),
 );

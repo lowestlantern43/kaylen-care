@@ -13,9 +13,10 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "FamilyTrack reminder";
   const options = {
     body: payload.body || "Open FamilyTrack to view the reminder.",
-    icon: "/kaylen-diary-home-icon.png",
-    badge: "/kaylen-diary-home-icon.png",
+    icon: "/familytrack-care-icon-192.png",
+    badge: "/familytrack-care-icon-192.png",
     tag: payload.tag || `familytrack-${payload.type || "reminder"}`,
+    renotify: true,
     data: {
       url: payload.url || "/",
       type: payload.type || "reminder",
