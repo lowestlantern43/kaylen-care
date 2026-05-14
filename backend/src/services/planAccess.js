@@ -182,6 +182,12 @@ export function computeAccess(record = {}) {
     billingStatus === "trialing" ||
     String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
       "trialing";
+  const hasActiveStripeStatus =
+    effectiveStatus === "active" ||
+    status === "active" ||
+    billingStatus === "active" ||
+    String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
+      "active";
   const base = {
     plan,
     status,
@@ -214,6 +220,18 @@ export function computeAccess(record = {}) {
             : "Trial active",
         tone: "sky",
         reason: "trial",
+      },
+      FULL_ACCESS,
+    );
+  }
+
+  if (hasActiveStripeStatus) {
+    return withFlags(
+      {
+        ...base,
+        label: "Active",
+        tone: "emerald",
+        reason: "active",
       },
       FULL_ACCESS,
     );

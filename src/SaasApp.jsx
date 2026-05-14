@@ -721,6 +721,12 @@ const planAccessFor = (record = {}) => {
     billingStatus === "trialing" ||
     String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
       "trialing";
+  const hasActiveStripeStatus =
+    effectiveStatus === "active" ||
+    status === "active" ||
+    billingStatus === "active" ||
+    String(record.stripeSubscriptionStatus || record.stripe_subscription_status || "").toLowerCase() ===
+      "active";
   const base = {
     plan,
     status,
@@ -753,6 +759,18 @@ const planAccessFor = (record = {}) => {
             : "Trial active",
         tone: "sky",
         reason: "trial",
+      },
+      fullAccessFlags,
+    );
+  }
+
+  if (hasActiveStripeStatus) {
+    return finishAccess(
+      {
+        ...base,
+        label: "Active",
+        tone: "emerald",
+        reason: "active",
       },
       fullAccessFlags,
     );
@@ -6768,7 +6786,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     >
                       {showTrialBadge ? trialBadgeText : selectedFamilyAccess.label}
                     </button>
-                    {session?.user?.isPlatformAdmin ? (
+                    {session?.user?.isPlatformAdmin && showPlatformAdmin ? (
                       <p className="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[11px] font-bold leading-5 text-slate-500">
                         Trial debug: billing_status{" "}
                         {selectedFamily?.billingStatus || selectedFamilyAccess.billingStatus || "none"} ·
