@@ -40,39 +40,58 @@ const DEFAULT_PUBLIC_PRICING = {
       },
     ],
   },
+  marketing: {
+    gaMeasurementId: "",
+    googleSiteVerification: "",
+  },
 };
 const INSTALL_ONBOARDING_SEEN_KEY = "familytrack:install-onboarding-seen";
 const INSTALL_ONBOARDING_DISMISSED_KEY =
   "familytrack:install-onboarding-dismissed";
 
-function installMarketingMetadata() {
-  if (GOOGLE_SITE_VERIFICATION) {
+function cleanMarketingValue(value = "") {
+  return String(value || "").trim();
+}
+
+function installMarketingMetadata(settings = {}) {
+  const googleSiteVerification = cleanMarketingValue(
+    settings.googleSiteVerification || GOOGLE_SITE_VERIFICATION,
+  );
+  const gaMeasurementId = cleanMarketingValue(
+    settings.gaMeasurementId || GA_MEASUREMENT_ID,
+  );
+
+  if (googleSiteVerification) {
     const existing = document.querySelector(
       'meta[name="google-site-verification"]',
     );
     if (!existing) {
       const meta = document.createElement("meta");
       meta.name = "google-site-verification";
-      meta.content = GOOGLE_SITE_VERIFICATION;
+      meta.content = googleSiteVerification;
       document.head.appendChild(meta);
+    } else if (existing.content !== googleSiteVerification) {
+      existing.content = googleSiteVerification;
     }
   }
 
-  if (!GA_MEASUREMENT_ID || window.__familytrackGaLoaded) return;
+  if (!gaMeasurementId || window.__familytrackGaLoaded === gaMeasurementId) return;
   window.__familytrackGaLoaded = true;
   window.dataLayer = window.dataLayer || [];
   window.gtag = function gtag() {
     window.dataLayer.push(arguments);
   };
   window.gtag("js", new Date());
-  window.gtag("config", GA_MEASUREMENT_ID, { anonymize_ip: true });
+  window.gtag("config", gaMeasurementId, { anonymize_ip: true });
 
   const script = document.createElement("script");
   script.async = true;
   script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
-    GA_MEASUREMENT_ID,
+    gaMeasurementId,
   )}`;
+  script.dataset.familytrackGaId = gaMeasurementId;
   document.head.appendChild(script);
+  window.__familytrackGaLoaded = gaMeasurementId;
 }
 const MODULE_VISIBILITY_OPTIONS = [
   {
@@ -3139,6 +3158,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     promoCode: "",
     trialDays: "14",
   });
+  const [platformMarketingSettingsForm, setPlatformMarketingSettingsForm] =
+    useState({
+      gaMeasurementId: "",
+      googleSiteVerification: "",
+    });
   const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
     useState({
       status: "default",
@@ -4989,6 +5013,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setPlatformData({ overview, families, users, archivedFamilies });
       const documentVaultSettings = overview?.storageUsage?.settings;
       const publicPricing = overview?.publicPricing;
+      const marketingSettings = overview?.marketingSettings;
       if (publicPricing) {
         setPlatformPublicPricingForm({
           familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 4.99),
@@ -4997,6 +5022,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           promoLabel: publicPricing.promoLabel || "",
           promoCode: publicPricing.promoCode || "",
           trialDays: String(publicPricing.trialDays ?? 14),
+        });
+      }
+      if (marketingSettings) {
+        setPlatformMarketingSettingsForm({
+          gaMeasurementId: marketingSettings.gaMeasurementId || "",
+          googleSiteVerification: marketingSettings.googleSiteVerification || "",
         });
       }
       if (documentVaultSettings) {
@@ -5546,6 +5577,32 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setPlatformActionMessage("Public pricing updated.");
     } catch (caughtError) {
       setIsOpeningCheckout(false);
+      setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updatePlatformMarketingSettings = async () => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const settings = await api.adminUpdateMarketingSettings({
+        gaMeasurementId: platformMarketingSettingsForm.gaMeasurementId,
+        googleSiteVerification:
+          platformMarketingSettingsForm.googleSiteVerification,
+      });
+      const overview = await api.adminOverview();
+      setPlatformData((current) => ({ ...current, overview }));
+      setPlatformMarketingSettingsForm({
+        gaMeasurementId: settings.gaMeasurementId || "",
+        googleSiteVerification: settings.googleSiteVerification || "",
+      });
+      installMarketingMetadata(settings);
+      setPlatformActionMessage("Analytics and Search Console settings updated.");
+    } catch (caughtError) {
       setError(caughtError.message);
     } finally {
       setIsPlatformSaving(false);
@@ -10437,6 +10494,85 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     <span className="font-black">STRIPE_DOCUMENTS_100GB_PRICE_ID</span>.
                     Then assign or adjust tiers in the Storage tab.
                   </div>
+
+                  <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-black text-slate-950">
+                          Google Analytics and Search Console
+                        </h4>
+                        <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                          Add your GA4 Measurement ID and Search Console
+                          verification token here. Environment variables still
+                          work as a fallback, but this is the easiest place to
+                          manage it.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-black text-emerald-700">
+                        Public website
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <label className="block">
+                        <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                          Google Analytics Measurement ID
+                        </span>
+                        <input
+                          value={platformMarketingSettingsForm.gaMeasurementId}
+                          onChange={(event) =>
+                            setPlatformMarketingSettingsForm((form) => ({
+                              ...form,
+                              gaMeasurementId: event.target.value,
+                            }))
+                          }
+                          placeholder="G-XXXXXXXXXX"
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-base font-semibold text-slate-900 shadow-sm"
+                        />
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          Find this in Google Analytics under Admin - Data
+                          streams.
+                        </p>
+                      </label>
+                      <label className="block">
+                        <span className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                          Search Console verification token
+                        </span>
+                        <input
+                          value={
+                            platformMarketingSettingsForm.googleSiteVerification
+                          }
+                          onChange={(event) =>
+                            setPlatformMarketingSettingsForm((form) => ({
+                              ...form,
+                              googleSiteVerification: event.target.value,
+                            }))
+                          }
+                          placeholder="Paste the meta tag content value"
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 text-base font-semibold text-slate-900 shadow-sm"
+                        />
+                        <p className="mt-1 text-xs font-semibold text-slate-500">
+                          Use only the content value from the Google verification
+                          meta tag.
+                        </p>
+                      </label>
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs font-semibold text-slate-500">
+                        Current fallback env vars: VITE_GA_MEASUREMENT_ID and
+                        VITE_GOOGLE_SITE_VERIFICATION.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={updatePlatformMarketingSettings}
+                        disabled={isPlatformSaving}
+                        className="rounded-xl bg-emerald-700 px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-50"
+                      >
+                        {isPlatformSaving ? "Saving..." : "Save analytics"}
+                      </button>
+                    </div>
+                  </div>
                 </section>
                 ) : null}
 
@@ -14195,7 +14331,12 @@ export default function SaasApp() {
               ...DEFAULT_PUBLIC_PRICING.documentVault,
               ...(pricing.documentVault || {}),
             },
+            marketing: {
+              ...DEFAULT_PUBLIC_PRICING.marketing,
+              ...(pricing.marketing || {}),
+            },
           });
+          installMarketingMetadata(pricing.marketing || {});
         }
       })
       .catch(() => {

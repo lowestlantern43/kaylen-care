@@ -26,6 +26,19 @@ function normalisePublicPricing(value = {}) {
   };
 }
 
+function normaliseMarketingSettings(value = {}) {
+  return {
+    gaMeasurementId:
+      typeof value.gaMeasurementId === "string"
+        ? value.gaMeasurementId.trim()
+        : "",
+    googleSiteVerification:
+      typeof value.googleSiteVerification === "string"
+        ? value.googleSiteVerification.trim()
+        : "",
+  };
+}
+
 function normaliseDocumentVaultSettings(value = {}) {
   const tiers = Array.isArray(value.tiers)
     ? value.tiers
@@ -72,15 +85,17 @@ async function getPlatformSetting(key) {
 publicRouter.get(
   "/pricing",
   asyncHandler(async (req, res) => {
-    const [publicPricing, documentVault] = await Promise.all([
+    const [publicPricing, documentVault, marketingSettings] = await Promise.all([
       getPlatformSetting("public_pricing"),
       getPlatformSetting("document_vault"),
+      getPlatformSetting("marketing_settings"),
     ]);
 
     res.json({
       data: {
         ...normalisePublicPricing(publicPricing),
         documentVault: normaliseDocumentVaultSettings(documentVault),
+        marketing: normaliseMarketingSettings(marketingSettings),
       },
       error: null,
     });

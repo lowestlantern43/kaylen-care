@@ -44,6 +44,7 @@ adminRouter.use(
     await ensureFamilyArchivePolicySchema();
     await ensureDocumentVaultBillingSchema();
     await ensurePublicPricingSettings();
+    await ensureMarketingSettings();
     next();
   }),
 );
@@ -154,6 +155,22 @@ async function ensurePublicPricingSettings() {
   );
 }
 
+async function ensureMarketingSettings() {
+  await query(
+    `
+      INSERT INTO platform_settings (key, value)
+      VALUES ('marketing_settings', $1::jsonb)
+      ON CONFLICT (key) DO NOTHING
+    `,
+    [
+      JSON.stringify({
+        gaMeasurementId: "",
+        googleSiteVerification: "",
+      }),
+    ],
+  );
+}
+
 function normalisePublicPricingSettings(value = {}) {
   const isCurrentPricing = value.pricingVersion === PUBLIC_PRICING_VERSION;
 
@@ -171,6 +188,22 @@ function normalisePublicPricingSettings(value = {}) {
       ? Math.max(0, Number(value.trialDays))
       : config.proTrialDays,
     pricingVersion: PUBLIC_PRICING_VERSION,
+  };
+}
+
+function normaliseMarketingSettings(value = {}) {
+  const gaMeasurementId =
+    typeof value.gaMeasurementId === "string"
+      ? value.gaMeasurementId.trim()
+      : "";
+  const googleSiteVerification =
+    typeof value.googleSiteVerification === "string"
+      ? value.googleSiteVerification.trim()
+      : "";
+
+  return {
+    gaMeasurementId,
+    googleSiteVerification,
   };
 }
 
@@ -327,6 +360,19 @@ async function getPublicPricingSettings() {
   );
 
   return normalisePublicPricingSettings(rows[0]?.value || {});
+}
+
+async function getMarketingSettings() {
+  const { rows } = await query(
+    `
+      SELECT value
+      FROM platform_settings
+      WHERE key = 'marketing_settings'
+      LIMIT 1
+    `,
+  );
+
+  return normaliseMarketingSettings(rows[0]?.value || {});
 }
 
 async function getFeedbackSettings() {
@@ -883,6 +929,7 @@ adminRouter.get(
       recentActivity,
       storageUsage,
       publicPricing,
+      marketingSettings,
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
@@ -982,6 +1029,7 @@ adminRouter.get(
       ),
       buildDocumentStorageSummary(),
       getPublicPricingSettings(),
+      getMarketingSettings(),
     ]);
 
     res.json({
@@ -1004,6 +1052,7 @@ adminRouter.get(
         recentActivity: recentActivity.rows,
         storageUsage,
         publicPricing,
+        marketingSettings,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
@@ -1118,6 +1167,42 @@ adminRouter.patch(
 
     res.json({
       data: normalisePublicPricingSettings(rows[0]?.value || value),
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/marketing-settings",
+  asyncHandler(async (req, res) => {
+    const value = normaliseMarketingSettings({
+      gaMeasurementId: optionalString(req.body, "gaMeasurementId"),
+      googleSiteVerification: optionalString(req.body, "googleSiteVerification"),
+    });
+
+    const { rows } = await query(
+      `
+        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+        VALUES ('marketing_settings', $1, now(), $2)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = now(),
+          updated_by_user_id = EXCLUDED.updated_by_user_id
+        RETURNING value
+      `,
+      [JSON.stringify(value), req.user.id],
+    );
+
+    await writeAudit(req, {
+      entityType: "platform_setting",
+      entityId: null,
+      action: "platform_marketing_settings_updated",
+      metadata: value,
+    });
+
+    res.json({
+      data: normaliseMarketingSettings(rows[0]?.value || value),
       error: null,
     });
   }),
