@@ -313,6 +313,8 @@ const parseMedicationProfile = (value = "") => {
 
 const medicationStatusLabel = (status) => {
   switch (status) {
+    case "skipped":
+      return "Skipped";
     case "missed":
       return "Missed dose";
     case "late":
@@ -322,6 +324,20 @@ const medicationStatusLabel = (status) => {
     case "given":
     default:
       return "Given";
+  }
+};
+
+const medicationStatusTone = (status) => {
+  switch (status) {
+    case "skipped":
+      return "border-amber-200 bg-amber-50 text-amber-800";
+    case "missed":
+    case "refused":
+      return "border-rose-200 bg-rose-50 text-rose-800";
+    case "late":
+      return "border-orange-200 bg-orange-50 text-orange-800";
+    default:
+      return "border-emerald-200 bg-emerald-50 text-emerald-800";
   }
 };
 
@@ -2522,9 +2538,12 @@ export default function KaylenCareMonitorDashboard({
     section: "Medication",
     date: formatDisplayDateFromIso(row.logDate) || todayValue(),
     time: row.logTime || "",
-    summary: `${row.data?.medicine || "Medication"} - ${
-      row.data?.dose || "No dose"
-    }`,
+    summary:
+      (row.data?.status || "given") === "skipped"
+        ? `${row.data?.medicine || "Medication"} - Skipped`
+        : `${row.data?.medicine || "Medication"} - ${
+            row.data?.dose || "No dose"
+          }`,
     details: [
       row.data?.status && row.data.status !== "given"
         ? `Medication status: ${medicationStatusLabel(row.data.status)}`
@@ -2538,6 +2557,7 @@ export default function KaylenCareMonitorDashboard({
       row.createdByName ? `Logged by: ${row.createdByName}` : null,
     ].filter(Boolean),
     medicationStatus: row.data?.status || "given",
+    statusTone: medicationStatusTone(row.data?.status || "given"),
   });
 
   const mapSaasToiletingEntry = (row) => ({
@@ -2887,6 +2907,8 @@ export default function KaylenCareMonitorDashboard({
     const mappedMedicationEntries = (medicationData || []).map((row) => {
       const entryDate = parseNotesValue(row.notes, "Date") || todayValue();
       const entryTime = parseNotesValue(row.notes, "Time") || "";
+      const medicationStatus =
+        parseNotesValue(row.notes, "Status").toLowerCase() || "given";
 
       return {
         id: `medication-${row.id}`,
@@ -2897,13 +2919,21 @@ export default function KaylenCareMonitorDashboard({
         section: "Medication",
         date: entryDate,
         time: entryTime,
-        summary: `${row.medicine || "Medication"} - ${row.dose || "No dose"}`,
+        summary:
+          medicationStatus === "skipped"
+            ? `${row.medicine || "Medication"} - Skipped`
+            : `${row.medicine || "Medication"} - ${row.dose || "No dose"}`,
         details: [
+          medicationStatus !== "given"
+            ? `Medication status: ${medicationStatusLabel(medicationStatus)}`
+            : null,
           `Given by: ${parseNotesValue(row.notes, "Given by") || "Not set"}`,
           parseNotesValue(row.notes, "Notes")
             ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
             : null,
         ].filter(Boolean),
+        medicationStatus,
+        statusTone: medicationStatusTone(medicationStatus),
       };
     });
 
@@ -3432,7 +3462,7 @@ export default function KaylenCareMonitorDashboard({
       entries.filter(
         (entry) =>
           entry.section === "Medication" &&
-          ["missed", "late", "refused"].includes(
+          ["missed", "late", "refused", "skipped"].includes(
             String(entry.medicationStatus || "").toLowerCase(),
           ),
       ).length;
@@ -3477,7 +3507,7 @@ export default function KaylenCareMonitorDashboard({
       {
         label: "Medication",
         text: medIssues
-          ? `${medIssues} missed, late or refused dose${medIssues === 1 ? "" : "s"}`
+          ? `${medIssues} missed, late, skipped or refused dose${medIssues === 1 ? "" : "s"}`
           : snapshotBySection.medication.length
             ? "Medication on track"
             : "Not enough data yet",
@@ -3944,12 +3974,12 @@ export default function KaylenCareMonitorDashboard({
           );
           const givenLog = slotLogs.find(
             (entry) =>
-              !["missed", "refused"].includes(
+              !["missed", "refused", "skipped"].includes(
                 String(entry.medicationStatus || "").toLowerCase(),
               ),
           );
           const missedLog = slotLogs.find((entry) =>
-            ["missed", "refused"].includes(
+            ["missed", "refused", "skipped"].includes(
               String(entry.medicationStatus || "").toLowerCase(),
             ),
           );
@@ -3978,7 +4008,9 @@ export default function KaylenCareMonitorDashboard({
             : false;
           const status = givenLog
             ? "taken"
-            : missedLog || hasPastTime || isWindowPast(windowName)
+            : String(missedLog?.medicationStatus || "").toLowerCase() === "skipped"
+              ? "skipped"
+              : missedLog || hasPastTime || isWindowPast(windowName)
               ? "missed"
               : isWindowUpcoming(windowName) || hasFutureTime
                 ? "upcoming"
@@ -4001,6 +4033,8 @@ export default function KaylenCareMonitorDashboard({
             statusLabel:
               status === "taken"
                 ? "Taken"
+                : status === "skipped"
+                  ? "Skipped"
                 : status === "missed"
                   ? "Missed"
                   : status === "upcoming"
@@ -4011,7 +4045,7 @@ export default function KaylenCareMonitorDashboard({
       });
 
     const requiredMedication = allRequiredMedication.filter(
-      (item) => item.status !== "taken",
+      (item) => !["taken", "skipped"].includes(item.status),
     );
 
     const alerts = [];
@@ -4190,6 +4224,9 @@ export default function KaylenCareMonitorDashboard({
     const refusedMedication = recentEntries.filter(
       (entry) => entry.section === "Medication" && entry.medicationStatus === "refused",
     ).length;
+    const skippedMedication = recentEntries.filter(
+      (entry) => entry.section === "Medication" && entry.medicationStatus === "skipped",
+    ).length;
     const reducedAppetiteDays = new Set(
       recentEntries
         .filter(
@@ -4229,6 +4266,7 @@ export default function KaylenCareMonitorDashboard({
       missedMedication,
       lateMedication,
       refusedMedication,
+      skippedMedication,
       reducedAppetiteDays: reducedAppetiteDays.size,
       refusedFood,
       disruptedSleep,
@@ -4397,7 +4435,7 @@ export default function KaylenCareMonitorDashboard({
         medicationLogged += 1;
         day.medicationLogged += 1;
         if (
-          ["missed", "late", "refused"].includes(
+          ["missed", "late", "refused", "skipped"].includes(
             String(entry.medicationStatus || "").toLowerCase(),
           )
         ) {
@@ -4522,7 +4560,7 @@ export default function KaylenCareMonitorDashboard({
       if (medicationLogged < expectedMedicationDoses) {
         insights.push("Medication logging is incomplete across the selected period.");
       } else if (medicationConcerns) {
-        insights.push("Medication was logged, with missed, late or refused entries recorded.");
+        insights.push("Medication was logged, with missed, late, skipped or refused entries recorded.");
       } else {
         insights.push("Medication logging matches the expected schedule for this period.");
       }
@@ -4960,26 +4998,29 @@ export default function KaylenCareMonitorDashboard({
       const statusCounts = medicationEntries.reduce(
         (counts, entry) => {
           const status = String(entry.medicationStatus || "given").toLowerCase();
-          if (["missed", "late", "refused"].includes(status)) {
+          if (["missed", "late", "refused", "skipped"].includes(status)) {
             counts[status] += 1;
           } else {
             counts.given += 1;
           }
           return counts;
         },
-        { given: 0, missed: 0, late: 0, refused: 0 },
+        { given: 0, missed: 0, late: 0, refused: 0, skipped: 0 },
       );
       const concernCount =
-        statusCounts.missed + statusCounts.late + statusCounts.refused;
+        statusCounts.missed +
+        statusCounts.late +
+        statusCounts.refused +
+        statusCounts.skipped;
       if (medicationEntries.length >= 3) {
         insights.push({
           id: "medication-summary",
           title: concernCount ? "Worth noting" : "Possible pattern",
           message: concernCount
-            ? "Medication records include missed, late or refused doses."
+            ? "Medication records include missed, late, skipped or refused doses."
             : "Medication entries in this period are logged as completed.",
           detail: concernCount
-            ? `${statusCounts.missed} missed, ${statusCounts.late} late, ${statusCounts.refused} refused.`
+            ? `${statusCounts.missed} missed, ${statusCounts.late} late, ${statusCounts.skipped} skipped, ${statusCounts.refused} refused.`
             : `${statusCounts.given} medication entr${statusCounts.given === 1 ? "y" : "ies"} logged as given.`,
           section: "Medication",
           relatedCount: medicationEntries.length,
@@ -5070,12 +5111,17 @@ export default function KaylenCareMonitorDashboard({
           : quickReportSummary.sleep
             ? "Consistent"
             : "Not enough data";
+    const medicationConcernCount =
+      quickReportSummary.missedMedication +
+      quickReportSummary.refusedMedication +
+      quickReportSummary.skippedMedication;
     const medication =
-      quickReportSummary.missedMedication + quickReportSummary.refusedMedication > 1
+      medicationConcernCount > 1
         ? "Concern"
         : quickReportSummary.missedMedication ||
             quickReportSummary.lateMedication ||
-            quickReportSummary.refusedMedication
+            quickReportSummary.refusedMedication ||
+            quickReportSummary.skippedMedication
           ? "Some missed"
           : quickReportSummary.medication
             ? "Consistent"
@@ -5400,7 +5446,7 @@ export default function KaylenCareMonitorDashboard({
           : "Not available"
       }`,
       `Days with health notes: ${quickReportSummary.healthDays}`,
-      `Medication missed/late/refused: ${quickReportSummary.missedMedication}/${quickReportSummary.lateMedication}/${quickReportSummary.refusedMedication}`,
+      `Medication missed/late/skipped/refused: ${quickReportSummary.missedMedication}/${quickReportSummary.lateMedication}/${quickReportSummary.skippedMedication}/${quickReportSummary.refusedMedication}`,
       "",
       "At a glance",
       `Sleep: ${atAGlance.sleep}`,
@@ -5580,6 +5626,8 @@ export default function KaylenCareMonitorDashboard({
     selectedMedicine,
     selectedGivenBy,
   }) => {
+    const medicationStatus = medicationForm.status || "given";
+    const isSkippedMedication = medicationStatus === "skipped";
     if (useSaasApi) {
       if (!familyId || !childId) {
         alert("Choose a family and child before saving.");
@@ -5602,8 +5650,10 @@ export default function KaylenCareMonitorDashboard({
           data: {
             medicine: selectedMedicine || "Medication",
             dose: medicationForm.dose || "",
-            status: medicationForm.status || "given",
-            given_by: selectedGivenBy || "Not set",
+            status: medicationStatus,
+            given_by: isSkippedMedication
+              ? selectedGivenBy || ""
+              : selectedGivenBy || "Not set",
             scheduled_window: medicationForm.scheduledWindow || "",
             scheduled_day: medicationForm.scheduledDay || "",
           },
@@ -5625,7 +5675,12 @@ export default function KaylenCareMonitorDashboard({
       notes: [
         `Date: ${medicationForm.date}`,
         `Time: ${medicationForm.time}`,
-        `Given by: ${selectedGivenBy || "Not set"}`,
+        `Status: ${medicationStatus}`,
+        isSkippedMedication
+          ? selectedGivenBy
+            ? `Given by: ${selectedGivenBy}`
+            : null
+          : `Given by: ${selectedGivenBy || "Not set"}`,
         medicationForm.notes ? `Notes: ${medicationForm.notes}` : null,
       ]
         .filter(Boolean)
@@ -7668,6 +7723,7 @@ export default function KaylenCareMonitorDashboard({
       : medicationForm.medicine || "Medication";
     const notesRequiredMedicines = ["Melatonin", "Midazolam (rescue meds)"];
     const notesRequired = notesRequiredMedicines.includes(selectedMedicine);
+    const isSkippedMedication = medicationForm.status === "skipped";
 
     const showOtherGivenBy = medicationForm.givenBy === "Other";
     const selectedGivenBy = showOtherGivenBy
@@ -7685,10 +7741,10 @@ export default function KaylenCareMonitorDashboard({
 
     const canSaveMedication =
       !!selectedMedicine.trim() &&
-      !!medicationForm.dose.trim() &&
+      (isSkippedMedication || !!medicationForm.dose.trim()) &&
       !!medicationForm.time.trim() &&
       !!medicationForm.date.trim() &&
-      hasGivenBy &&
+      (isSkippedMedication || hasGivenBy) &&
       !activeSaveAction;
 
     return (
@@ -7726,6 +7782,44 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </div>
         ) : null}
+        <div className={`${cardClassName} md:col-span-2`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-slate-900">
+                Medication status
+              </p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                Use this when a scheduled dose was not given.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ["given", "Given"],
+                ["skipped", "Skipped"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() =>
+                    setMedicationForm((current) => ({
+                      ...current,
+                      status: value,
+                    }))
+                  }
+                  className={`rounded-xl border px-4 py-3 text-sm font-black transition ${
+                    medicationForm.status === value
+                      ? value === "skipped"
+                        ? "border-amber-300 bg-amber-50 text-amber-800 shadow-sm"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-800 shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             Medicine
@@ -7811,7 +7905,9 @@ export default function KaylenCareMonitorDashboard({
           <label className="text-sm font-semibold text-slate-700">Dose</label>
           <input
             type="text"
-            placeholder="e.g. 5ml / 1 tablet"
+            placeholder={
+              isSkippedMedication ? "Optional when skipped" : "e.g. 5ml / 1 tablet"
+            }
             className={`${inputClassName} min-h-[48px]`}
             value={medicationForm.dose}
             onChange={(e) =>
@@ -7906,11 +8002,14 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Notes{notesRequired ? " *" : ""}
+            {isSkippedMedication ? "Reason / details" : "Notes"}
+            {!isSkippedMedication && notesRequired ? " *" : ""}
           </label>
           <textarea
             placeholder={
-              selectedMedicine === "Midazolam (rescue meds)"
+              isSkippedMedication
+                ? "Optional, e.g. refused, asleep, doctor advised, ran out"
+                : selectedMedicine === "Midazolam (rescue meds)"
                 ? "Notes required for Midazolam"
                 : notesRequired
                   ? "Notes required for this medicine"
@@ -7933,7 +8032,7 @@ export default function KaylenCareMonitorDashboard({
             disabled={!canSaveMedication}
             onClick={() =>
               runLockedSave("medication", async () => {
-                if (notesRequired && !medicationForm.notes.trim()) {
+                if (!isSkippedMedication && notesRequired && !medicationForm.notes.trim()) {
                   alert(`Notes are required for ${selectedMedicine}`);
                   return;
                 }
@@ -8370,6 +8469,11 @@ export default function KaylenCareMonitorDashboard({
               </option>
             ))}
           </select>
+          {isSkippedMedication ? (
+            <p className="mt-1 text-xs font-semibold text-slate-500">
+              Optional when skipped.
+            </p>
+          ) : null}
         </div>
 
         <div className={cardClassName}>
@@ -9597,6 +9701,15 @@ export default function KaylenCareMonitorDashboard({
                                 <span className="rounded-full bg-white/80 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                                   {entry.time || "Time not set"}
                                 </span>
+                                {entry.section === "Medication" &&
+                                entry.medicationStatus &&
+                                entry.medicationStatus !== "given" ? (
+                                  <span
+                                    className={`rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${medicationStatusTone(entry.medicationStatus)}`}
+                                  >
+                                    {medicationStatusLabel(entry.medicationStatus)}
+                                  </span>
+                                ) : null}
                               </div>
 
                               <p className="mt-2 font-bold leading-5 text-slate-900">
@@ -11580,6 +11693,7 @@ export default function KaylenCareMonitorDashboard({
               <option value="meltdown">Meltdown</option>
               <option value="shutdown">Shutdown</option>
               <option value="missed">Missed medication</option>
+              <option value="skipped">Skipped medication</option>
               <option value="hospital">Hospital</option>
               <option value="school">School</option>
               <option value="ehcp">EHCP</option>
