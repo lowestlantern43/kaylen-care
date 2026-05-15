@@ -8469,11 +8469,6 @@ export default function KaylenCareMonitorDashboard({
               </option>
             ))}
           </select>
-          {isSkippedMedication ? (
-            <p className="mt-1 text-xs font-semibold text-slate-500">
-              Optional when skipped.
-            </p>
-          ) : null}
         </div>
 
         <div className={cardClassName}>
