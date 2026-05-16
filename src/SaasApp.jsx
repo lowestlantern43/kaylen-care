@@ -3163,6 +3163,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       gaMeasurementId: "",
       googleSiteVerification: "",
     });
+  const [platformStripeBillingSettingsForm, setPlatformStripeBillingSettingsForm] =
+    useState({
+      stripeMonthlyPriceId: "",
+      stripeDocuments50gbPriceId: "",
+      stripeDocuments100gbPriceId: "",
+    });
   const [platformFamilyDocumentVaultForm, setPlatformFamilyDocumentVaultForm] =
     useState({
       status: "default",
@@ -5053,6 +5059,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       const documentVaultSettings = overview?.storageUsage?.settings;
       const publicPricing = overview?.publicPricing;
       const marketingSettings = overview?.marketingSettings;
+      const stripeBillingSettings = overview?.stripeBillingSettings;
       if (publicPricing) {
         setPlatformPublicPricingForm({
           familyMonthlyPriceGbp: String(publicPricing.familyMonthlyPriceGbp ?? 4.99),
@@ -5067,6 +5074,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         setPlatformMarketingSettingsForm({
           gaMeasurementId: marketingSettings.gaMeasurementId || "",
           googleSiteVerification: marketingSettings.googleSiteVerification || "",
+        });
+      }
+      if (stripeBillingSettings) {
+        setPlatformStripeBillingSettingsForm({
+          stripeMonthlyPriceId:
+            stripeBillingSettings.saved?.stripeMonthlyPriceId ||
+            stripeBillingSettings.stripeMonthlyPriceId ||
+            "",
+          stripeDocuments50gbPriceId:
+            stripeBillingSettings.saved?.stripeDocuments50gbPriceId ||
+            stripeBillingSettings.stripeDocuments50gbPriceId ||
+            "",
+          stripeDocuments100gbPriceId:
+            stripeBillingSettings.saved?.stripeDocuments100gbPriceId ||
+            stripeBillingSettings.stripeDocuments100gbPriceId ||
+            "",
         });
       }
       if (documentVaultSettings) {
@@ -5643,6 +5666,52 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setPlatformActionMessage("Analytics and Search Console settings updated.");
     } catch (caughtError) {
       setError(caughtError.message);
+    } finally {
+      setIsPlatformSaving(false);
+    }
+  };
+
+  const updatePlatformStripeBillingSettings = async () => {
+    setIsPlatformSaving(true);
+    setError("");
+    setPlatformActionMessage("");
+
+    try {
+      const settings = await api.adminUpdateStripeBillingSettings({
+        stripeMonthlyPriceId:
+          platformStripeBillingSettingsForm.stripeMonthlyPriceId,
+        stripeDocuments50gbPriceId:
+          platformStripeBillingSettingsForm.stripeDocuments50gbPriceId,
+        stripeDocuments100gbPriceId:
+          platformStripeBillingSettingsForm.stripeDocuments100gbPriceId,
+      });
+      const overview = await api.adminOverview();
+      setPlatformData((current) => ({ ...current, overview }));
+      setPlatformStripeBillingSettingsForm({
+        stripeMonthlyPriceId:
+          settings.saved?.stripeMonthlyPriceId ||
+          settings.stripeMonthlyPriceId ||
+          "",
+        stripeDocuments50gbPriceId:
+          settings.saved?.stripeDocuments50gbPriceId ||
+          settings.stripeDocuments50gbPriceId ||
+          "",
+        stripeDocuments100gbPriceId:
+          settings.saved?.stripeDocuments100gbPriceId ||
+          settings.stripeDocuments100gbPriceId ||
+          "",
+      });
+      setPlatformActionMessage("Stripe billing configuration updated.");
+      showToast({
+        message: "Stripe billing settings saved",
+        type: "success",
+      });
+    } catch (caughtError) {
+      setError(caughtError.message);
+      showToast({
+        message: caughtError.message || "Stripe billing settings could not be saved",
+        type: "error",
+      });
     } finally {
       setIsPlatformSaving(false);
     }
@@ -10453,11 +10522,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         Billing and Stripe setup
                       </h3>
                       <p className="mt-1 text-sm text-slate-600">
-                        Platform settings for FamilyTrack subscriptions. Update these in{" "}
-                        <span className="font-semibold text-slate-900">
-                          {platformData.overview?.stripeSetup?.configFile || "backend/.env"}
-                        </span>
-                        .
+                        Manage Stripe billing routes and Price IDs. Saved owner
+                        settings are used first, with backend environment values
+                        as a fallback.
                       </p>
                     </div>
                     <button
@@ -10467,6 +10534,111 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     >
                       Refresh setup
                     </button>
+                  </div>
+
+                  <div className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <h4 className="font-black text-slate-950">
+                          Stripe Billing Configuration
+                        </h4>
+                        <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                          Price IDs come from Stripe Products - Pricing. Only
+                          publishable Price IDs are stored here; secret keys and
+                          webhook secrets stay on the backend.
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-indigo-200 bg-white px-3 py-1 text-xs font-black text-indigo-700">
+                        Owner editable
+                      </span>
+                    </div>
+
+                    {!platformData.overview?.stripeSetup?.hasPriceId ? (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-bold text-amber-900">
+                        Main monthly subscription Price ID is missing. Trial
+                        checkout cannot start until this is set.
+                      </div>
+                    ) : null}
+                    {!platformData.overview?.stripeSetup?.hasDocuments50GbPriceId ||
+                    !platformData.overview?.stripeSetup?.hasDocuments100GbPriceId ? (
+                      <div className="mt-2 rounded-xl border border-sky-100 bg-white/80 px-3 py-2 text-xs font-semibold leading-5 text-slate-600">
+                        One or more Document Vault storage Price IDs are missing.
+                        The main subscription still works, but storage checkout
+                        for missing tiers will be unavailable.
+                      </div>
+                    ) : null}
+
+                    <div className="mt-4 grid gap-3 lg:grid-cols-3">
+                      {[
+                        {
+                          key: "stripeMonthlyPriceId",
+                          label: "Base monthly FamilyTrack subscription",
+                          help: "Controls the main £4.99/month FamilyTrack checkout.",
+                          fallback: "STRIPE_PRICE_ID",
+                          source:
+                            platformData.overview?.stripeBillingSettings?.sources
+                              ?.stripeMonthlyPriceId,
+                        },
+                        {
+                          key: "stripeDocuments50gbPriceId",
+                          label: "Document storage 50GB add-on",
+                          help: "Controls the optional 50GB Document Vault checkout.",
+                          fallback: "STRIPE_DOCUMENTS_50GB_PRICE_ID",
+                          source:
+                            platformData.overview?.stripeBillingSettings?.sources
+                              ?.stripeDocuments50gbPriceId,
+                        },
+                        {
+                          key: "stripeDocuments100gbPriceId",
+                          label: "Document storage 100GB add-on",
+                          help: "Controls the optional 100GB Document Vault checkout.",
+                          fallback: "STRIPE_DOCUMENTS_100GB_PRICE_ID",
+                          source:
+                            platformData.overview?.stripeBillingSettings?.sources
+                              ?.stripeDocuments100gbPriceId,
+                        },
+                      ].map((field) => (
+                        <label key={field.key} className="block rounded-xl border border-white/80 bg-white p-3 shadow-sm">
+                          <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
+                            {field.label}
+                          </span>
+                          <input
+                            value={platformStripeBillingSettingsForm[field.key]}
+                            onChange={(event) =>
+                              setPlatformStripeBillingSettingsForm((form) => ({
+                                ...form,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                            placeholder="price_..."
+                            className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-base font-semibold text-slate-900 shadow-sm"
+                          />
+                          <p className="mt-2 text-xs font-semibold leading-5 text-slate-500">
+                            {field.help}
+                          </p>
+                          <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">
+                            Source: {field.source || "missing"} · fallback{" "}
+                            {field.fallback}
+                          </p>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs font-semibold leading-5 text-slate-500">
+                        Blank fields are allowed. If a saved value is blank,
+                        FamilyTrack falls back to the matching backend
+                        environment variable when one exists.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={updatePlatformStripeBillingSettings}
+                        disabled={isPlatformSaving}
+                        className="rounded-xl bg-indigo-700 px-4 py-3 text-sm font-black text-white shadow-sm disabled:opacity-50"
+                      >
+                        {isPlatformSaving ? "Saving..." : "Save Stripe billing"}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -10512,11 +10684,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </p>
                       <p className="mt-1 break-all text-sm font-semibold text-slate-800">
                         {platformData.overview?.stripeSetup?.priceId ||
-                          `Add ${platformData.overview?.stripeSetup?.priceEnv || "STRIPE_PRO_MONTHLY_PRICE_ID"}=price_...`}
+                          "Add a saved Price ID above or set STRIPE_PRICE_ID=price_..."}
                       </p>
                       <p className="mt-2 text-xs font-semibold text-slate-500">
                         Product: FamilyTrack monthly subscription. Trial:{" "}
                         {platformData.overview?.stripeSetup?.trialDays || 14} days.
+                        Source:{" "}
+                        {platformData.overview?.stripeSetup?.sources?.stripeMonthlyPriceId ||
+                          "missing"}.
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
@@ -10537,11 +10712,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     </div>
                   </div>
                   <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50 px-3 py-3 text-sm font-semibold leading-6 text-slate-700">
-                    Add document storage Price IDs in the backend environment as{" "}
+                    Document storage checkout now uses the saved Price IDs above
+                    first, then falls back to{" "}
                     <span className="font-black">STRIPE_DOCUMENTS_50GB_PRICE_ID</span>{" "}
                     and{" "}
                     <span className="font-black">STRIPE_DOCUMENTS_100GB_PRICE_ID</span>.
-                    Then assign or adjust tiers in the Storage tab.
+                    Storage tier labels, prices and limits are still adjusted in
+                    the Storage tab.
                   </div>
 
                   <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4">

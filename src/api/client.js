@@ -493,6 +493,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify(payload),
     }),
+  adminUpdateStripeBillingSettings: (payload) =>
+    request("/admin/stripe-billing-settings", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
   adminUpdateFamilyDocumentVault: (familyId, payload) =>
     request(`/admin/families/${familyId}/document-vault`, {
       method: "PATCH",

@@ -14,6 +14,7 @@ import {
   retrieveStripeSubscription,
 } from "../services/stripe.js";
 import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
+import { getStripeBillingSettings } from "../services/stripeBillingSettings.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { frontendUrlFromRequest } from "../utils/frontendUrl.js";
@@ -48,13 +49,14 @@ function normaliseDocumentVaultTiers(tiers = []) {
               ? tier.stripePriceId.trim()
               : "",
         }))
-        .filter((tier) => tier.id && tier.stripePriceId)
+        .filter((tier) => tier.id)
     : [];
 
   return cleanTiers;
 }
 
 async function getDocumentVaultTier(tierId) {
+  const stripeBillingSettings = await getStripeBillingSettings();
   const { rows } = await query(
     `
       SELECT value
@@ -66,7 +68,24 @@ async function getDocumentVaultTier(tierId) {
   const settings = rows[0]?.value || {};
   if (settings.enabled === false) return null;
   const tiers = normaliseDocumentVaultTiers(settings.tiers);
-  return tiers.find((tier) => tier.id === tierId) || null;
+  const tier = tiers.find((item) => item.id === tierId) || null;
+  if (!tier) return null;
+  if (tier.stripePriceId) return tier;
+  if (tier.id === "storage-50gb") {
+    const resolvedTier = {
+      ...tier,
+      stripePriceId: stripeBillingSettings.stripeDocuments50gbPriceId,
+    };
+    return resolvedTier.stripePriceId ? resolvedTier : null;
+  }
+  if (tier.id === "storage-100gb") {
+    const resolvedTier = {
+      ...tier,
+      stripePriceId: stripeBillingSettings.stripeDocuments100gbPriceId,
+    };
+    return resolvedTier.stripePriceId ? resolvedTier : null;
+  }
+  return tier.stripePriceId ? tier : null;
 }
 
 function pickUsableFamilySubscription(subscriptions = []) {
@@ -341,11 +360,12 @@ subscriptionsRouter.post(
   "/checkout",
   requireRole("owner"),
   asyncHandler(async (req, res) => {
+    const stripeBillingSettings = await getStripeBillingSettings();
     console.info("Stripe checkout creation requested.", {
       userId: req.user?.id,
       familyId: req.familyMember?.family_id,
       hasStripeKey: Boolean(config.stripeSecretKey),
-      hasPriceId: Boolean(config.stripePriceId),
+      hasPriceId: Boolean(stripeBillingSettings.stripeMonthlyPriceId),
       frontendUrl: frontendUrlFromRequest(req),
     });
 
@@ -358,8 +378,10 @@ subscriptionsRouter.post(
     if (!config.stripeSecretKey) {
       throw badRequest("Stripe secret key is missing on the backend.");
     }
-    if (!config.stripePriceId) {
-      throw badRequest("Stripe main subscription price ID is missing. Set STRIPE_MAIN_PRICE_ID.");
+    if (!stripeBillingSettings.stripeMonthlyPriceId) {
+      throw badRequest(
+        "Stripe main subscription price ID is missing. Add it in Owner Platform - Billing or set STRIPE_PRICE_ID.",
+      );
     }
 
     const requestedPromotionCode = normalisePromotionCode(
@@ -455,6 +477,7 @@ subscriptionsRouter.post(
       customerId: stripeCustomerId,
       familyId: family.familyId,
       familyName: family.familyName,
+      priceId: stripeBillingSettings.stripeMonthlyPriceId,
       userId: req.user.id,
       email: req.user.email,
       promotionCodeId: promotionCode?.id || "",

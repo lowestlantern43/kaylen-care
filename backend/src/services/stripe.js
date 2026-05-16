@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { config } from "../config.js";
+import { getStripeBillingSettings } from "./stripeBillingSettings.js";
 import { badRequest } from "../utils/httpError.js";
 import { safeFrontendUrl } from "../utils/frontendUrl.js";
 
@@ -94,7 +95,7 @@ export async function createStripeCheckoutSession({
   familyName,
   userId = "",
   email = "",
-  priceId = config.stripePriceId,
+  priceId = "",
   plan = "family",
   trialPeriodDays = config.proTrialDays,
   successPath = "",
@@ -104,8 +105,16 @@ export async function createStripeCheckoutSession({
   promotionCode = "",
   frontendUrl = "",
 }) {
-  if (!priceId) {
-    throw badRequest("Stripe price is not configured yet. Add STRIPE_MAIN_PRICE_ID to the backend environment.");
+  const effectiveBilling = priceId
+    ? null
+    : await getStripeBillingSettings();
+  const resolvedPriceId =
+    priceId || effectiveBilling?.stripeMonthlyPriceId || "";
+
+  if (!resolvedPriceId) {
+    throw badRequest(
+      "Stripe price is not configured yet. Add it in Owner Platform - Billing or set STRIPE_PRICE_ID in the backend environment.",
+    );
   }
 
   const checkoutFrontendUrl = safeFrontendUrl(frontendUrl);
@@ -118,7 +127,7 @@ export async function createStripeCheckoutSession({
   params.set("mode", "subscription");
   params.set("customer", customerId);
   params.set("payment_method_collection", "always");
-  params.set("line_items[0][price]", priceId);
+  params.set("line_items[0][price]", resolvedPriceId);
   params.set("line_items[0][quantity]", "1");
   if (Number(trialPeriodDays) > 0) {
     params.set("subscription_data[trial_period_days]", String(Number(trialPeriodDays)));
@@ -140,7 +149,7 @@ export async function createStripeCheckoutSession({
   if (email) params.set("metadata[email]", email);
   params.set("metadata[family_name]", familyName);
   params.set("metadata[plan]", plan);
-  if (priceId) params.set("metadata[price_id]", priceId);
+  params.set("metadata[price_id]", resolvedPriceId);
   Object.entries(metadata).forEach(([key, value]) => {
     if (value !== null && typeof value !== "undefined" && value !== "") {
       params.set(`metadata[${key}]`, String(value));
@@ -153,7 +162,7 @@ export async function createStripeCheckoutSession({
   if (email) params.set("subscription_data[metadata][email]", email);
   params.set("subscription_data[metadata][family_name]", familyName);
   params.set("subscription_data[metadata][plan]", plan);
-  if (priceId) params.set("subscription_data[metadata][price_id]", priceId);
+  params.set("subscription_data[metadata][price_id]", resolvedPriceId);
   Object.entries(metadata).forEach(([key, value]) => {
     if (value !== null && typeof value !== "undefined" && value !== "") {
       params.set(`subscription_data[metadata][${key}]`, String(value));

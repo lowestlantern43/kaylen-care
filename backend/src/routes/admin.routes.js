@@ -21,6 +21,13 @@ import {
   listStripePaidInvoices,
   listStripeCustomerSubscriptions,
 } from "../services/stripe.js";
+import {
+  buildEffectiveStripeBillingSettings,
+  ensureStripeBillingSettings,
+  getStripeBillingSettings,
+  normaliseStripeBillingSettings,
+  STRIPE_BILLING_SETTINGS_KEY,
+} from "../services/stripeBillingSettings.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
@@ -45,6 +52,7 @@ adminRouter.use(
     await ensureDocumentVaultBillingSchema();
     await ensurePublicPricingSettings();
     await ensureMarketingSettings();
+    await ensureStripeBillingSettings();
     next();
   }),
 );
@@ -94,6 +102,7 @@ async function ensureFamilyArchivePolicySchema() {
 }
 
 async function ensureDocumentVaultBillingSchema() {
+  const stripeBillingSettings = await getStripeBillingSettings();
   await query(
     "ALTER TABLE families ADD COLUMN IF NOT EXISTS document_vault_override jsonb",
   );
@@ -115,14 +124,14 @@ async function ensureDocumentVaultBillingSchema() {
             label: "50GB Secure Document Storage",
             monthlyPriceGbp: 2,
             includedStorageGb: 50,
-            stripePriceId: config.stripeDocuments50GbPriceId,
+            stripePriceId: stripeBillingSettings.stripeDocuments50gbPriceId,
           },
           {
             id: "storage-100gb",
             label: "100GB Secure Document Storage",
             monthlyPriceGbp: 3,
             includedStorageGb: 100,
-            stripePriceId: config.stripeDocuments100GbPriceId,
+            stripePriceId: stripeBillingSettings.stripeDocuments100gbPriceId,
           },
         ],
         notes: "Secure Document Storage add-on pricing.",
@@ -337,6 +346,7 @@ function buildEffectiveDocumentVaultAccess(settings, override) {
 }
 
 async function getDocumentVaultSettings() {
+  const stripeBillingSettings = await getStripeBillingSettings();
   const { rows } = await query(
     `
       SELECT value
@@ -346,7 +356,25 @@ async function getDocumentVaultSettings() {
     `,
   );
 
-  return normaliseDocumentVaultSettings(rows[0]?.value || {});
+  const settings = normaliseDocumentVaultSettings(rows[0]?.value || {});
+  return {
+    ...settings,
+    tiers: settings.tiers.map((tier) => {
+      if (tier.id === "storage-50gb" && !tier.stripePriceId) {
+        return {
+          ...tier,
+          stripePriceId: stripeBillingSettings.stripeDocuments50gbPriceId,
+        };
+      }
+      if (tier.id === "storage-100gb" && !tier.stripePriceId) {
+        return {
+          ...tier,
+          stripePriceId: stripeBillingSettings.stripeDocuments100gbPriceId,
+        };
+      }
+      return tier;
+    }),
+  };
 }
 
 async function getPublicPricingSettings() {
@@ -930,6 +958,7 @@ adminRouter.get(
       storageUsage,
       publicPricing,
       marketingSettings,
+      stripeBillingSettings,
     ] = await Promise.all([
       query("SELECT count(*)::int AS count FROM families WHERE deleted_at IS NULL"),
       query("SELECT count(*)::int AS count FROM users WHERE deleted_at IS NULL"),
@@ -1030,6 +1059,7 @@ adminRouter.get(
       buildDocumentStorageSummary(),
       getPublicPricingSettings(),
       getMarketingSettings(),
+      getStripeBillingSettings(),
     ]);
 
     res.json({
@@ -1053,18 +1083,25 @@ adminRouter.get(
         storageUsage,
         publicPricing,
         marketingSettings,
+        stripeBillingSettings,
         stripeSetup: {
           hasSecretKey: Boolean(config.stripeSecretKey),
           hasWebhookSecret: Boolean(config.stripeWebhookSecret),
-          hasPriceId: Boolean(config.stripePriceId),
-          hasDocuments50GbPriceId: Boolean(config.stripeDocuments50GbPriceId),
-          hasDocuments100GbPriceId: Boolean(config.stripeDocuments100GbPriceId),
-          priceId: config.stripePriceId || null,
-          priceEnv: "STRIPE_MAIN_PRICE_ID",
+          hasPriceId: Boolean(stripeBillingSettings.stripeMonthlyPriceId),
+          hasDocuments50GbPriceId: Boolean(
+            stripeBillingSettings.stripeDocuments50gbPriceId,
+          ),
+          hasDocuments100GbPriceId: Boolean(
+            stripeBillingSettings.stripeDocuments100gbPriceId,
+          ),
+          priceId: stripeBillingSettings.stripeMonthlyPriceId || null,
+          priceEnv: "STRIPE_PRICE_ID",
           documentPriceEnvs: [
             "STRIPE_DOCUMENTS_50GB_PRICE_ID",
             "STRIPE_DOCUMENTS_100GB_PRICE_ID",
           ],
+          sources: stripeBillingSettings.sources,
+          envFallbacks: stripeBillingSettings.envFallbacks,
           trialDays: config.proTrialDays,
           checkoutRoute: "/api/families/:familyId/subscription/checkout",
           webhookRoute: "/api/stripe/webhook",
@@ -1203,6 +1240,53 @@ adminRouter.patch(
 
     res.json({
       data: normaliseMarketingSettings(rows[0]?.value || value),
+      error: null,
+    });
+  }),
+);
+
+adminRouter.patch(
+  "/stripe-billing-settings",
+  asyncHandler(async (req, res) => {
+    const value = normaliseStripeBillingSettings({
+      stripeMonthlyPriceId: optionalString(req.body, "stripeMonthlyPriceId"),
+      stripeDocuments50gbPriceId: optionalString(
+        req.body,
+        "stripeDocuments50gbPriceId",
+      ),
+      stripeDocuments100gbPriceId: optionalString(
+        req.body,
+        "stripeDocuments100gbPriceId",
+      ),
+    });
+
+    const { rows } = await query(
+      `
+        INSERT INTO platform_settings (key, value, updated_at, updated_by_user_id)
+        VALUES ($1, $2, now(), $3)
+        ON CONFLICT (key)
+        DO UPDATE SET
+          value = EXCLUDED.value,
+          updated_at = now(),
+          updated_by_user_id = EXCLUDED.updated_by_user_id
+        RETURNING value
+      `,
+      [STRIPE_BILLING_SETTINGS_KEY, JSON.stringify(value), req.user.id],
+    );
+
+    await writeAudit(req, {
+      entityType: "platform_setting",
+      entityId: null,
+      action: "platform_stripe_billing_settings_updated",
+      metadata: {
+        hasMonthlyPriceId: Boolean(value.stripeMonthlyPriceId),
+        hasDocuments50gbPriceId: Boolean(value.stripeDocuments50gbPriceId),
+        hasDocuments100gbPriceId: Boolean(value.stripeDocuments100gbPriceId),
+      },
+    });
+
+    res.json({
+      data: buildEffectiveStripeBillingSettings(rows[0]?.value || value),
       error: null,
     });
   }),
