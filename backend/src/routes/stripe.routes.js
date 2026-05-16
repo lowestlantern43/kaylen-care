@@ -13,6 +13,91 @@ import { badRequest, forbidden } from "../utils/httpError.js";
 
 export const stripeRouter = Router();
 
+async function ensureStripeWebhookEventsSchema() {
+  await query(`
+    CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+      stripe_event_id TEXT PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'processing',
+      attempts INTEGER NOT NULL DEFAULT 1,
+      last_error TEXT,
+      processed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+}
+
+async function beginStripeWebhookEvent(event) {
+  await ensureStripeWebhookEventsSchema();
+
+  const { rows } = await query(
+    `
+      INSERT INTO stripe_webhook_events (
+        stripe_event_id,
+        event_type,
+        status,
+        attempts,
+        updated_at
+      )
+      VALUES ($1, $2, 'processing', 1, now())
+      ON CONFLICT (stripe_event_id)
+      DO UPDATE SET
+        attempts = stripe_webhook_events.attempts + 1,
+        status = 'processing',
+        last_error = null,
+        updated_at = now()
+      WHERE stripe_webhook_events.status = 'failed'
+      RETURNING stripe_event_id, event_type, status, attempts
+    `,
+    [event.id, event.type],
+  );
+
+  if (rows[0]) return { shouldProcess: true, eventRecord: rows[0] };
+
+  const existing = await query(
+    `
+      SELECT status, attempts
+      FROM stripe_webhook_events
+      WHERE stripe_event_id = $1
+      LIMIT 1
+    `,
+    [event.id],
+  );
+
+  return {
+    shouldProcess: false,
+    eventRecord: existing.rows[0] || null,
+  };
+}
+
+async function completeStripeWebhookEvent(event) {
+  await query(
+    `
+      UPDATE stripe_webhook_events
+      SET status = 'processed',
+          processed_at = now(),
+          last_error = null,
+          updated_at = now()
+      WHERE stripe_event_id = $1
+    `,
+    [event.id],
+  );
+}
+
+async function failStripeWebhookEvent(event, error) {
+  await query(
+    `
+      UPDATE stripe_webhook_events
+      SET status = 'failed',
+          last_error = $2,
+          updated_at = now()
+      WHERE stripe_event_id = $1
+    `,
+    [event.id, error?.message || "Webhook processing failed."],
+  );
+}
+
 async function loadSubscriptionAccess(familyId) {
   const { rows } = await query(
     `
@@ -205,7 +290,7 @@ stripeRouter.get(
 );
 
 async function updateSubscriptionFromStripe(subscription) {
-  await syncSubscriptionFromStripe(subscription);
+  return syncSubscriptionFromStripe(subscription);
 }
 
 async function updateSubscriptionFromInvoice(invoice, fallbackStatus = null) {
@@ -220,14 +305,41 @@ async function updateSubscriptionFromInvoice(invoice, fallbackStatus = null) {
   if (fallbackStatus) {
     subscription.status = fallbackStatus;
   }
-  await updateSubscriptionFromStripe(subscription);
+  return updateSubscriptionFromStripe(subscription);
 }
+
+stripeRouter.get("/webhook", (req, res) => {
+  res.json({
+    data: {
+      ok: true,
+      method: "POST",
+      endpoint: "/api/stripe/webhook",
+      message:
+        "Stripe webhooks should be configured as POST https://familytrack.care/api/stripe/webhook",
+    },
+    error: null,
+  });
+});
 
 stripeRouter.post(
   "/webhook",
   asyncHandler(async (req, res) => {
     const rawBody = req.body;
-    verifyStripeWebhookSignature(rawBody, req.headers["stripe-signature"]);
+    if (!Buffer.isBuffer(rawBody)) {
+      throw badRequest(
+        "Stripe webhook requires the raw request body. Check Express raw body middleware for /api/stripe/webhook.",
+      );
+    }
+
+    try {
+      verifyStripeWebhookSignature(rawBody, req.headers["stripe-signature"]);
+    } catch (error) {
+      console.warn("Stripe webhook signature verification failed.", {
+        message: error.message,
+        hasSignature: Boolean(req.headers["stripe-signature"]),
+      });
+      throw error;
+    }
 
     const event = JSON.parse(rawBody.toString("utf8"));
     console.info("Stripe webhook received.", {
@@ -235,36 +347,72 @@ stripeRouter.post(
       id: event.id,
     });
 
-    if (
-      [
-        "customer.subscription.created",
-        "customer.subscription.updated",
-        "customer.subscription.deleted",
-      ].includes(event.type)
-    ) {
-      await updateSubscriptionFromStripe(event.data.object);
+    const { shouldProcess, eventRecord } = await beginStripeWebhookEvent(event);
+    if (!shouldProcess) {
+      console.info("Stripe webhook event already handled or in progress.", {
+        type: event.type,
+        id: event.id,
+        status: eventRecord?.status || "unknown",
+        attempts: eventRecord?.attempts || 0,
+      });
+      res.json({ received: true, duplicate: true });
+      return;
     }
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      if (session.mode === "subscription" && session.subscription) {
-        console.info("Stripe checkout completed.", {
-          sessionId: session.id,
-          customerId: session.customer,
-          subscriptionId: session.subscription,
-          familyId: session.client_reference_id || session.metadata?.family_id,
-        });
-        const subscription = await retrieveStripeSubscription(session.subscription);
-        await updateSubscriptionFromStripe(subscription);
+    try {
+      let synced = null;
+
+      if (
+        [
+          "customer.subscription.created",
+          "customer.subscription.updated",
+          "customer.subscription.deleted",
+        ].includes(event.type)
+      ) {
+        synced = await updateSubscriptionFromStripe(event.data.object);
       }
-    }
 
-    if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
-      await updateSubscriptionFromInvoice(event.data.object);
-    }
+      if (event.type === "checkout.session.completed") {
+        const session = event.data.object;
+        if (session.mode === "subscription" && session.subscription) {
+          console.info("Stripe checkout completed.", {
+            sessionId: session.id,
+            customerId: session.customer,
+            subscriptionId: session.subscription,
+            familyId: session.metadata?.family_id || session.metadata?.account_id || "",
+            userId: session.metadata?.user_id || "",
+            clientReferenceId: session.client_reference_id || "",
+          });
+          const subscription = await retrieveStripeSubscription(session.subscription);
+          synced = await updateSubscriptionFromStripe(subscription);
+        }
+      }
 
-    if (event.type === "invoice.payment_failed") {
-      await updateSubscriptionFromInvoice(event.data.object, "past_due");
+      if (event.type === "invoice.payment_succeeded" || event.type === "invoice.paid") {
+        synced = await updateSubscriptionFromInvoice(event.data.object);
+      }
+
+      if (event.type === "invoice.payment_failed") {
+        synced = await updateSubscriptionFromInvoice(event.data.object, "past_due");
+      }
+
+      await completeStripeWebhookEvent(event);
+
+      console.info("Stripe webhook processed.", {
+        type: event.type,
+        id: event.id,
+        familyId: synced?.familyId || "",
+        status: synced?.status || "",
+        plan: synced?.plan || "",
+      });
+    } catch (error) {
+      await failStripeWebhookEvent(event, error).catch(() => null);
+      console.error("Stripe webhook processing failed.", {
+        type: event.type,
+        id: event.id,
+        message: error.message,
+      });
+      throw error;
     }
 
     res.json({ received: true });
