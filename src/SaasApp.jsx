@@ -3205,8 +3205,6 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const toastTimeoutRef = useRef(null);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallOnboarding, setShowInstallOnboarding] = useState(false);
-  const [isFloatingChildSwitcherOpen, setIsFloatingChildSwitcherOpen] =
-    useState(false);
   const [adminIssueFilter, setAdminIssueFilter] = useState("active");
   const [platformFamilyDetailTab, setPlatformFamilyDetailTab] =
     useState("overview");
@@ -14471,61 +14469,6 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               OK
             </button>
           </div>
-        </div>
-      ) : null}
-      {!showAdmin && !showPlatformAdmin && children.length > 1 ? (
-        <div className="fixed right-3 top-3 z-50" data-feedback-ui="true">
-          <button
-            type="button"
-            onClick={() =>
-              setIsFloatingChildSwitcherOpen((current) => !current)
-            }
-            className="flex h-12 w-12 items-center justify-center rounded-full border border-white/80 bg-white shadow-lg ring-1 ring-slate-200"
-            title={`Current child: ${childDisplayName(selectedChild)}`}
-            aria-label={`Current child: ${childDisplayName(selectedChild)}`}
-          >
-            {avatarUrlForChild(selectedChild) ? (
-              <img
-                src={avatarUrlForChild(selectedChild)}
-                alt=""
-                className="h-10 w-10 rounded-full object-cover"
-              />
-            ) : (
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-600 text-sm font-black text-white">
-                {childInitials(selectedChild)}
-              </span>
-            )}
-          </button>
-          {isFloatingChildSwitcherOpen ? (
-            <div className="absolute right-0 mt-2 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-              <p className="px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
-                Switch child
-              </p>
-              <div className="mt-1 space-y-1">
-                {children.map((child) => {
-                  const isSelected = child.id === selectedChildId;
-                  return (
-                    <button
-                      key={child.id}
-                      type="button"
-                      onClick={() => {
-                        selectChild(child.id);
-                        setIsFloatingChildSwitcherOpen(false);
-                      }}
-                      className={`flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-sm font-bold ${
-                        isSelected
-                          ? "bg-indigo-50 text-indigo-700"
-                          : "text-slate-700 hover:bg-slate-50"
-                      }`}
-                    >
-                      <ChildAvatar child={child} active={false} />
-                      <span className="truncate">{childDisplayName(child)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
       {showInstallOnboarding && !isStandaloneDisplay() ? (

@@ -14348,8 +14348,8 @@ export default function KaylenCareMonitorDashboard({
   const mobileNavButtonClass = (active, extra = "") =>
     `flex min-h-[3.35rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 text-[11px] font-black transition duration-200 active:scale-95 ${
       active
-        ? "bg-violet-50 text-violet-700 shadow-sm"
-        : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+        ? "bg-violet-50 text-violet-700 shadow-md shadow-violet-500/15 ring-1 ring-violet-100"
+        : "text-slate-500 hover:bg-white hover:text-slate-800"
     } ${extra}`;
 
   return (
@@ -14482,19 +14482,6 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <div className="mb-4">
-          {homeStatusItems.length ? (
-            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-              {homeStatusItems.map((item) => (
-                <span
-                  key={item.key}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm/50 ${item.tone}`}
-                >
-                  {item.text}
-                </span>
-              ))}
-            </div>
-          ) : null}
-
           <div className="grid gap-3">
             {isModuleEnabled("drink") ? (
               <button
@@ -15026,7 +15013,7 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <nav
-          className="mx-auto flex w-full max-w-md items-center gap-1 rounded-[1.7rem] border border-white/70 bg-white/90 p-1.5 shadow-2xl shadow-slate-900/15 backdrop-blur-xl"
+          className="relative mx-auto flex w-full max-w-md items-center gap-1 overflow-hidden rounded-[1.85rem] border border-slate-200/80 bg-white/95 p-1.5 shadow-[0_20px_55px_rgba(15,23,42,0.28)] ring-1 ring-white/90 backdrop-blur-2xl before:pointer-events-none before:absolute before:inset-x-4 before:top-0 before:h-px before:bg-white/95"
           aria-label="Primary mobile navigation"
         >
           <button
@@ -15059,7 +15046,7 @@ export default function KaylenCareMonitorDashboard({
             }}
             className={mobileNavButtonClass(
               quickAddOpen,
-              "mx-0.5 bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:from-violet-600 hover:to-indigo-600 hover:text-white",
+              "mx-0.5 bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-xl shadow-violet-500/35 ring-1 ring-violet-300/70 hover:from-violet-600 hover:to-indigo-600 hover:text-white",
             )}
             aria-label="Open quick add"
           >
