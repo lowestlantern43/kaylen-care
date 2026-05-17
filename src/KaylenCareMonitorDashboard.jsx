@@ -1162,6 +1162,7 @@ export default function KaylenCareMonitorDashboard({
         { label: "Sleep", title: "Sleep", preset: "", icon: "Sleep", module: "sleep" },
         { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
         { label: "Health", title: "Health", preset: "", icon: "Health", module: "health" },
+        { label: "Measurements", title: "Growth / Measurements", preset: "", icon: "Measure", module: "measurements" },
         { label: "Behaviour", title: "Behaviour", preset: "", icon: "Mood", module: "behaviour" },
         { label: "Appointment", title: "Appointments", preset: "", icon: "Date", module: "appointments" },
       ].filter((item) => isModuleEnabled(item.module)),
@@ -14195,6 +14196,9 @@ export default function KaylenCareMonitorDashboard({
     isModuleEnabled("snapshot")
       ? { label: "Care Snapshot", title: "Care Snapshot", icon: "snapshot" }
       : null,
+    isModuleEnabled("measurements")
+      ? { label: "Measurements", title: "Growth / Measurements", icon: "measurements" }
+      : null,
     isModuleEnabled("documents")
       ? { label: "Document Vault", title: "Document Vault", icon: "documents" }
       : null,
@@ -14255,6 +14259,7 @@ export default function KaylenCareMonitorDashboard({
     if (icon === "documents") return renderSectionIcon("Document Vault", className);
     if (icon === "appointments") return renderSectionIcon("Appointments", className);
     if (icon === "calendar") return renderSectionIcon("Calendar", className);
+    if (icon === "measurements") return renderSectionIcon("Growth / Measurements", className);
     if (icon === "subscription") return renderSectionIcon("Reports", className);
 
     const common = {
@@ -14933,10 +14938,12 @@ export default function KaylenCareMonitorDashboard({
                               ? homeIconTone("medication")
                               : item.title === "Sleep"
                                 ? homeIconTone("sleep")
-                                : item.title === "Toileting"
-                                  ? homeIconTone("toileting")
-                                  : item.title === "Behaviour"
-                                    ? homeIconTone("behaviour")
+                              : item.title === "Toileting"
+                                ? homeIconTone("toileting")
+                                : item.title === "Growth / Measurements"
+                                  ? homeIconTone("health")
+                                : item.title === "Behaviour"
+                                  ? homeIconTone("behaviour")
                                     : item.title === "Health"
                                       ? homeIconTone("health")
                                       : homeIconTone("default")
