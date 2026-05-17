@@ -968,6 +968,7 @@ export default function KaylenCareMonitorDashboard({
   const [isLoadingSleepDraft, setIsLoadingSleepDraft] = useState(false);
   const [isSavingSleep, setIsSavingSleep] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [moreNavOpen, setMoreNavOpen] = useState(false);
   const [selectedMedicationShortcut, setSelectedMedicationShortcut] = useState("");
   const [draftPrompts, setDraftPrompts] = useState({});
   const [draggingCardTitle, setDraggingCardTitle] = useState("");
@@ -1143,7 +1144,7 @@ export default function KaylenCareMonitorDashboard({
     () =>
       [
         { label: "Food", title: "Food Diary", preset: "", icon: "Food", module: "food" },
-        { label: "Drink", title: "Food Diary", preset: "Drink", icon: "Drink", module: "drink" },
+        { label: "Fluids", title: "Food Diary", preset: "Drink", icon: "Drink", module: "drink" },
         { label: "Medication", title: "Medication", preset: "", icon: "Med", module: "medication" },
         { label: "Sleep", title: "Sleep", preset: "", icon: "Sleep", module: "sleep" },
         { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
@@ -2040,6 +2041,8 @@ export default function KaylenCareMonitorDashboard({
       resetFormForNewEntry(section.title);
     }
     setActiveSection(section);
+    setQuickAddOpen(false);
+    setMoreNavOpen(false);
     if (section.title !== "Medication") setMedicationValue("");
     if (section.title !== "Food Diary") setFoodValue("");
     if (section.title !== "Reports") {
@@ -2064,12 +2067,13 @@ export default function KaylenCareMonitorDashboard({
       }));
     }
 
-    setQuickAddOpen(false);
     openSection(section);
   };
 
   const closeSection = () => {
     setActiveSection(null);
+    setQuickAddOpen(false);
+    setMoreNavOpen(false);
     setMedicationValue("");
     setFoodValue("");
     setShareCopied(false);
@@ -13823,9 +13827,97 @@ export default function KaylenCareMonitorDashboard({
   const isReportsOpen = ["Reports", "Care Snapshot", "Document Vault", "Timeline", "Calendar"].includes(
     activeSection?.title,
   );
+  const isLogSectionOpen = [
+    "Food Diary",
+    "Medication",
+    "Sleep",
+    "Toileting",
+    "Health",
+    "Behaviour",
+    "Growth / Measurements",
+    "Timeline",
+  ].includes(activeSection?.title);
+  const isMoreSectionOpen = [
+    "Care Snapshot",
+    "Document Vault",
+    "Appointments",
+    "Calendar",
+  ].includes(activeSection?.title);
+
+  const mobileMoreItems = [
+    { label: "Care Snapshot", title: "Care Snapshot", module: "snapshot" },
+    { label: "Document Vault", title: "Document Vault", module: "documents" },
+    { label: "Appointments", title: "Appointments", module: "appointments" },
+    { label: "Calendar", title: "Calendar", module: "calendar" },
+    { label: "Timeline", title: "Timeline", module: "timeline" },
+  ].filter((item) => isModuleEnabled(item.module));
+
+  const renderMobileNavIcon = (name, className = "h-5 w-5") => {
+    const common = {
+      className,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+    };
+
+    switch (name) {
+      case "Home":
+        return (
+          <svg {...common}>
+            <path d="m3 11 9-8 9 8" />
+            <path d="M5 10v10h14V10" />
+            <path d="M10 20v-5h4v5" />
+          </svg>
+        );
+      case "Logs":
+        return (
+          <svg {...common}>
+            <path d="M5 4h14" />
+            <path d="M5 9h14" />
+            <path d="M5 14h10" />
+            <path d="M5 19h7" />
+          </svg>
+        );
+      case "Add":
+        return (
+          <svg {...common}>
+            <path d="M12 5v14" />
+            <path d="M5 12h14" />
+          </svg>
+        );
+      case "Reports":
+        return (
+          <svg {...common}>
+            <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+            <path d="M14 3v5h5" />
+            <path d="M9 14h6" />
+            <path d="M9 18h4" />
+          </svg>
+        );
+      default:
+        return (
+          <svg {...common}>
+            <circle cx="5" cy="12" r="1.5" />
+            <circle cx="12" cy="12" r="1.5" />
+            <circle cx="19" cy="12" r="1.5" />
+          </svg>
+        );
+    }
+  };
+
+  const mobileNavButtonClass = (active, extra = "") =>
+    `flex min-h-[3.35rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 text-[11px] font-black transition duration-200 active:scale-95 ${
+      active
+        ? "bg-violet-50 text-violet-700 shadow-sm"
+        : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+    } ${extra}`;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 text-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
       <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
         {accountAccess && !accountAccess.canAddLogs ? (
           <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
@@ -14283,21 +14375,30 @@ export default function KaylenCareMonitorDashboard({
         </div>
       </div>
 
-      {quickAddItems.length ? (
-      <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 md:hidden">
-        {quickAddOpen ? (
-          <div className="w-[min(18rem,calc(100vw-2rem))] rounded-[1.5rem] border border-sky-100 bg-white p-3 shadow-2xl">
-            <div className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2">
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">
-                Adding for
-              </p>
-              <p className="mt-0.5 truncate text-sm font-black text-slate-900">
-                {childName}
-              </p>
+      <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden">
+        {quickAddOpen && quickAddItems.length ? (
+          <div className="mx-auto mb-3 w-full max-w-md rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-violet-50/80 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-700">
+                  Quick add
+                </p>
+                <p className="mt-0.5 truncate text-sm font-black text-slate-900">
+                  Adding for {childName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickAddOpen(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-slate-500 shadow-sm"
+                aria-label="Close quick add"
+              >
+                x
+              </button>
             </div>
             {children.length > 1 && onSelectChild ? (
               <select
-                className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold text-slate-700"
+                className="mt-2 w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-base font-bold text-slate-700"
                 value={selectedChildId || childId}
                 onChange={(event) => onSelectChild(event.target.value)}
               >
@@ -14308,64 +14409,125 @@ export default function KaylenCareMonitorDashboard({
                 ))}
               </select>
             ) : null}
-            <div className="mt-2 border-t border-slate-100 pt-2">
-            {[
-              ["Food", "Food Diary", "", "🍽"],
-              ["Drink", "Food Diary", "Drink", "🥤"],
-              ["Medication", "Medication", "", "💊"],
-              ["Sleep", "Sleep", "", "🌙"],
-              ["Toileting", "Toileting", "", "🚽"],
-              ["Health", "Health", "", "✚"],
-              ["Behaviour", "Behaviour", "", "BT"],
-              ["Appointment", "Appointments", "", "AP"],
-            ].map(([label, title, preset, icon]) => {
-              const moduleKey =
-                label === "Food"
-                  ? "food"
-                  : label === "Drink"
-                    ? "drink"
-                    : label === "Medication"
-                      ? "medication"
-                      : label === "Sleep"
-                        ? "sleep"
-                        : label === "Toileting"
-                          ? "toileting"
-                          : label === "Health"
-                            ? "health"
-                            : label === "Behaviour"
-                              ? "behaviour"
-                              : label === "Appointment"
-                                ? "appointments"
-                              : "";
-              if (moduleKey && !isModuleEnabled(moduleKey)) return null;
-              return (
-              <button
-                key={label}
-                type="button"
-                onClick={() => openQuickAdd(title, preset)}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-base">
-                  {icon}
-                </span>
-                <span>{label}</span>
-              </button>
-              );
-            })}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {quickAddItems
+                .filter((item) => item.label !== "Appointment")
+                .map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => openQuickAdd(item.title, item.preset)}
+                    className="flex min-h-[3.5rem] items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:border-violet-100 hover:bg-violet-50 active:scale-[0.98]"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
+                      {renderSectionIcon(item.title, "h-5 w-5")}
+                    </span>
+                    <span className="truncate">{item.label}</span>
+                  </button>
+                ))}
             </div>
           </div>
         ) : null}
-        <button
-          type="button"
-          onClick={() => setQuickAddOpen((current) => !current)}
-          className="flex min-h-14 items-center gap-2 rounded-full bg-slate-950 px-4 py-3 text-sm font-black leading-none text-white shadow-xl"
-          aria-label="Quick add"
+
+        {moreNavOpen && mobileMoreItems.length ? (
+          <div className="mx-auto mb-3 w-full max-w-md rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                More
+              </p>
+              <button
+                type="button"
+                onClick={() => setMoreNavOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-black text-slate-500"
+                aria-label="Close more menu"
+              >
+                x
+              </button>
+            </div>
+            <div className="grid gap-2">
+              {mobileMoreItems.map((item) => {
+                const section = sections.find(
+                  (sectionItem) => sectionItem.title === item.title,
+                );
+                return (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => openSection(section)}
+                    className="flex min-h-[3.25rem] items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:bg-violet-50 active:scale-[0.98]"
+                  >
+                    <span>{item.label}</span>
+                    <span className="text-violet-600">-&gt;</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        <nav
+          className="mx-auto flex w-full max-w-md items-center gap-1 rounded-[1.7rem] border border-white/70 bg-white/90 p-1.5 shadow-2xl shadow-slate-900/15 backdrop-blur-xl"
+          aria-label="Primary mobile navigation"
         >
-          <span className="text-2xl font-light">{quickAddOpen ? "×" : "+"}</span>
-          <span>{quickAddOpen ? "Close" : "Add"}</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              closeSection();
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+            className={mobileNavButtonClass(!activeSection && !quickAddOpen && !moreNavOpen)}
+          >
+            {renderMobileNavIcon("Home")}
+            <span>Home</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              openSection(sections.find((section) => section.title === "Timeline"))
+            }
+            className={mobileNavButtonClass(isLogSectionOpen && !quickAddOpen)}
+          >
+            {renderMobileNavIcon("Logs")}
+            <span>Logs</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMoreNavOpen(false);
+              setQuickAddOpen((current) => !current);
+            }}
+            className={mobileNavButtonClass(
+              quickAddOpen,
+              "mx-0.5 bg-gradient-to-br from-violet-600 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:from-violet-600 hover:to-indigo-600 hover:text-white",
+            )}
+            aria-label="Open quick add"
+          >
+            {renderMobileNavIcon("Add", "h-6 w-6")}
+            <span>Add</span>
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              openSection(sections.find((section) => section.title === "Reports"))
+            }
+            className={mobileNavButtonClass(activeSection?.title === "Reports")}
+          >
+            {renderMobileNavIcon("Reports")}
+            <span>Reports</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setQuickAddOpen(false);
+              setMoreNavOpen((current) => !current);
+            }}
+            className={mobileNavButtonClass(moreNavOpen || isMoreSectionOpen)}
+          >
+            {renderMobileNavIcon("More")}
+            <span>More</span>
+          </button>
+        </nav>
       </div>
-      ) : null}
 
       {activeSection ? (
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/40 p-3 backdrop-blur-sm md:p-4">
@@ -14407,6 +14569,7 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 }
+
 
 
 
