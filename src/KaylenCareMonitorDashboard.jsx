@@ -685,6 +685,7 @@ export default function KaylenCareMonitorDashboard({
   onReportIssue,
   canOpenPlatformAdmin = false,
   onOpenPlatformAdmin,
+  onLogout,
   onAddRegularMedication,
   customFoodOptions = [],
   customDrinkOptions = [],
@@ -13957,29 +13958,35 @@ export default function KaylenCareMonitorDashboard({
   ].includes(activeSection?.title);
 
   const mobileMoreItems = [
-    { label: "Settings", action: onOpenSettings },
-    { label: "Child profiles", action: onOpenChildSetup },
-    { label: "Notifications", action: onOpenNotifications },
-    { label: "Subscription", action: onOpenSubscription },
-    { label: "Help / Support", action: onOpenSupport },
-    { label: "Report Issue", action: onReportIssue },
+    { type: "heading", label: "Account" },
+    { label: "Profile", icon: "profile", action: onOpenSettings },
+    { label: "Subscription", icon: "subscription", action: onOpenSubscription },
+    { label: "Log out", icon: "logout", action: onLogout },
+    { type: "heading", label: "Family" },
+    { label: "Child Profiles", icon: "profile", action: onOpenChildSetup },
+    { label: "Notifications", icon: "notifications", action: onOpenNotifications },
+    { type: "heading", label: "Support" },
+    { label: "Help & Support", icon: "support", action: onOpenSupport },
+    { label: "Report Issue", icon: "support", action: onReportIssue },
+    canOpenPlatformAdmin ? { type: "heading", label: "Admin" } : null,
     canOpenPlatformAdmin
-      ? { label: "Owner/Admin Platform", action: onOpenPlatformAdmin }
+      ? { label: "Owner/Admin Platform", icon: "admin", action: onOpenPlatformAdmin }
+      : null,
+    { type: "heading", label: "Care tools" },
+    isModuleEnabled("timeline")
+      ? { label: "Logs Timeline", title: "Timeline", icon: "logs" }
       : null,
     isModuleEnabled("snapshot")
-      ? { label: "Care Snapshot", title: "Care Snapshot" }
+      ? { label: "Care Snapshot", title: "Care Snapshot", icon: "snapshot" }
       : null,
     isModuleEnabled("documents")
-      ? { label: "Document Vault", title: "Document Vault" }
+      ? { label: "Document Vault", title: "Document Vault", icon: "documents" }
       : null,
     isModuleEnabled("appointments")
-      ? { label: "Appointments", title: "Appointments" }
+      ? { label: "Appointments", title: "Appointments", icon: "appointments" }
       : null,
     isModuleEnabled("calendar")
-      ? { label: "Calendar", title: "Calendar" }
-      : null,
-    isModuleEnabled("timeline")
-      ? { label: "Timeline", title: "Timeline" }
+      ? { label: "Calendar", title: "Calendar", icon: "calendar" }
       : null,
   ].filter(Boolean);
 
@@ -14005,14 +14012,7 @@ export default function KaylenCareMonitorDashboard({
           </svg>
         );
       case "Logs":
-        return (
-          <svg {...common}>
-            <path d="M5 4h14" />
-            <path d="M5 9h14" />
-            <path d="M5 14h10" />
-            <path d="M5 19h7" />
-          </svg>
-        );
+        return renderSectionIcon("Timeline", className);
       case "Add":
         return (
           <svg {...common}>
@@ -14021,20 +14021,74 @@ export default function KaylenCareMonitorDashboard({
           </svg>
         );
       case "Reports":
-        return (
-          <svg {...common}>
-            <path d="M7 3h7l5 5v13H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
-            <path d="M14 3v5h5" />
-            <path d="M9 14h6" />
-            <path d="M9 18h4" />
-          </svg>
-        );
+        return renderSectionIcon("Reports", className);
       default:
         return (
           <svg {...common}>
             <circle cx="5" cy="12" r="1.5" />
             <circle cx="12" cy="12" r="1.5" />
             <circle cx="19" cy="12" r="1.5" />
+          </svg>
+        );
+    }
+  };
+
+  const renderMobileActionIcon = (icon, className = "h-5 w-5") => {
+    if (icon === "logs") return renderSectionIcon("Timeline", className);
+    if (icon === "snapshot") return renderSectionIcon("Care Snapshot", className);
+    if (icon === "documents") return renderSectionIcon("Document Vault", className);
+    if (icon === "appointments") return renderSectionIcon("Appointments", className);
+    if (icon === "calendar") return renderSectionIcon("Calendar", className);
+    if (icon === "subscription") return renderSectionIcon("Reports", className);
+
+    const common = {
+      className,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 2,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+    };
+
+    switch (icon) {
+      case "profile":
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21a8 8 0 0 1 16 0" />
+          </svg>
+        );
+      case "notifications":
+        return (
+          <svg {...common}>
+            <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+            <path d="M10 21h4" />
+          </svg>
+        );
+      case "logout":
+        return (
+          <svg {...common}>
+            <path d="M10 17l5-5-5-5" />
+            <path d="M15 12H3" />
+            <path d="M21 19V5" />
+          </svg>
+        );
+      case "admin":
+        return (
+          <svg {...common}>
+            <path d="M12 3 4 6v6c0 5 3.4 8 8 9 4.6-1 8-4 8-9V6l-8-3Z" />
+            <path d="M9 12l2 2 4-5" />
+          </svg>
+        );
+      case "support":
+      default:
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4" />
+            <path d="M12 17h.01" />
           </svg>
         );
     }
@@ -14236,25 +14290,143 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </div>
 
-          {todayDashboard.alerts.length ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {todayDashboard.alerts.slice(0, 3).map((alert) => (
-                <span
-                  key={`home-alert-${alert}`}
-                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800"
-                >
-                  {alert}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-              Nothing urgent showing for today.
-            </div>
-          )}
+          <div className="mt-4 grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
+            {isModuleEnabled("medication") ? (
+              <article
+                className={`rounded-[1.5rem] border p-4 shadow-sm ${
+                  todayDashboard.requiredMedication.some(
+                    (medicine) => medicine.status === "due" || medicine.status === "missed",
+                  )
+                    ? "border-rose-100 bg-rose-50/90"
+                    : "border-emerald-100 bg-emerald-50/90"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
+                      {renderSectionIcon("Medication", "h-5 w-5")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-700">
+                        Medication
+                      </p>
+                      <h2 className="mt-0.5 text-base font-black text-slate-950">
+                        {todayDashboard.requiredMedication.length
+                          ? "Doses needing attention"
+                          : todayDashboard.medicationRequired
+                            ? "All required doses logged"
+                            : "No required medication set"}
+                      </h2>
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-slate-700 shadow-sm">
+                    {todayDashboard.medicationTaken}/{todayDashboard.medicationRequired || 0}
+                  </span>
+                </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {homeSummaryCards.map((card) => (
+                {todayDashboard.requiredMedication.length ? (
+                  <div className="mt-3 space-y-2">
+                    {todayDashboard.requiredMedication.slice(0, 3).map((medicine) => (
+                      <button
+                        type="button"
+                        key={medicine.id}
+                        onClick={() =>
+                          !isReadOnly &&
+                          medicine.status !== "upcoming" &&
+                          openRequiredMedicationLog(medicine)
+                        }
+                        disabled={isReadOnly || medicine.status === "upcoming"}
+                        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-left shadow-sm disabled:cursor-not-allowed disabled:opacity-80"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-slate-900">
+                            {medicine.name}
+                          </p>
+                          <p className="truncate text-xs font-bold text-slate-500">
+                            {[
+                              medicine.dose,
+                              formatTimeWindowLabel(medicine.timeWindow),
+                              medicationScheduleLabel(medicine) === "Every day"
+                                ? ""
+                                : medicationScheduleLabel(medicine),
+                            ]
+                              .filter(Boolean)
+                              .join(" - ") || "Daily medication"}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
+                            medicine.status === "missed"
+                              ? "bg-rose-100 text-rose-700"
+                              : medicine.status === "upcoming"
+                                ? "bg-sky-100 text-sky-700"
+                                : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {medicine.statusLabel}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
+                    {todayDashboard.medicationRequired
+                      ? "Medication is up to date for today."
+                      : "Set daily medication in the child care profile if needed."}
+                  </p>
+                )}
+              </article>
+            ) : null}
+
+            {isModuleEnabled("drink") ? (
+              <article className="rounded-[1.5rem] border border-sky-100 bg-sky-50/90 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
+                      {renderSectionIcon("Food Diary", "h-5 w-5")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
+                        Food & fluids
+                      </p>
+                      <h2 className="mt-0.5 text-base font-black text-slate-950">
+                        {todayDashboard.fluidTargetMl
+                          ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+                          : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
+                      </h2>
+                    </div>
+                  </div>
+                  {todayDashboard.fluidTargetMl ? (
+                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700 shadow-sm">
+                      {todayDashboard.fluidPercent}%
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
+                  <div
+                    className="h-full rounded-full bg-sky-500 transition-all"
+                    style={{
+                      width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
+                    }}
+                  />
+                </div>
+                {!todayDashboard.fluidTargetMl ? (
+                  <button
+                    type="button"
+                    onClick={onOpenChildSetup}
+                    className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
+                  >
+                    Set daily fluid target
+                  </button>
+                ) : null}
+              </article>
+            ) : null}
+          </div>
+
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {homeSummaryCards
+              .filter((card) => !["medication", "fluids"].includes(card.key))
+              .map((card) => (
               <article
                 key={card.key}
                 className={`min-w-0 rounded-2xl border bg-white/85 p-3 shadow-sm ${
@@ -14291,6 +14463,23 @@ export default function KaylenCareMonitorDashboard({
               </article>
             ))}
           </div>
+
+          {todayDashboard.alerts.length ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {todayDashboard.alerts.slice(0, 3).map((alert) => (
+                <span
+                  key={`home-alert-${alert}`}
+                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800"
+                >
+                  {alert}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+              No urgent reminders showing.
+            </div>
+          )}
         </section>
 
         <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
@@ -14346,193 +14535,6 @@ export default function KaylenCareMonitorDashboard({
             </div>
           )}
         </section>
-
-        {(isModuleEnabled("drink") || isModuleEnabled("medication")) ? (
-        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Today
-              </p>
-              <h2 className="text-lg font-black text-slate-950">
-                Fluids and required medication
-              </h2>
-            </div>
-            <p className="text-xs font-bold text-slate-500">
-              {todayDashboard.medicationRequired
-                ? `${todayDashboard.medicationTaken}/${todayDashboard.medicationRequired} medication doses logged`
-                : "No required medication set"}
-            </p>
-          </div>
-
-          <div
-            className={`mt-3 grid gap-3 ${
-              isModuleEnabled("drink") && isModuleEnabled("medication")
-                ? "lg:grid-cols-[0.85fr_1.15fr]"
-                : "lg:grid-cols-1"
-            }`}
-          >
-            {isModuleEnabled("drink") ? (
-            <div className="rounded-2xl border border-sky-100 bg-sky-50 p-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-black uppercase tracking-[0.14em] text-sky-700">
-                      Fluids today
-                    </p>
-                    <p className="mt-0.5 text-sm font-bold text-slate-700">
-                      {todayDashboard.fluidTargetMl
-                        ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
-                        : `${Math.round(todayDashboard.fluidMl)}ml logged`}
-                    </p>
-                  </div>
-                  {todayDashboard.fluidTargetMl ? (
-                    <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700">
-                      {todayDashboard.fluidPercent}%
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
-                  <div
-                    className="h-full rounded-full bg-sky-500 transition-all"
-                    style={{
-                      width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
-                    }}
-                  />
-                </div>
-                {!todayDashboard.fluidTargetMl ? (
-                  <button
-                    type="button"
-                    onClick={onOpenChildSetup}
-                    className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
-                  >
-                    Set a daily fluid target in Care Profile
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isModuleEnabled("medication") ? (
-            <div>
-            {todayDashboard.requiredMedication.length ? (
-              <div
-                className={`rounded-2xl border p-3 ${
-                  todayDashboard.requiredMedication.some(
-                    (medicine) => medicine.status === "due" || medicine.status === "missed",
-                  )
-                    ? "border-rose-100 bg-rose-50"
-                    : "border-sky-100 bg-sky-50"
-                }`}
-              >
-                <p
-                  className={`text-xs font-black uppercase tracking-[0.14em] ${
-                    todayDashboard.requiredMedication.some(
-                      (medicine) => medicine.status === "due" || medicine.status === "missed",
-                    )
-                      ? "text-rose-700"
-                      : "text-sky-700"
-                  }`}
-                >
-                  Required medication today
-                </p>
-                <div className="mt-2 space-y-2">
-                  {todayDashboard.requiredMedication.map((medicine) => (
-                    <button
-                      type="button"
-                      key={medicine.id}
-                      onClick={() =>
-                        !isReadOnly &&
-                        medicine.status !== "upcoming" &&
-                        openRequiredMedicationLog(medicine)
-                      }
-                      disabled={isReadOnly || medicine.status === "upcoming"}
-                      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-xl px-3 py-2 text-left disabled:cursor-not-allowed ${
-                        medicine.status === "upcoming"
-                          ? "bg-white/70 opacity-85"
-                          : "bg-white"
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-black text-slate-900">
-                          {medicine.name}
-                        </p>
-                        <p className="truncate text-xs font-bold text-slate-500">
-                          {[
-                            medicine.dose,
-                            formatTimeWindowLabel(medicine.timeWindow),
-                            medicationScheduleLabel(medicine) === "Every day"
-                              ? ""
-                              : medicationScheduleLabel(medicine),
-                          ]
-                            .filter(Boolean)
-                            .join(" - ") ||
-                            "Daily medication"}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span
-                          className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${
-                            medicine.status === "taken"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : medicine.status === "missed"
-                                ? "bg-rose-100 text-rose-700"
-                                : medicine.status === "upcoming"
-                                  ? "bg-sky-100 text-sky-700"
-                                  : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {medicine.statusLabel}
-                        </span>
-                        {medicine.status !== "taken" &&
-                        medicine.status !== "upcoming" &&
-                        !isReadOnly ? (
-                          <span className="rounded-full bg-rose-600 px-3 py-1.5 text-xs font-black text-white">
-                            Log
-                          </span>
-                        ) : null}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                <p className="text-xs font-black uppercase tracking-[0.14em] text-emerald-700">
-                  Required medication today
-                </p>
-                <p className="mt-1 text-sm font-bold text-emerald-900">
-                  {todayDashboard.medicationRequired
-                    ? "All required medication doses have been logged today."
-                    : "No required daily medication is set for this child."}
-                </p>
-                {!todayDashboard.medicationRequired ? (
-                  <button
-                    type="button"
-                    onClick={onOpenChildSetup}
-                    className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-black text-emerald-700"
-                  >
-                    Set required medication
-                  </button>
-                ) : null}
-              </div>
-            )}
-
-            {todayDashboard.alerts.length ? (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {todayDashboard.alerts.slice(0, 4).map((alert) => (
-                  <span
-                    key={alert}
-                    className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-800"
-                  >
-                    {alert}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-            </div>
-            ) : null}
-          </div>
-        </section>
-        ) : null}
 
         <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
@@ -14683,10 +14685,10 @@ export default function KaylenCareMonitorDashboard({
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-violet-50/80 px-3 py-2">
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.14em] text-violet-700">
-                  Quick add
+                  Add Entry
                 </p>
-                <p className="mt-0.5 truncate text-sm font-black text-slate-900">
-                  Adding for {childName}
+                <p className="mt-0.5 truncate text-sm font-bold text-slate-700">
+                  Choose what to log
                 </p>
               </div>
               <button
@@ -14748,6 +14750,16 @@ export default function KaylenCareMonitorDashboard({
             </div>
             <div className="grid gap-2">
               {mobileMoreItems.map((item) => {
+                if (item.type === "heading") {
+                  return (
+                    <p
+                      key={`heading-${item.label}`}
+                      className="px-2 pt-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400 first:pt-0"
+                    >
+                      {item.label}
+                    </p>
+                  );
+                }
                 const section = sections.find(
                   (sectionItem) => sectionItem.title === item.title,
                 );
@@ -14763,9 +14775,14 @@ export default function KaylenCareMonitorDashboard({
                       }
                       openSection(section);
                     }}
-                    className="flex min-h-[3.25rem] items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:bg-violet-50 active:scale-[0.98]"
+                    className="flex min-h-[3.25rem] items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:bg-violet-50 active:scale-[0.98]"
                   >
-                    <span>{item.label}</span>
+                    <span className="flex min-w-0 items-center gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
+                        {renderMobileActionIcon(item.icon, "h-4 w-4")}
+                      </span>
+                      <span className="truncate">{item.label}</span>
+                    </span>
                     <span className="text-violet-600">-&gt;</span>
                   </button>
                 );

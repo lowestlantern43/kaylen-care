@@ -12748,6 +12748,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           onReportIssue={openReportIssueFromDashboard}
           canOpenPlatformAdmin={Boolean(session.user?.isPlatformAdmin)}
           onOpenPlatformAdmin={openPlatformAdmin}
+          onLogout={onLogout}
           onAddRegularMedication={addRegularMedicationFromDiary}
           customFoodOptions={groupedCareOptions.food}
           customDrinkOptions={groupedCareOptions.drink}
