@@ -678,6 +678,13 @@ export default function KaylenCareMonitorDashboard({
   selectedChildId = "",
   onSelectChild,
   onOpenChildSetup,
+  onOpenSettings,
+  onOpenNotifications,
+  onOpenSubscription,
+  onOpenSupport,
+  onReportIssue,
+  canOpenPlatformAdmin = false,
+  onOpenPlatformAdmin,
   onAddRegularMedication,
   customFoodOptions = [],
   customDrinkOptions = [],
@@ -4079,6 +4086,111 @@ export default function KaylenCareMonitorDashboard({
     profileMedicationOptions,
     sharedLog,
   ]);
+
+  const latestEntryForSection = (sectionTitle, predicate = null) =>
+    sharedLog.find(
+      (entry) =>
+        entry.section === sectionTitle && (predicate ? predicate(entry) : true),
+    );
+
+  const homeSummaryCards = useMemo(() => {
+    const latestSleep = latestEntryForSection("Sleep");
+    const latestMedication = latestEntryForSection("Medication");
+    const latestMeal = latestEntryForSection(
+      "Food Diary",
+      (entry) => !entry.isMilk,
+    );
+    const latestDrink = latestEntryForSection(
+      "Food Diary",
+      (entry) => entry.isMilk,
+    );
+    const latestToileting = latestEntryForSection("Toileting");
+    const latestBehaviour = latestEntryForSection("Behaviour");
+    const latestHealth = sharedLog.find(
+      (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
+    );
+    const dueMedication = todayDashboard.requiredMedication.find(
+      (medicine) => medicine.status !== "upcoming",
+    );
+
+    return [
+      {
+        key: "sleep",
+        title: "Sleep last night",
+        value:
+          latestSleep?.durationMinutes > 0
+            ? formatHoursMinutes(latestSleep.durationMinutes)
+            : latestSleep?.summary || "Not logged yet",
+        meta: latestSleep?.time || latestSleep?.date || "Log sleep to build patterns",
+        section: "Sleep",
+        module: "sleep",
+      },
+      {
+        key: "medication",
+        title: dueMedication ? "Medication due" : "Medication",
+        value:
+          dueMedication?.name ||
+          latestMedication?.summary ||
+          "No medication logged today",
+        meta: dueMedication
+          ? dueMedication.statusLabel
+          : latestMedication?.time || "Required doses appear here",
+        section: "Medication",
+        module: "medication",
+        alert: Boolean(dueMedication),
+      },
+      {
+        key: "food",
+        title: "Latest meal",
+        value: latestMeal?.summary || "No food logged yet",
+        meta: latestMeal?.time || "Meals appear here once logged",
+        section: "Food Diary",
+        module: "food",
+      },
+      {
+        key: "fluids",
+        title: "Fluids today",
+        value: todayDashboard.fluidTargetMl
+          ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+          : latestDrink?.summary || `${Math.round(todayDashboard.fluidMl)}ml logged`,
+        meta: todayDashboard.fluidTargetMl
+          ? `${todayDashboard.fluidPercent}% of target`
+          : "Set a fluid target in child profile",
+        section: "Food Diary",
+        preset: "Drink",
+        module: "drink",
+      },
+      {
+        key: "toileting",
+        title: "Toileting",
+        value: latestToileting?.summary || "No toileting logged yet",
+        meta: latestToileting?.time || "Latest toilet/nappy entry",
+        section: "Toileting",
+        module: "toileting",
+      },
+      {
+        key: "behaviour",
+        title: "Behaviour",
+        value: latestBehaviour?.summary || "No behaviour notes today",
+        meta: latestBehaviour?.time || "Patterns appear as logs build",
+        section: "Behaviour",
+        module: "behaviour",
+      },
+      {
+        key: "health",
+        title: "Health notes",
+        value: latestHealth?.summary || "No health concerns logged",
+        meta: latestHealth?.time || "Health updates appear here",
+        section: "Health",
+        module: "health",
+      },
+    ].filter((card) => isModuleEnabled(card.module));
+  }, [sharedLog, todayDashboard, visibleModules]);
+
+  const recentActivityPreview = useMemo(
+    () => sharedLog.slice(0, 5),
+    [sharedLog],
+  );
 
   useEffect(() => {
     const reportCardCount = 3;
@@ -13845,12 +13957,31 @@ export default function KaylenCareMonitorDashboard({
   ].includes(activeSection?.title);
 
   const mobileMoreItems = [
-    { label: "Care Snapshot", title: "Care Snapshot", module: "snapshot" },
-    { label: "Document Vault", title: "Document Vault", module: "documents" },
-    { label: "Appointments", title: "Appointments", module: "appointments" },
-    { label: "Calendar", title: "Calendar", module: "calendar" },
-    { label: "Timeline", title: "Timeline", module: "timeline" },
-  ].filter((item) => isModuleEnabled(item.module));
+    { label: "Settings", action: onOpenSettings },
+    { label: "Child profiles", action: onOpenChildSetup },
+    { label: "Notifications", action: onOpenNotifications },
+    { label: "Subscription", action: onOpenSubscription },
+    { label: "Help / Support", action: onOpenSupport },
+    { label: "Report Issue", action: onReportIssue },
+    canOpenPlatformAdmin
+      ? { label: "Owner/Admin Platform", action: onOpenPlatformAdmin }
+      : null,
+    isModuleEnabled("snapshot")
+      ? { label: "Care Snapshot", title: "Care Snapshot" }
+      : null,
+    isModuleEnabled("documents")
+      ? { label: "Document Vault", title: "Document Vault" }
+      : null,
+    isModuleEnabled("appointments")
+      ? { label: "Appointments", title: "Appointments" }
+      : null,
+    isModuleEnabled("calendar")
+      ? { label: "Calendar", title: "Calendar" }
+      : null,
+    isModuleEnabled("timeline")
+      ? { label: "Timeline", title: "Timeline" }
+      : null,
+  ].filter(Boolean);
 
   const renderMobileNavIcon = (name, className = "h-5 w-5") => {
     const common = {
@@ -13915,6 +14046,14 @@ export default function KaylenCareMonitorDashboard({
         ? "bg-violet-50 text-violet-700 shadow-sm"
         : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
     } ${extra}`;
+
+  const childInitials = String(childName || "Child")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
@@ -14045,8 +14184,171 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
+        <section className="mb-5 rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50/80 p-4 shadow-sm sm:p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setChildSwitcherOpen(true)}
+                className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-violet-500 to-sky-500 text-lg font-black text-white shadow-md"
+                aria-label={`Current child: ${childName}`}
+                title={`Current child: ${childName}`}
+              >
+                {childProfile.photoUrl || childProfile.photo_url ? (
+                  <img
+                    src={childProfile.photoUrl || childProfile.photo_url}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  childInitials
+                )}
+              </button>
+              <div className="min-w-0">
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
+                  Today at a glance
+                </p>
+                <h1 className="truncate text-2xl font-black tracking-tight text-slate-950">
+                  {childName}
+                </h1>
+                <p className="mt-1 text-sm font-bold text-slate-500">
+                  {new Date().toLocaleDateString("en-GB", {
+                    weekday: "long",
+                    day: "numeric",
+                    month: "long",
+                  })}
+                </p>
+              </div>
+            </div>
+            {children.length > 1 && onSelectChild ? (
+              <select
+                className="w-full min-w-0 rounded-2xl border border-indigo-100 bg-white/90 px-3 py-3 text-base font-bold text-slate-700 shadow-sm sm:w-56"
+                value={selectedChildId || childId}
+                onChange={(event) => onSelectChild(event.target.value)}
+                aria-label="Switch child"
+              >
+                {children.map((child) => (
+                  <option key={child.id} value={child.id}>
+                    {child.firstName || child.first_name || "Child"}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+          </div>
+
+          {todayDashboard.alerts.length ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {todayDashboard.alerts.slice(0, 3).map((alert) => (
+                <span
+                  key={`home-alert-${alert}`}
+                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-black text-amber-800"
+                >
+                  {alert}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
+              Nothing urgent showing for today.
+            </div>
+          )}
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {homeSummaryCards.map((card) => (
+              <article
+                key={card.key}
+                className={`min-w-0 rounded-2xl border bg-white/85 p-3 shadow-sm ${
+                  card.alert
+                    ? "border-amber-200"
+                    : "border-white/80"
+                }`}
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                    {renderSectionIcon(card.section, "h-5 w-5")}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                      {card.title}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-sm font-black leading-5 text-slate-950">
+                      {card.value}
+                    </p>
+                    <p className="mt-1 truncate text-xs font-bold text-slate-500">
+                      {card.meta}
+                    </p>
+                  </div>
+                </div>
+                {!isReadOnly ? (
+                  <button
+                    type="button"
+                    onClick={() => openQuickAdd(card.section, card.preset)}
+                    className="mt-3 w-full rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 transition hover:bg-indigo-100"
+                  >
+                    {card.key === "fluids" ? "Log fluids" : "Add update"}
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Recent activity
+              </p>
+              <h2 className="text-lg font-black text-slate-950">
+                Latest care notes
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                openSection(sections.find((section) => section.title === "Timeline"))
+              }
+              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700"
+            >
+              View Logs
+            </button>
+          </div>
+          {recentActivityPreview.length ? (
+            <div className="mt-3 space-y-2">
+              {recentActivityPreview.slice(0, 4).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5"
+                >
+                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
+                    {renderSectionIcon(entry.section, "h-4 w-4")}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <p className="truncate text-sm font-black text-slate-900">
+                        {entry.summary || entry.section}
+                      </p>
+                      <span className="shrink-0 text-[11px] font-bold text-slate-400">
+                        {entry.time || entry.date}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-xs font-bold text-slate-500">
+                      {entry.section}
+                      {entry.details ? ` - ${entry.details}` : ""}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-500">
+              No entries yet today. Use Add to start building a care record.
+            </div>
+          )}
+        </section>
+
         {(isModuleEnabled("drink") || isModuleEnabled("medication")) ? (
-        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
           <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
@@ -14232,7 +14534,7 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
-        <section className="mt-8 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
             const latestLines =
               section.title !== "Reports"
@@ -14353,7 +14655,7 @@ export default function KaylenCareMonitorDashboard({
           })}
         </section>
 
-        <div className="mt-8 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="mt-8 hidden flex-col gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm md:flex md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm font-bold text-slate-900">Dashboard order</p>
             <p className="text-xs font-medium text-slate-500">
@@ -14453,7 +14755,14 @@ export default function KaylenCareMonitorDashboard({
                   <button
                     key={item.label}
                     type="button"
-                    onClick={() => openSection(section)}
+                    onClick={() => {
+                      setMoreNavOpen(false);
+                      if (item.action) {
+                        item.action();
+                        return;
+                      }
+                      openSection(section);
+                    }}
                     className="flex min-h-[3.25rem] items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:bg-violet-50 active:scale-[0.98]"
                   >
                     <span>{item.label}</span>

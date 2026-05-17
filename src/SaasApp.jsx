@@ -2345,6 +2345,19 @@ function ReportIssueWidget({
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const openFromNavigation = () => {
+      setIsOpen(true);
+      setError("");
+    };
+    window.addEventListener("familytrack:open-report-issue", openFromNavigation);
+    return () =>
+      window.removeEventListener(
+        "familytrack:open-report-issue",
+        openFromNavigation,
+      );
+  }, []);
+
   if (!enabled) return null;
 
   const childName =
@@ -2463,17 +2476,6 @@ function ReportIssueWidget({
 
   return (
     <div data-feedback-ui="true">
-      <button
-        type="button"
-        onClick={() => {
-          setIsOpen(true);
-          setError("");
-        }}
-        className="fixed bottom-5 left-4 z-[9999] rounded-full border border-slate-200 bg-white/95 px-3 py-2 text-xs font-bold text-slate-700 shadow-lg backdrop-blur transition hover:bg-indigo-50 hover:text-indigo-700"
-      >
-        Report issue
-      </button>
-
       {notice ? (
         <div className="fixed bottom-16 left-4 z-40 max-w-[18rem] rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 shadow-lg">
           <p>{notice}</p>
@@ -4412,6 +4414,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const openChildSetupFromDashboard = async () => {
     setSettingsTab("children");
     await openAdmin();
+  };
+
+  const openSettingsFromDashboard = async (tab = "account") => {
+    setSettingsTab(tab);
+    await openAdmin();
+  };
+
+  const openReportIssueFromDashboard = () => {
+    window.dispatchEvent(new Event("familytrack:open-report-issue"));
   };
 
   const sendInvite = async (event) => {
@@ -12728,6 +12739,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           selectedChildId={selectedChildId}
           onSelectChild={selectChild}
           onOpenChildSetup={openChildSetupFromDashboard}
+          onOpenSettings={() => openSettingsFromDashboard("account")}
+          onOpenNotifications={() => openSettingsFromDashboard("notifications")}
+          onOpenSubscription={() => setShowBillingPanel(true)}
+          onOpenSupport={() => {
+            window.location.href = SUPPORT_MAILTO;
+          }}
+          onReportIssue={openReportIssueFromDashboard}
+          canOpenPlatformAdmin={Boolean(session.user?.isPlatformAdmin)}
+          onOpenPlatformAdmin={openPlatformAdmin}
           onAddRegularMedication={addRegularMedicationFromDiary}
           customFoodOptions={groupedCareOptions.food}
           customDrinkOptions={groupedCareOptions.drink}
