@@ -1726,6 +1726,7 @@ export default function KaylenCareMonitorDashboard({
       "Appointments",
       "Timeline",
       "Calendar",
+      "Behaviour",
     ].includes(sectionTitle);
 
   const renderSectionIcon = (sectionTitle, className = "h-8 w-8") => {
@@ -1792,6 +1793,18 @@ export default function KaylenCareMonitorDashboard({
             <path d="M4 8h4" />
             <path d="M4 12h3" />
             <path d="M4 16h4" />
+          </svg>
+        );
+      case "Behaviour":
+        return (
+          <svg {...common}>
+            <circle cx="12" cy="12" r="8" />
+            <path d="M9 10h.01" />
+            <path d="M15 10h.01" />
+            <path d="M8.5 14.5c1.9 1.7 5.1 1.7 7 0" />
+            <path d="M12 2v2" />
+            <path d="M4.9 4.9 6.3 6.3" />
+            <path d="M19.1 4.9 17.7 6.3" />
           </svg>
         );
       case "Reports":
@@ -13957,7 +13970,6 @@ export default function KaylenCareMonitorDashboard({
     { type: "heading", label: "Account" },
     { label: "Profile", icon: "profile", action: onOpenSettings },
     { label: "Subscription", icon: "subscription", action: onOpenSubscription },
-    { label: "Log out", icon: "logout", action: onLogout },
     { type: "heading", label: "Family" },
     { label: "Child Profiles", icon: "profile", action: onOpenChildSetup },
     { label: "Notifications", icon: "notifications", action: onOpenNotifications },
@@ -14262,22 +14274,20 @@ export default function KaylenCareMonitorDashboard({
             </p>
           </div>
 
-          <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mt-3 grid gap-3">
             {isModuleEnabled("medication") ? (
               <article
-                className={`rounded-[1.35rem] border p-3 shadow-sm ${
-                  todayDashboard.requiredMedication.length ? "col-span-2 lg:col-span-1" : ""
-                } ${
+                className={`rounded-[1.45rem] border p-3.5 shadow-sm ${
                   todayDashboard.requiredMedication.some(
                     (medicine) => medicine.status === "due" || medicine.status === "missed",
                   )
-                    ? "border-rose-100 bg-gradient-to-br from-rose-50 to-white"
-                    : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-white"
+                    ? "border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50"
+                    : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
                       {renderHomeModuleIcon("Medication")}
                     </span>
                     <div className="min-w-0">
@@ -14362,11 +14372,11 @@ export default function KaylenCareMonitorDashboard({
                     : onOpenChildSetup?.())
                 }
                 disabled={isReadOnly}
-                className="rounded-[1.35rem] border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
+                className="rounded-[1.45rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-3.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
                       {renderHomeModuleIcon("Food Diary")}
                     </span>
                     <div className="min-w-0">
@@ -14386,7 +14396,7 @@ export default function KaylenCareMonitorDashboard({
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-3 h-3 overflow-hidden rounded-full bg-white">
+                <div className="mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
                   <div
                     className="h-full rounded-full bg-sky-500 transition-all"
                     style={{
@@ -14455,61 +14465,6 @@ export default function KaylenCareMonitorDashboard({
             </div>
           )}
         </section>
-
-        <section className="mb-5 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm sm:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Recent activity
-              </p>
-              <h2 className="text-base font-black text-slate-950">
-                Timeline preview
-              </h2>
-            </div>
-            <button
-              type="button"
-              onClick={() =>
-                openSection(sections.find((section) => section.title === "Timeline"))
-              }
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-700"
-            >
-              View Logs
-            </button>
-          </div>
-          {recentActivityPreview.length ? (
-            <div className="mt-2.5 space-y-1.5">
-              {recentActivityPreview.slice(0, 3).map((entry) => (
-                <div
-                  key={entry.id}
-                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 px-2.5 py-2"
-                >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
-                    {renderHomeModuleIcon(entry.section, "h-4 w-4")}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex min-w-0 items-center justify-between gap-2">
-                      <p className="truncate text-sm font-bold text-slate-900">
-                        {entry.summary || entry.section}
-                      </p>
-                      <span className="shrink-0 text-[11px] font-bold text-slate-400">
-                        {entry.time || entry.date}
-                      </span>
-                    </div>
-                    <p className="truncate text-[11px] font-bold text-slate-500">
-                      {entry.section}
-                      {entry.details ? ` - ${entry.details}` : ""}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-sm font-bold text-slate-500">
-              No entries yet today. Use Add to start building a care record.
-            </div>
-          )}
-        </section>
-
         <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
             const latestLines =
