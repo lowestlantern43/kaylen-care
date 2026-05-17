@@ -4281,9 +4281,24 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       }
     }
 
+    const handleCareLogChanged = (event) => {
+      if (
+        event.detail?.familyId &&
+        String(event.detail.familyId) !== String(selectedFamilyId)
+      ) {
+        return;
+      }
+      loadChildAvatarStatuses();
+    };
+
     loadChildAvatarStatuses();
+    window.addEventListener("familytrack:care-log-changed", handleCareLogChanged);
     return () => {
       ignore = true;
+      window.removeEventListener(
+        "familytrack:care-log-changed",
+        handleCareLogChanged,
+      );
     };
   }, [children, selectedFamilyId]);
 

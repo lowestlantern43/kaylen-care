@@ -2573,6 +2573,11 @@ export default function KaylenCareMonitorDashboard({
     try {
       const saved = await api.createCareLog(familyId, payload);
       setSyncState("Synced");
+      window.dispatchEvent(
+        new CustomEvent("familytrack:care-log-changed", {
+          detail: { familyId, childId: payload.childId, category: payload.category },
+        }),
+      );
       return saved;
     } catch (error) {
       if (
@@ -2600,6 +2605,15 @@ export default function KaylenCareMonitorDashboard({
     for (const item of queue) {
       try {
         await api.createCareLog(item.familyId || familyId, item.payload);
+        window.dispatchEvent(
+          new CustomEvent("familytrack:care-log-changed", {
+            detail: {
+              familyId: item.familyId || familyId,
+              childId: item.payload?.childId,
+              category: item.payload?.category,
+            },
+          }),
+        );
       } catch {
         failed.push(item);
       }
@@ -6234,6 +6248,11 @@ export default function KaylenCareMonitorDashboard({
             },
             notes: sleepForm.notes || "",
           });
+          window.dispatchEvent(
+            new CustomEvent("familytrack:care-log-changed", {
+              detail: { familyId, childId, category: "sleep" },
+            }),
+          );
 
           setSleepEntryId(null);
           setSleepBanner("");
