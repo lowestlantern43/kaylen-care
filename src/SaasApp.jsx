@@ -1239,44 +1239,79 @@ const activeCareMedicationRows = (rows, referenceDate = new Date()) =>
       row.active !== false && !careMedicationEndDateHasPassed(row, referenceDate),
   );
 
-function ChildAvatar({ child, active = false, size = "sm" }) {
+const dateToIso = (date = new Date()) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate(),
+  ).padStart(2, "0")}`;
+
+const medicationWindowEndMinutes = (windowName = "") => {
+  const key = cleanFormText(windowName).toLowerCase();
+  if (key === "morning") return 12 * 60;
+  if (key === "afternoon") return 18 * 60;
+  if (key === "evening") return 24 * 60;
+  return null;
+};
+
+const timeToMinutes = (value = "") => {
+  const match = String(value).match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+};
+
+function ChildAvatar({ child, active = false, size = "sm", status = {} }) {
   const avatarUrl = avatarUrlForChild(child);
   const [failedUrl, setFailedUrl] = useState("");
   const sizeClass = size === "lg" ? "h-14 w-14" : "h-8 w-8";
   const iconSizeClass = size === "lg" ? "h-7 w-7" : "h-4 w-4";
+  const ringClass = status.medicationOverdue
+    ? "ring-2 ring-rose-500"
+    : active
+      ? "ring-2 ring-indigo-200"
+      : "ring-2 ring-white";
+  const zzzClass =
+    size === "lg"
+      ? "-right-2 -top-2 px-1.5 py-0.5 text-[10px]"
+      : "-right-2 -top-1 px-1 py-0.5 text-[9px]";
 
-  if (avatarUrl && avatarUrl !== failedUrl) {
-    return (
+  return (
+    <span className={`relative inline-flex ${sizeClass} shrink-0`}>
+      {avatarUrl && avatarUrl !== failedUrl ? (
       <img
         src={avatarUrl}
         alt=""
-        className={`${sizeClass} rounded-full object-cover ring-2 ${
-          active ? "ring-indigo-200" : "ring-white"
-        }`}
+          className={`${sizeClass} rounded-full object-cover ${ringClass}`}
         onError={() => setFailedUrl(avatarUrl)}
       />
-    );
-  }
-
-  return (
-    <span
-      className={`${sizeClass} inline-flex items-center justify-center rounded-full ${
-        active ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700"
-      }`}
-      aria-hidden="true"
-    >
-      <svg
-        className={iconSizeClass}
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M20 21a8 8 0 0 0-16 0" />
-        <circle cx="12" cy="8" r="4" />
-      </svg>
+      ) : (
+        <span
+          className={`${sizeClass} inline-flex items-center justify-center rounded-full ${
+            active ? "bg-white/20 text-white" : "bg-indigo-50 text-indigo-700"
+          } ${ringClass}`}
+          aria-hidden="true"
+        >
+          <svg
+            className={iconSizeClass}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 21a8 8 0 0 0-16 0" />
+            <circle cx="12" cy="8" r="4" />
+          </svg>
+        </span>
+      )}
+      {status.isAsleep ? (
+        <span
+          className={`absolute ${zzzClass} rounded-full border border-indigo-100 bg-indigo-600 font-black leading-none text-white shadow-sm`}
+          aria-label="Asleep"
+          title="Asleep"
+        >
+          zzz
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -3205,6 +3240,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const toastTimeoutRef = useRef(null);
   const [installPromptEvent, setInstallPromptEvent] = useState(null);
   const [showInstallOnboarding, setShowInstallOnboarding] = useState(false);
+  const [childAvatarStatuses, setChildAvatarStatuses] = useState({});
   const [adminIssueFilter, setAdminIssueFilter] = useState("active");
   const [platformFamilyDetailTab, setPlatformFamilyDetailTab] =
     useState("overview");
@@ -4119,6 +4155,133 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       ignore = true;
     };
   }, [selectedFamilyId, selectedChildId]);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadChildAvatarStatuses() {
+      if (!selectedFamilyId || !children.length) {
+        setChildAvatarStatuses({});
+        return;
+      }
+
+      try {
+        const now = new Date();
+        const todayIso = dateToIso(now);
+        const yesterday = new Date(now);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayIso = dateToIso(yesterday);
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const todayDayKey = medicationWeekDayKeys[(now.getDay() + 6) % 7];
+
+        const [logs, profiles] = await Promise.all([
+          api.listCareLogs(selectedFamilyId, { startDate: yesterdayIso }),
+          Promise.all(
+            children.map((child) =>
+              api
+                .getChildProfile(selectedFamilyId, child.id)
+                .then((profile) => [child.id, normaliseChildProfile(profile)])
+                .catch(() => [child.id, emptyChildProfile]),
+            ),
+          ),
+        ]);
+
+        if (ignore) return;
+
+        const profileByChildId = Object.fromEntries(profiles);
+        const nextStatuses = {};
+
+        children.forEach((child) => {
+          const childLogs = (logs || []).filter(
+            (log) => String(log.childId) === String(child.id),
+          );
+          const medicationLogsToday = childLogs.filter(
+            (log) => log.category === "medication" && log.logDate === todayIso,
+          );
+          const medicationRows = activeCareMedicationRows(
+            careMedicationRowsFromProfile(profileByChildId[child.id]?.currentMedications),
+            now,
+          );
+
+          const medicationOverdue = medicationRows.some((row) => {
+            if (!row.requiredDaily) return false;
+            const scheduleDays = normaliseMedicationScheduleDays(row.scheduleDays, {
+              requiredDaily: row.requiredDaily,
+            });
+            if (scheduleDays.includes("prn")) return false;
+            if (
+              scheduleDays.length &&
+              !scheduleDays.includes("every_day") &&
+              !scheduleDays.includes(todayDayKey)
+            ) {
+              return false;
+            }
+
+            const doseWindows = row.timeWindows?.length
+              ? row.timeWindows
+              : row.timeWindow
+                ? [row.timeWindow]
+                : [];
+            const doseTimes = row.times?.filter(Boolean) || [];
+            const dueMoments = [
+              ...doseTimes.map(timeToMinutes).filter((value) => value !== null),
+              ...doseWindows
+                .map(medicationWindowEndMinutes)
+                .filter((value) => value !== null),
+            ];
+            if (!dueMoments.length) return false;
+            if (!dueMoments.some((dueMinutes) => currentMinutes > dueMinutes)) {
+              return false;
+            }
+
+            const medicineName = cleanFormText(row.name).toLowerCase();
+            return !medicationLogsToday.some((log) => {
+              const loggedMedicine = cleanFormText(log.data?.medicine).toLowerCase();
+              const loggedStatus = cleanFormText(log.data?.status).toLowerCase();
+              const loggedWindow = cleanFormText(log.data?.scheduled_window).toLowerCase();
+              const statusCountsAsGiven = !["skipped", "missed", "refused"].includes(
+                loggedStatus,
+              );
+              const medicineMatches =
+                !medicineName ||
+                loggedMedicine === medicineName ||
+                loggedMedicine.includes(medicineName) ||
+                medicineName.includes(loggedMedicine);
+              const windowMatches =
+                !doseWindows.length || !loggedWindow || doseWindows.includes(loggedWindow);
+              return statusCountsAsGiven && medicineMatches && windowMatches;
+            });
+          });
+
+          const latestSleepLog = childLogs.find(
+            (log) =>
+              log.category === "sleep" &&
+              (log.logDate === todayIso || log.logDate === yesterdayIso) &&
+              log.data?.bedtime,
+          );
+          const isAsleep = Boolean(
+            latestSleepLog &&
+              !latestSleepLog.data?.wake_time &&
+              !latestSleepLog.data?.wakeTime,
+          );
+
+          nextStatuses[child.id] = { medicationOverdue, isAsleep };
+        });
+
+        setChildAvatarStatuses(nextStatuses);
+      } catch (caughtError) {
+        if (!ignore) {
+          console.warn("Could not load child avatar status indicators", caughtError);
+          setChildAvatarStatuses({});
+        }
+      }
+    }
+
+    loadChildAvatarStatuses();
+    return () => {
+      ignore = true;
+    };
+  }, [children, selectedFamilyId]);
 
   const addChild = async (event) => {
     event.preventDefault();
@@ -7073,7 +7236,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             : "border-slate-200 bg-white text-slate-700 shadow-sm"
                         }`}
                       >
-                        <ChildAvatar child={child} active={isSelected} />
+                        <ChildAvatar
+                          child={child}
+                          active={isSelected}
+                          status={childAvatarStatuses[child.id]}
+                        />
                         {childName}
                       </button>
                     );
