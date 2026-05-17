@@ -1720,6 +1720,12 @@ export default function KaylenCareMonitorDashboard({
 
   const usesAddedSvgIcon = (sectionTitle) =>
     [
+      "Food Diary",
+      "Medication",
+      "Toileting",
+      "Health",
+      "Sleep",
+      "Reports",
       "Growth / Measurements",
       "Care Snapshot",
       "Document Vault",
@@ -1793,6 +1799,13 @@ export default function KaylenCareMonitorDashboard({
             <path d="M4 8h4" />
             <path d="M4 12h3" />
             <path d="M4 16h4" />
+          </svg>
+        );
+      case "Hydration":
+        return (
+          <svg {...common}>
+            <path d="M12 3.5s6 6.1 6 10.4a6 6 0 0 1-12 0C6 9.6 12 3.5 12 3.5Z" />
+            <path d="M9.5 15.5c.8 1.3 2.4 2 4 1.5" />
           </svg>
         );
       case "Behaviour":
@@ -4166,7 +4179,7 @@ export default function KaylenCareMonitorDashboard({
         title: "Last drink",
         value: latestDrink?.summary || "No drink logged yet",
         meta: latestDrink?.time || "Drinks appear here once logged",
-        section: "Food Diary",
+        section: "Hydration",
         preset: "Drink",
         module: "drink",
       },
@@ -14127,6 +14140,17 @@ export default function KaylenCareMonitorDashboard({
     })[key] ||
     "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
 
+  const homeIconTone = (key) =>
+    ({
+      food: "bg-emerald-500 text-white",
+      drink: "bg-sky-500 text-white",
+      medication: "bg-rose-500 text-white",
+      sleep: "bg-indigo-500 text-white",
+      toileting: "bg-cyan-500 text-white",
+      behaviour: "bg-orange-400 text-white",
+      health: "bg-teal-500 text-white",
+    })[key] || "bg-violet-500 text-white";
+
   const mobileNavButtonClass = (active, extra = "") =>
     `flex min-h-[3.35rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 text-[11px] font-black transition duration-200 active:scale-95 ${
       active
@@ -14283,26 +14307,76 @@ export default function KaylenCareMonitorDashboard({
           </div>
 
           <div className="mt-3 grid gap-3">
+            {isModuleEnabled("drink") ? (
+              <button
+                type="button"
+                onClick={() =>
+                  !isReadOnly &&
+                  (todayDashboard.fluidTargetMl
+                    ? openQuickAdd("Food Diary", "Drink")
+                    : onOpenChildSetup?.())
+                }
+                disabled={isReadOnly}
+                className="rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition active:scale-[0.99] disabled:cursor-default"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-sm">
+                      {renderHomeModuleIcon("Hydration", "h-6 w-6")}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
+                        Hydration
+                      </p>
+                      <h2 className="mt-0.5 text-lg font-black text-slate-950">
+                        {todayDashboard.fluidTargetMl
+                          ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
+                          : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
+                      </h2>
+                    </div>
+                  </div>
+                  {todayDashboard.fluidTargetMl ? (
+                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700 shadow-sm">
+                      {todayDashboard.fluidPercent}%
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
+                  <div
+                    className="h-full rounded-full bg-sky-500 transition-all"
+                    style={{
+                      width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
+                    }}
+                  />
+                </div>
+                {!todayDashboard.fluidTargetMl ? (
+                  <p className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700">
+                    Set daily fluid target
+                  </p>
+                ) : null}
+              </button>
+            ) : null}
+
             {isModuleEnabled("medication") ? (
               <article
-                className={`rounded-[1.45rem] border p-3.5 shadow-sm ${
+                className={`rounded-[1.55rem] border p-4 shadow-md ${
                   todayDashboard.requiredMedication.some(
                     (medicine) => medicine.status === "due" || medicine.status === "missed",
                   )
-                    ? "border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50"
-                    : "border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50"
+                    ? "border-rose-200 bg-gradient-to-br from-rose-100 via-pink-50 to-white shadow-rose-100/70"
+                    : "border-pink-100 bg-gradient-to-br from-pink-50 via-white to-rose-50 shadow-pink-100/60"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
-                      {renderHomeModuleIcon("Medication")}
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-rose-500 text-white shadow-sm">
+                      {renderHomeModuleIcon("Medication", "h-6 w-6")}
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-700">
                         Medication
                       </p>
-                      <h2 className="mt-0.5 text-sm font-black text-slate-950">
+                      <h2 className="mt-0.5 text-base font-black text-slate-950">
                         {todayDashboard.requiredMedication.length
                           ? "Doses needing attention"
                           : todayDashboard.medicationRequired
@@ -14311,7 +14385,7 @@ export default function KaylenCareMonitorDashboard({
                       </h2>
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-slate-700 shadow-sm">
+                  <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-rose-700 shadow-sm">
                     {todayDashboard.medicationTaken}/{todayDashboard.medicationRequired || 0}
                   </span>
                 </div>
@@ -14328,7 +14402,7 @@ export default function KaylenCareMonitorDashboard({
                           openRequiredMedicationLog(medicine)
                         }
                         disabled={isReadOnly || medicine.status === "upcoming"}
-                        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl bg-white px-3 py-2 text-left shadow-sm disabled:cursor-not-allowed disabled:opacity-80"
+                        className="flex w-full min-w-0 items-center justify-between gap-3 rounded-2xl bg-white/90 px-3 py-2 text-left shadow-sm disabled:cursor-not-allowed disabled:opacity-80"
                       >
                         <div className="min-w-0">
                           <p className="truncate text-sm font-black text-slate-900">
@@ -14361,63 +14435,13 @@ export default function KaylenCareMonitorDashboard({
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-2 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
+                  <p className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
                     {todayDashboard.medicationRequired
                       ? "Medication is up to date for today."
                       : "Set daily medication in the child care profile if needed."}
                   </p>
                 )}
               </article>
-            ) : null}
-
-            {isModuleEnabled("drink") ? (
-              <button
-                type="button"
-                onClick={() =>
-                  !isReadOnly &&
-                  (todayDashboard.fluidTargetMl
-                    ? openQuickAdd("Food Diary", "Drink")
-                    : onOpenChildSetup?.())
-                }
-                disabled={isReadOnly}
-                className="rounded-[1.45rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-3.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
-                      {renderHomeModuleIcon("Food Diary")}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
-                        Hydration
-                      </p>
-                      <h2 className="mt-0.5 text-sm font-black text-slate-950">
-                        {todayDashboard.fluidTargetMl
-                          ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
-                          : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
-                      </h2>
-                    </div>
-                  </div>
-                  {todayDashboard.fluidTargetMl ? (
-                    <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-black text-sky-700 shadow-sm">
-                      {todayDashboard.fluidPercent}%
-                    </span>
-                  ) : null}
-                </div>
-                <div className="mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
-                  <div
-                    className="h-full rounded-full bg-sky-500 transition-all"
-                    style={{
-                      width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
-                    }}
-                  />
-                </div>
-                {!todayDashboard.fluidTargetMl ? (
-                  <p className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700">
-                    Set daily fluid target
-                  </p>
-                ) : null}
-              </button>
             ) : null}
           </div>
 
@@ -14437,7 +14461,7 @@ export default function KaylenCareMonitorDashboard({
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm">
+                  <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl shadow-sm ${homeIconTone(card.key)}`}>
                     {renderHomeModuleIcon(card.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -14660,8 +14684,29 @@ export default function KaylenCareMonitorDashboard({
                     onClick={() => openQuickAdd(item.title, item.preset)}
                     className="flex min-h-[3.5rem] items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-left text-sm font-black text-slate-800 shadow-sm transition hover:border-violet-100 hover:bg-violet-50 active:scale-[0.98]"
                   >
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
-                      {renderSectionIcon(item.title, "h-5 w-5")}
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm ${
+                        item.preset === "Drink"
+                          ? homeIconTone("drink")
+                          : item.title === "Food Diary"
+                            ? homeIconTone("food")
+                            : item.title === "Medication"
+                              ? homeIconTone("medication")
+                              : item.title === "Sleep"
+                                ? homeIconTone("sleep")
+                                : item.title === "Toileting"
+                                  ? homeIconTone("toileting")
+                                  : item.title === "Behaviour"
+                                    ? homeIconTone("behaviour")
+                                    : item.title === "Health"
+                                      ? homeIconTone("health")
+                                      : homeIconTone("default")
+                      }`}
+                    >
+                      {renderSectionIcon(
+                        item.preset === "Drink" ? "Hydration" : item.title,
+                        "h-5 w-5",
+                      )}
                     </span>
                     <span className="truncate">{item.label}</span>
                   </button>
