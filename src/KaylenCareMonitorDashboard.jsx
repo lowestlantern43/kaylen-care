@@ -14096,6 +14096,17 @@ export default function KaylenCareMonitorDashboard({
     return renderDashboardIcon(section, svgClassName, "text-xl leading-none");
   };
 
+  const homeTileTone = (key) =>
+    ({
+      food: "border-emerald-100 bg-gradient-to-br from-emerald-50 to-white text-emerald-700",
+      drink: "border-sky-100 bg-gradient-to-br from-sky-50 to-white text-sky-700",
+      sleep: "border-indigo-100 bg-gradient-to-br from-indigo-50 to-white text-indigo-700",
+      toileting: "border-cyan-100 bg-gradient-to-br from-cyan-50 to-white text-cyan-700",
+      behaviour: "border-purple-100 bg-gradient-to-br from-purple-50 to-white text-purple-700",
+      health: "border-amber-100 bg-gradient-to-br from-amber-50 to-white text-amber-700",
+    })[key] ||
+    "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
+
   const mobileNavButtonClass = (active, extra = "") =>
     `flex min-h-[3.35rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 text-[11px] font-black transition duration-200 active:scale-95 ${
       active
@@ -14251,15 +14262,17 @@ export default function KaylenCareMonitorDashboard({
             </p>
           </div>
 
-          <div className="mt-3 grid gap-2.5 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mt-3 grid grid-cols-2 gap-2.5 lg:grid-cols-[1.15fr_0.85fr]">
             {isModuleEnabled("medication") ? (
               <article
                 className={`rounded-[1.35rem] border p-3 shadow-sm ${
+                  todayDashboard.requiredMedication.length ? "col-span-2 lg:col-span-1" : ""
+                } ${
                   todayDashboard.requiredMedication.some(
                     (medicine) => medicine.status === "due" || medicine.status === "missed",
                   )
-                    ? "border-rose-100 bg-rose-50/90"
-                    : "border-emerald-100 bg-emerald-50/90"
+                    ? "border-rose-100 bg-gradient-to-br from-rose-50 to-white"
+                    : "border-emerald-100 bg-gradient-to-br from-emerald-50 to-white"
                 }`}
               >
                 <div className="flex items-start justify-between gap-3">
@@ -14349,7 +14362,7 @@ export default function KaylenCareMonitorDashboard({
                     : onOpenChildSetup?.())
                 }
                 disabled={isReadOnly}
-                className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
+                className="rounded-[1.35rem] border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
@@ -14390,7 +14403,7 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
           </div>
 
-          <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-2.5 grid grid-cols-2 gap-2.5 lg:grid-cols-3">
             {homeSummaryCards
               .filter((card) => card.key !== "medication")
               .map((card) => (
@@ -14399,14 +14412,14 @@ export default function KaylenCareMonitorDashboard({
                 key={card.key}
                 onClick={() => !isReadOnly && openQuickAdd(card.section, card.preset)}
                 disabled={isReadOnly}
-                className={`min-w-0 rounded-2xl border bg-white/85 p-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default ${
+                className={`min-w-0 rounded-2xl border p-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default ${
                   card.alert
                     ? "border-amber-200"
-                    : "border-white/80"
+                    : homeTileTone(card.key)
                 }`}
               >
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/80 shadow-sm">
                     {renderHomeModuleIcon(card.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -14443,14 +14456,14 @@ export default function KaylenCareMonitorDashboard({
           )}
         </section>
 
-        <section className="mb-5 rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <section className="mb-5 rounded-[1.5rem] border border-slate-200 bg-white/90 p-3 shadow-sm sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
                 Recent activity
               </p>
-              <h2 className="text-lg font-black text-slate-950">
-                Latest care notes
+              <h2 className="text-base font-black text-slate-950">
+                Timeline preview
               </h2>
             </div>
             <button
@@ -14464,25 +14477,25 @@ export default function KaylenCareMonitorDashboard({
             </button>
           </div>
           {recentActivityPreview.length ? (
-            <div className="mt-3 space-y-2">
-              {recentActivityPreview.slice(0, 4).map((entry) => (
+            <div className="mt-2.5 space-y-1.5">
+              {recentActivityPreview.slice(0, 3).map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5"
+                  className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-100 bg-slate-50/80 px-2.5 py-2"
                 >
-                  <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
                     {renderHomeModuleIcon(entry.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center justify-between gap-2">
-                      <p className="truncate text-sm font-black text-slate-900">
+                      <p className="truncate text-sm font-bold text-slate-900">
                         {entry.summary || entry.section}
                       </p>
                       <span className="shrink-0 text-[11px] font-bold text-slate-400">
                         {entry.time || entry.date}
                       </span>
                     </div>
-                    <p className="mt-0.5 truncate text-xs font-bold text-slate-500">
+                    <p className="truncate text-[11px] font-bold text-slate-500">
                       {entry.section}
                       {entry.details ? ` - ${entry.details}` : ""}
                     </p>

@@ -7054,23 +7054,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                <button
-                  type="button"
-                  onClick={openAdmin}
-                  className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm"
-                >
-                  Settings
-                </button>
-                {session?.user?.isPlatformAdmin ? (
-                  <button
-                    type="button"
-                    onClick={openPlatformAdmin}
-                    className="rounded-xl border border-indigo-300 bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-700 shadow-sm"
-                  >
-                    Platform
-                  </button>
-                ) : null}
+                <div className="flex items-center justify-end">
                 <button
                   type="button"
                   onClick={onLogout}
