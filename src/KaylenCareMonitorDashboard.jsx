@@ -14238,13 +14238,13 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
-        <section className="mb-5 rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/70 to-sky-50/80 p-4 shadow-sm sm:p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <section className="mb-4 rounded-[1.6rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/60 to-sky-50/70 p-3 shadow-sm sm:p-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setChildSwitcherOpen(true)}
-                className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-violet-500 to-sky-500 text-lg font-black text-white shadow-md"
+                className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-violet-500 to-sky-500 text-sm font-black text-white shadow-sm"
                 aria-label={`Current child: ${childName}`}
                 title={`Current child: ${childName}`}
               >
@@ -14259,13 +14259,10 @@ export default function KaylenCareMonitorDashboard({
                 )}
               </button>
               <div className="min-w-0">
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
-                  Today at a glance
-                </p>
-                <h1 className="truncate text-2xl font-black tracking-tight text-slate-950">
+                <h1 className="truncate text-lg font-black tracking-tight text-slate-950">
                   {childName}
                 </h1>
-                <p className="mt-1 text-sm font-bold text-slate-500">
+                <p className="text-xs font-bold text-slate-500">
                   {new Date().toLocaleDateString("en-GB", {
                     weekday: "long",
                     day: "numeric",
@@ -14275,25 +14272,20 @@ export default function KaylenCareMonitorDashboard({
               </div>
             </div>
             {children.length > 1 && onSelectChild ? (
-              <select
-                className="w-full min-w-0 rounded-2xl border border-indigo-100 bg-white/90 px-3 py-3 text-base font-bold text-slate-700 shadow-sm sm:w-56"
-                value={selectedChildId || childId}
-                onChange={(event) => onSelectChild(event.target.value)}
-                aria-label="Switch child"
+              <button
+                type="button"
+                onClick={() => setChildSwitcherOpen(true)}
+                className="shrink-0 rounded-full border border-indigo-100 bg-white/90 px-3 py-2 text-xs font-black text-indigo-700 shadow-sm"
               >
-                {children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.firstName || child.first_name || "Child"}
-                  </option>
-                ))}
-              </select>
+                Switch
+              </button>
             ) : null}
           </div>
 
-          <div className="mt-4 grid gap-3 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="mt-3 grid gap-2.5 lg:grid-cols-[1.15fr_0.85fr]">
             {isModuleEnabled("medication") ? (
               <article
-                className={`rounded-[1.5rem] border p-4 shadow-sm ${
+                className={`rounded-[1.35rem] border p-3 shadow-sm ${
                   todayDashboard.requiredMedication.some(
                     (medicine) => medicine.status === "due" || medicine.status === "missed",
                   )
@@ -14303,14 +14295,14 @@ export default function KaylenCareMonitorDashboard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
                       {renderSectionIcon("Medication", "h-5 w-5")}
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-700">
                         Medication
                       </p>
-                      <h2 className="mt-0.5 text-base font-black text-slate-950">
+                      <h2 className="mt-0.5 text-sm font-black text-slate-950">
                         {todayDashboard.requiredMedication.length
                           ? "Doses needing attention"
                           : todayDashboard.medicationRequired
@@ -14369,7 +14361,7 @@ export default function KaylenCareMonitorDashboard({
                     ))}
                   </div>
                 ) : (
-                  <p className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
+                  <p className="mt-2 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
                     {todayDashboard.medicationRequired
                       ? "Medication is up to date for today."
                       : "Set daily medication in the child care profile if needed."}
@@ -14379,17 +14371,27 @@ export default function KaylenCareMonitorDashboard({
             ) : null}
 
             {isModuleEnabled("drink") ? (
-              <article className="rounded-[1.5rem] border border-sky-100 bg-sky-50/90 p-4 shadow-sm">
+              <button
+                type="button"
+                onClick={() =>
+                  !isReadOnly &&
+                  (todayDashboard.fluidTargetMl
+                    ? openQuickAdd("Food Diary", "Drink")
+                    : onOpenChildSetup?.())
+                }
+                disabled={isReadOnly}
+                className="rounded-[1.35rem] border border-sky-100 bg-sky-50/90 p-3 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
                       {renderSectionIcon("Food Diary", "h-5 w-5")}
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
                         Food & fluids
                       </p>
-                      <h2 className="mt-0.5 text-base font-black text-slate-950">
+                      <h2 className="mt-0.5 text-sm font-black text-slate-950">
                         {todayDashboard.fluidTargetMl
                           ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
                           : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
@@ -14411,33 +14413,32 @@ export default function KaylenCareMonitorDashboard({
                   />
                 </div>
                 {!todayDashboard.fluidTargetMl ? (
-                  <button
-                    type="button"
-                    onClick={onOpenChildSetup}
-                    className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700"
-                  >
+                  <p className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700">
                     Set daily fluid target
-                  </button>
+                  </p>
                 ) : null}
-              </article>
+              </button>
             ) : null}
           </div>
 
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {homeSummaryCards
               .filter((card) => !["medication", "fluids"].includes(card.key))
               .map((card) => (
-              <article
+              <button
+                type="button"
                 key={card.key}
-                className={`min-w-0 rounded-2xl border bg-white/85 p-3 shadow-sm ${
+                onClick={() => !isReadOnly && openQuickAdd(card.section, card.preset)}
+                disabled={isReadOnly}
+                className={`min-w-0 rounded-2xl border bg-white/85 p-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default ${
                   card.alert
                     ? "border-amber-200"
                     : "border-white/80"
                 }`}
               >
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
-                    {renderSectionIcon(card.section, "h-5 w-5")}
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
+                    {renderSectionIcon(card.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
@@ -14451,16 +14452,7 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   </div>
                 </div>
-                {!isReadOnly ? (
-                  <button
-                    type="button"
-                    onClick={() => openQuickAdd(card.section, card.preset)}
-                    className="mt-3 w-full rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2 text-xs font-black text-indigo-700 transition hover:bg-indigo-100"
-                  >
-                    {card.key === "fluids" ? "Log fluids" : "Add update"}
-                  </button>
-                ) : null}
-              </article>
+              </button>
             ))}
           </div>
 
