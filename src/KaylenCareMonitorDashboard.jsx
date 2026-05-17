@@ -976,7 +976,12 @@ export default function KaylenCareMonitorDashboard({
   const [isLoadingSleepDraft, setIsLoadingSleepDraft] = useState(false);
   const [isSavingSleep, setIsSavingSleep] = useState(false);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const quickAddMemoryKey = `familytrack:last-quick-add:${familyId || "legacy"}`;
+  const [lastQuickAddKey, setLastQuickAddKey] = useState(
+    () => safeLocalStorageGet(quickAddMemoryKey) || "",
+  );
   const [moreNavOpen, setMoreNavOpen] = useState(false);
+  const [notificationCentreOpen, setNotificationCentreOpen] = useState(false);
   const [selectedMedicationShortcut, setSelectedMedicationShortcut] = useState("");
   const [draftPrompts, setDraftPrompts] = useState({});
   const [draggingCardTitle, setDraggingCardTitle] = useState("");
@@ -1162,6 +1167,24 @@ export default function KaylenCareMonitorDashboard({
       ].filter((item) => isModuleEnabled(item.module)),
     [visibleModules],
   );
+
+  const orderedQuickAddItems = useMemo(() => {
+    if (!lastQuickAddKey) return quickAddItems;
+    const remembered = quickAddItems.find(
+      (item) => `${item.title}:${item.preset || ""}` === lastQuickAddKey,
+    );
+    if (!remembered) return quickAddItems;
+    return [
+      remembered,
+      ...quickAddItems.filter(
+        (item) => `${item.title}:${item.preset || ""}` !== lastQuickAddKey,
+      ),
+    ];
+  }, [lastQuickAddKey, quickAddItems]);
+
+  useEffect(() => {
+    setLastQuickAddKey(safeLocalStorageGet(quickAddMemoryKey) || "");
+  }, [quickAddMemoryKey]);
 
   const orderedSections = useMemo(() => {
     const byTitle = new Map(visibleSections.map((section) => [section.title, section]));
@@ -2077,6 +2100,7 @@ export default function KaylenCareMonitorDashboard({
     setActiveSection(section);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
+    setNotificationCentreOpen(false);
     if (section.title !== "Medication") setMedicationValue("");
     if (section.title !== "Food Diary") setFoodValue("");
     if (section.title !== "Reports") {
@@ -2088,6 +2112,9 @@ export default function KaylenCareMonitorDashboard({
   const openQuickAdd = (title, preset = "") => {
     const section = sections.find((item) => item.title === title);
     if (!section) return;
+    const quickAddKey = `${title}:${preset || ""}`;
+    setLastQuickAddKey(quickAddKey);
+    safeLocalStorageSet(quickAddMemoryKey, quickAddKey);
 
     if (title === "Food Diary" && preset) {
       setFoodValue(preset);
@@ -2108,6 +2135,7 @@ export default function KaylenCareMonitorDashboard({
     setActiveSection(null);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
+    setNotificationCentreOpen(false);
     setMedicationValue("");
     setFoodValue("");
     setShareCopied(false);
@@ -3901,6 +3929,32 @@ export default function KaylenCareMonitorDashboard({
     timelineLogs,
   ]);
 
+  const groupedUnifiedTimelineItems = useMemo(() => {
+    const groups = [];
+    const byDay = new Map();
+
+    unifiedTimelineItems.forEach((item) => {
+      const itemDate = getTimelineDate(item);
+      const dayKey = itemDate.toLocaleDateString("en-CA");
+      const dayLabel = itemDate.toLocaleDateString("en-GB", {
+        weekday: "long",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+
+      if (!byDay.has(dayKey)) {
+        const group = { key: dayKey, label: dayLabel, items: [] };
+        byDay.set(dayKey, group);
+        groups.push(group);
+      }
+
+      byDay.get(dayKey).items.push(item);
+    });
+
+    return groups;
+  }, [unifiedTimelineItems]);
+
   const latestTwoBySection = useMemo(() => {
     const findLatestTwo = (sectionTitle) =>
       sharedLog.filter((entry) => entry.section === sectionTitle).slice(0, 2);
@@ -4214,6 +4268,127 @@ export default function KaylenCareMonitorDashboard({
     () => sharedLog.slice(0, 5),
     [sharedLog],
   );
+
+  const homeStatusItems = useMemo(() => {
+    const items = [];
+    const dueNow = todayDashboard.requiredMedication.find(
+      (medicine) => medicine.status === "due" || medicine.status === "missed",
+    );
+    const laterMedication = todayDashboard.requiredMedication.find(
+      (medicine) => medicine.status === "upcoming",
+    );
+
+    if (dueNow) {
+      items.push({
+        key: "medication",
+        text:
+          dueNow.status === "missed"
+            ? "Medication needs checking"
+            : `${dueNow.name || "Medication"} due now`,
+        tone: "border-rose-200 bg-rose-50 text-rose-800",
+      });
+    } else if (laterMedication) {
+      items.push({
+        key: "medication-later",
+        text: `${laterMedication.name || "Medication"} due later`,
+        tone: "border-sky-200 bg-sky-50 text-sky-800",
+      });
+    } else if (todayDashboard.medicationRequired) {
+      items.push({
+        key: "medication-ok",
+        text: "All medication up to date",
+        tone: "border-emerald-200 bg-emerald-50 text-emerald-800",
+      });
+    }
+
+    if (todayDashboard.fluidTargetMl) {
+      items.push({
+        key: "hydration",
+        text: `Hydration goal ${todayDashboard.fluidPercent}% reached`,
+        tone:
+          todayDashboard.fluidPercent >= 70
+            ? "border-sky-200 bg-sky-50 text-sky-800"
+            : "border-amber-200 bg-amber-50 text-amber-800",
+      });
+    } else if (!todayDashboard.fluidMl) {
+      items.push({
+        key: "hydration-empty",
+        text: "No drinks logged today yet",
+        tone: "border-sky-200 bg-sky-50 text-sky-800",
+      });
+    }
+
+    const latestSleep = sharedLog.find((entry) => entry.section === "Sleep");
+    if (!latestSleep) {
+      items.push({
+        key: "sleep-empty",
+        text: "No sleep logged last night",
+        tone: "border-indigo-200 bg-indigo-50 text-indigo-800",
+      });
+    }
+
+    return items.slice(0, 3);
+  }, [sharedLog, todayDashboard]);
+
+  const gentleInsightCards = useMemo(() => {
+    const insights = [];
+    const today = todayValue();
+    const todayMedication = sharedLog.filter(
+      (entry) => entry.section === "Medication" && entry.date === today,
+    );
+    const skippedThisWeek = sharedLog.filter((entry) => {
+      if (entry.section !== "Medication") return false;
+      const status = String(entry.medicationStatus || "").toLowerCase();
+      if (!["skipped", "missed", "refused"].includes(status)) return false;
+      const entryDate = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
+      if (!entryDate || Number.isNaN(entryDate.getTime())) return false;
+      return Date.now() - entryDate.getTime() <= 7 * 24 * 60 * 60 * 1000;
+    }).length;
+
+    if (todayDashboard.fluidTargetMl && todayDashboard.fluidPercent < 50) {
+      insights.push({
+        key: "fluid-low",
+        text: "Worth noting: fluid intake is below the daily target so far.",
+        tone: "border-sky-100 bg-sky-50 text-sky-900",
+      });
+    }
+    if (skippedThisWeek >= 2) {
+      insights.push({
+        key: "med-skipped",
+        text: `Worth noting: medication was skipped or missed ${skippedThisWeek} times this week.`,
+        tone: "border-rose-100 bg-rose-50 text-rose-900",
+      });
+    }
+    if (!todayMedication.length && todayDashboard.medicationRequired) {
+      insights.push({
+        key: "med-none",
+        text: "Possible pattern: required medication has not been logged today yet.",
+        tone: "border-amber-100 bg-amber-50 text-amber-900",
+      });
+    }
+
+    return insights.slice(0, 2);
+  }, [sharedLog, todayDashboard]);
+
+  const notificationCentreItems = useMemo(() => {
+    const items = homeStatusItems.map((item) => ({
+      id: `status-${item.key}`,
+      title: item.text,
+      detail: "Today",
+      tone: item.tone,
+    }));
+
+    gentleInsightCards.forEach((insight) => {
+      items.push({
+        id: `insight-${insight.key}`,
+        title: insight.text,
+        detail: "Care insight",
+        tone: insight.tone,
+      });
+    });
+
+    return items.slice(0, 6);
+  }, [gentleInsightCards, homeStatusItems]);
 
   useEffect(() => {
     const reportCardCount = 3;
@@ -11870,93 +12045,103 @@ export default function KaylenCareMonitorDashboard({
 
         <div className="mt-4 space-y-3">
           {unifiedTimelineItems.length ? (
-            unifiedTimelineItems.map((item) => {
-              const theme = getTimelineTheme(item.category);
-              const itemDate = getTimelineDate(item);
-              const isExpanded = expandedTimelineItem === item.id;
-              return (
-                <article
-                  key={item.id}
-                  className={`rounded-2xl border p-3 shadow-sm ${theme.card}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setExpandedTimelineItem((current) =>
-                        current === item.id ? "" : item.id,
-                      )
-                    }
-                    className="flex w-full min-w-0 items-start gap-3 text-left"
-                  >
-                    <span className="flex flex-none flex-col items-center gap-1">
-                      <span className={`h-3 w-3 rounded-full ${theme.dot}`} />
-                      <span className="rounded-full bg-white/80 px-1.5 py-0.5 text-[9px] font-black uppercase tracking-tight text-slate-500">
-                        {theme.icon}
-                      </span>
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex flex-wrap items-center gap-2">
-                        <span className={`text-[11px] font-black uppercase tracking-[0.16em] ${theme.text}`}>
-                          {theme.label}
-                        </span>
-                        <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-slate-500">
-                          {item.childName || childName}
-                        </span>
-                      </span>
-                      <span className="mt-1 block break-words text-sm font-black text-slate-950">
-                        {item.title}
-                      </span>
-                      <span className="mt-1 block text-xs font-semibold text-slate-500">
-                        {itemDate.toLocaleString("en-GB", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
-                    </span>
-                    <span className="rounded-full border border-white/80 bg-white/80 px-2 py-1 text-xs font-black text-slate-500">
-                      {isExpanded ? "Hide" : "Details"}
-                    </span>
-                  </button>
+            groupedUnifiedTimelineItems.map((group) => (
+              <div key={group.key} className="space-y-2">
+                <div className="sticky top-2 z-10 flex items-center justify-between rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm backdrop-blur">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-600">
+                    {group.label}
+                  </p>
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-black text-slate-600">
+                    {group.items.length}
+                  </span>
+                </div>
 
-                  {isExpanded ? (
-                    <div className="mt-3 rounded-xl border border-white/80 bg-white/80 p-3">
-                      <p className="text-sm font-semibold leading-6 text-slate-700">
-                        {item.summary}
-                      </p>
-                      {item.details?.length ? (
-                        <ul className="mt-2 space-y-1 text-sm font-medium leading-6 text-slate-600">
-                          {item.details.map((detail, index) => (
-                            <li key={`${item.id}-detail-${index}`}>{detail}</li>
-                          ))}
-                        </ul>
+                {group.items.map((item) => {
+                  const theme = getTimelineTheme(item.category);
+                  const itemDate = getTimelineDate(item);
+                  const isExpanded = expandedTimelineItem === item.id;
+                  return (
+                    <article
+                      key={item.id}
+                      className={`rounded-2xl border p-3 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-md active:scale-[0.99] ${theme.card}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedTimelineItem((current) =>
+                            current === item.id ? "" : item.id,
+                          )
+                        }
+                        className="flex w-full min-w-0 items-start gap-3 text-left"
+                      >
+                        <span className={`flex h-10 w-10 flex-none items-center justify-center rounded-2xl text-white shadow-sm ${theme.dot}`}>
+                          {renderHomeModuleIcon(
+                            item.category === "Food Diary" ? "Food Diary" : item.category,
+                            "h-5 w-5",
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full bg-white/80 px-2 py-0.5 text-[10px] font-black uppercase tracking-[0.12em] ${theme.text}`}>
+                              {theme.label}
+                            </span>
+                            <span className="rounded-full bg-white/80 px-2 py-0.5 text-[11px] font-bold text-slate-500">
+                              {item.childName || childName}
+                            </span>
+                          </span>
+                          <span className="mt-1 block break-words text-sm font-black text-slate-950">
+                            {item.title}
+                          </span>
+                          <span className="mt-1 block text-xs font-semibold text-slate-500">
+                            {itemDate.toLocaleTimeString("en-GB", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </span>
+                        <span className="rounded-full border border-white/80 bg-white/80 px-2 py-1 text-xs font-black text-slate-500">
+                          {isExpanded ? "Hide" : "Details"}
+                        </span>
+                      </button>
+
+                      {isExpanded ? (
+                        <div className="mt-3 rounded-xl border border-white/80 bg-white/80 p-3">
+                          <p className="text-sm font-semibold leading-6 text-slate-700">
+                            {item.summary}
+                          </p>
+                          {item.details?.length ? (
+                            <ul className="mt-2 space-y-1 text-sm font-medium leading-6 text-slate-600">
+                              {item.details.map((detail, index) => (
+                                <li key={`${item.id}-detail-${index}`}>{detail}</li>
+                              ))}
+                            </ul>
+                          ) : null}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openTimelineLinkedSection(item)}
+                              className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm"
+                            >
+                              Open related section
+                            </button>
+                            {item.kind === "document" && item.document?.downloadUrl ? (
+                              <a
+                                href={item.document.downloadUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
+                              >
+                                View / download document
+                              </a>
+                            ) : null}
+                          </div>
+                        </div>
                       ) : null}
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openTimelineLinkedSection(item)}
-                          className="rounded-xl bg-slate-950 px-3 py-2 text-xs font-black text-white shadow-sm"
-                        >
-                          Open related section
-                        </button>
-                        {item.kind === "document" && item.document?.downloadUrl ? (
-                          <a
-                            href={item.document.downloadUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-700 shadow-sm"
-                          >
-                            View / download document
-                          </a>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })
+                    </article>
+                  );
+                })}
+              </div>
+            ))
           ) : (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center">
               <p className="text-sm font-black text-slate-800">
@@ -13986,6 +14171,15 @@ export default function KaylenCareMonitorDashboard({
     { label: "Subscription", icon: "subscription", action: onOpenSubscription },
     { type: "heading", label: "Family" },
     { label: "Child Profiles", icon: "profile", action: onOpenChildSetup },
+    {
+      label: "Notification Centre",
+      icon: "notifications",
+      action: () => {
+        setNotificationCentreOpen(true);
+        setQuickAddOpen(false);
+        setMoreNavOpen(false);
+      },
+    },
     { label: "Notifications", icon: "notifications", action: onOpenNotifications },
     { type: "heading", label: "Support" },
     { label: "Help & Support", icon: "support", action: onOpenSupport },
@@ -14306,6 +14500,19 @@ export default function KaylenCareMonitorDashboard({
             </p>
           </div>
 
+          {homeStatusItems.length ? (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {homeStatusItems.map((item) => (
+                <span
+                  key={item.key}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm ${item.tone}`}
+                >
+                  {item.text}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
           <div className="mt-3 grid gap-3">
             {isModuleEnabled("drink") ? (
               <button
@@ -14343,7 +14550,7 @@ export default function KaylenCareMonitorDashboard({
                 </div>
                 <div className="mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
                   <div
-                    className="h-full rounded-full bg-sky-500 transition-all"
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 transition-all duration-700 ease-out"
                     style={{
                       width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
                     }}
@@ -14496,6 +14703,19 @@ export default function KaylenCareMonitorDashboard({
               No urgent reminders showing.
             </div>
           )}
+
+          {gentleInsightCards.length ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {gentleInsightCards.map((insight) => (
+                <div
+                  key={insight.key}
+                  className={`rounded-2xl border px-3 py-2 text-xs font-bold leading-5 shadow-sm ${insight.tone}`}
+                >
+                  {insight.text}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </section>
         <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
@@ -14641,6 +14861,56 @@ export default function KaylenCareMonitorDashboard({
       </div>
 
       <div className="fixed inset-x-0 bottom-0 z-40 px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden">
+        {notificationCentreOpen ? (
+          <div className="mx-auto mb-3 w-full max-w-md rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-sky-50/80 px-3 py-2">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-700">
+                  Notification Centre
+                </p>
+                <p className="mt-0.5 truncate text-sm font-bold text-slate-700">
+                  Today&apos;s reminders and care alerts
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotificationCentreOpen(false)}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white text-sm font-black text-slate-500 shadow-sm"
+                aria-label="Close notification centre"
+              >
+                x
+              </button>
+            </div>
+            <div className="mt-3 space-y-2">
+              {notificationCentreItems.length ? (
+                notificationCentreItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`rounded-2xl border px-3 py-2.5 text-sm font-bold shadow-sm ${item.tone}`}
+                  >
+                    <p>{item.title}</p>
+                    <p className="mt-1 text-xs font-semibold opacity-70">{item.detail}</p>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-4 text-sm font-bold text-emerald-800">
+                  Nothing needs attention right now.
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setNotificationCentreOpen(false);
+                onOpenNotifications?.();
+              }}
+              className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm"
+            >
+              Notification settings
+            </button>
+          </div>
+        ) : null}
+
         {quickAddOpen && quickAddItems.length ? (
           <div className="mx-auto mb-3 w-full max-w-md rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-violet-100 bg-violet-50/80 px-3 py-2">
@@ -14675,7 +14945,7 @@ export default function KaylenCareMonitorDashboard({
               </select>
             ) : null}
             <div className="mt-3 grid grid-cols-2 gap-2">
-              {quickAddItems
+              {orderedQuickAddItems
                 .filter((item) => item.label !== "Appointment")
                 .map((item) => (
                   <button
@@ -14783,7 +15053,7 @@ export default function KaylenCareMonitorDashboard({
               closeSection();
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
-            className={mobileNavButtonClass(!activeSection && !quickAddOpen && !moreNavOpen)}
+            className={mobileNavButtonClass(!activeSection && !quickAddOpen && !moreNavOpen && !notificationCentreOpen)}
           >
             {renderMobileNavIcon("Home")}
             <span>Home</span>
@@ -14802,6 +15072,7 @@ export default function KaylenCareMonitorDashboard({
             type="button"
             onClick={() => {
               setMoreNavOpen(false);
+              setNotificationCentreOpen(false);
               setQuickAddOpen((current) => !current);
             }}
             className={mobileNavButtonClass(
@@ -14827,9 +15098,10 @@ export default function KaylenCareMonitorDashboard({
             type="button"
             onClick={() => {
               setQuickAddOpen(false);
+              setNotificationCentreOpen(false);
               setMoreNavOpen((current) => !current);
             }}
-            className={mobileNavButtonClass(moreNavOpen || isMoreSectionOpen)}
+            className={mobileNavButtonClass(moreNavOpen || notificationCentreOpen || isMoreSectionOpen)}
           >
             {renderMobileNavIcon("More")}
             <span>More</span>
