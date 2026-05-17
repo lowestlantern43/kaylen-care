@@ -1027,8 +1027,8 @@ export default function KaylenCareMonitorDashboard({
       subtitle: "Meltdowns, triggers, regulation and recovery",
       button: "Open Log",
       emoji: "BT",
-      color: "from-purple-400 to-fuchsia-500",
-      soft: "bg-purple-50 border-purple-300",
+      color: "from-orange-300 to-amber-500",
+      soft: "bg-orange-50 border-orange-200",
     },
     {
       title: "Sleep",
@@ -13968,6 +13968,7 @@ export default function KaylenCareMonitorDashboard({
 
   const mobileMoreItems = [
     { type: "heading", label: "Account" },
+    { label: "Settings", icon: "settings", action: onOpenSettings },
     { label: "Profile", icon: "profile", action: onOpenSettings },
     { label: "Subscription", icon: "subscription", action: onOpenSubscription },
     { type: "heading", label: "Family" },
@@ -14061,6 +14062,13 @@ export default function KaylenCareMonitorDashboard({
     };
 
     switch (icon) {
+      case "settings":
+        return (
+          <svg {...common}>
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 0 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 0 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 0 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 0 1 7.1 4l.1.1a1.7 1.7 0 0 0 1.9.3h.1a1.7 1.7 0 0 0 .9-1.5V3a2 2 0 0 1 4 0v.1a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1A2 2 0 0 1 20 7.1l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.5.9h.1a2 2 0 0 1 0 4h-.1a1.7 1.7 0 0 0-1.7.9Z" />
+          </svg>
+        );
       case "profile":
         return (
           <svg {...common}>
@@ -14114,8 +14122,8 @@ export default function KaylenCareMonitorDashboard({
       drink: "border-sky-100 bg-gradient-to-br from-sky-50 to-white text-sky-700",
       sleep: "border-indigo-100 bg-gradient-to-br from-indigo-50 to-white text-indigo-700",
       toileting: "border-cyan-100 bg-gradient-to-br from-cyan-50 to-white text-cyan-700",
-      behaviour: "border-purple-100 bg-gradient-to-br from-purple-50 to-white text-purple-700",
-      health: "border-amber-100 bg-gradient-to-br from-amber-50 to-white text-amber-700",
+      behaviour: "border-orange-100 bg-gradient-to-br from-orange-50 to-white text-orange-700",
+      health: "border-teal-100 bg-gradient-to-br from-teal-50 to-white text-teal-700",
     })[key] ||
     "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
 
