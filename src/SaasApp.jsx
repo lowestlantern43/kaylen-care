@@ -1265,6 +1265,8 @@ function ChildAvatar({ child, active = false, size = "sm", status = {} }) {
   const iconSizeClass = size === "lg" ? "h-7 w-7" : "h-4 w-4";
   const ringClass = status.medicationOverdue
     ? "ring-2 ring-rose-500"
+    : status.medicationOk
+      ? "ring-2 ring-emerald-400"
     : active
       ? "ring-2 ring-indigo-200"
       : "ring-2 ring-white";
@@ -4239,9 +4241,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               const loggedMedicine = cleanFormText(log.data?.medicine).toLowerCase();
               const loggedStatus = cleanFormText(log.data?.status).toLowerCase();
               const loggedWindow = cleanFormText(log.data?.scheduled_window).toLowerCase();
-              const statusCountsAsGiven = !["skipped", "missed", "refused"].includes(
-                loggedStatus,
-              );
+              const statusCountsAsHandled = loggedStatus !== "missed";
               const medicineMatches =
                 !medicineName ||
                 loggedMedicine === medicineName ||
@@ -4249,7 +4249,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 medicineName.includes(loggedMedicine);
               const windowMatches =
                 !doseWindows.length || !loggedWindow || doseWindows.includes(loggedWindow);
-              return statusCountsAsGiven && medicineMatches && windowMatches;
+              return statusCountsAsHandled && medicineMatches && windowMatches;
             });
           });
 
@@ -4265,7 +4265,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               !latestSleepLog.data?.wakeTime,
           );
 
-          nextStatuses[child.id] = { medicationOverdue, isAsleep };
+          nextStatuses[child.id] = {
+            medicationOverdue,
+            medicationOk: !medicationOverdue,
+            isAsleep,
+          };
         });
 
         setChildAvatarStatuses(nextStatuses);
