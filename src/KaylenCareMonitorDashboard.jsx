@@ -486,6 +486,15 @@ const calculateBmi = (weightKg, heightCm) => {
   return Number((weight / (heightM * heightM)).toFixed(1));
 };
 
+const stonePoundsToKg = (stone, pounds) => {
+  const st = Number(stone);
+  const lb = Number(pounds);
+  const totalPounds =
+    (Number.isFinite(st) ? st : 0) * 14 + (Number.isFinite(lb) ? lb : 0);
+  if (!totalPounds) return "";
+  return (totalPounds * 0.45359237).toFixed(1);
+};
+
 const formatMetric = (value, suffix) => {
   if (value === null || value === undefined || value === "") return "Not logged";
   return `${value}${suffix}`;
@@ -932,6 +941,8 @@ export default function KaylenCareMonitorDashboard({
     outcome: "",
     notes: "",
     weightKg: "",
+    weightStone: "",
+    weightPounds: "",
     heightCm: "",
   });
   const [behaviourForm, setBehaviourForm] = useState({
@@ -2271,6 +2282,8 @@ export default function KaylenCareMonitorDashboard({
       outcome: "",
       notes: "",
       weightKg: "",
+      weightStone: "",
+      weightPounds: "",
       heightCm: "",
     });
   };
@@ -9444,6 +9457,14 @@ export default function KaylenCareMonitorDashboard({
       !!healthForm.time.trim() &&
       (!!healthForm.weightKg || !!healthForm.heightCm) &&
       !activeSaveAction;
+    const updateImperialWeight = (field, value) => {
+      const next = {
+        ...healthForm,
+        [field]: value,
+      };
+      next.weightKg = stonePoundsToKg(next.weightStone, next.weightPounds);
+      setHealthForm(next);
+    };
 
     return (
       <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -9468,6 +9489,38 @@ export default function KaylenCareMonitorDashboard({
           onNow: () => setHealthForm({ ...healthForm, time: nowTimeValue() }),
         })}
 
+        <div className={`${cardClassName} md:col-span-2`}>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <label className="flex-1 text-sm font-semibold text-slate-700">
+              Weight (stone)
+              <input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="e.g. 2"
+                className={`${inputClassName} min-h-[48px]`}
+                value={healthForm.weightStone || ""}
+                onChange={(e) => updateImperialWeight("weightStone", e.target.value)}
+              />
+            </label>
+            <label className="flex-1 text-sm font-semibold text-slate-700">
+              Weight (lb)
+              <input
+                type="number"
+                min="0"
+                step="0.1"
+                placeholder="e.g. 12"
+                className={`${inputClassName} min-h-[48px]`}
+                value={healthForm.weightPounds || ""}
+                onChange={(e) => updateImperialWeight("weightPounds", e.target.value)}
+              />
+            </label>
+          </div>
+          <p className="mt-2 text-xs font-bold text-slate-500">
+            Stone and pounds are converted to kg for reports and growth charts.
+          </p>
+        </div>
+
         <div className={cardClassName}>
           <label className="text-sm font-semibold text-slate-700">
             Weight (kg)
@@ -9480,9 +9533,17 @@ export default function KaylenCareMonitorDashboard({
             className={`${inputClassName} min-h-[48px]`}
             value={healthForm.weightKg}
             onChange={(e) =>
-              setHealthForm({ ...healthForm, weightKg: e.target.value })
+              setHealthForm({
+                ...healthForm,
+                weightKg: e.target.value,
+                weightStone: "",
+                weightPounds: "",
+              })
             }
           />
+          <p className="mt-2 text-xs font-bold text-slate-500">
+            You can enter kg directly, or use stone/lb above.
+          </p>
         </div>
 
         <div className={cardClassName}>
