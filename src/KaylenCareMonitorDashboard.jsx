@@ -4149,14 +4149,10 @@ export default function KaylenCareMonitorDashboard({
         module: "food",
       },
       {
-        key: "fluids",
-        title: "Fluids today",
-        value: todayDashboard.fluidTargetMl
-          ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
-          : latestDrink?.summary || `${Math.round(todayDashboard.fluidMl)}ml logged`,
-        meta: todayDashboard.fluidTargetMl
-          ? `${todayDashboard.fluidPercent}% of target`
-          : "Set a fluid target in child profile",
+        key: "drink",
+        title: "Last drink",
+        value: latestDrink?.summary || "No drink logged yet",
+        meta: latestDrink?.time || "Drinks appear here once logged",
         section: "Food Diary",
         preset: "Drink",
         module: "drink",
@@ -14101,17 +14097,9 @@ export default function KaylenCareMonitorDashboard({
         : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
     } ${extra}`;
 
-  const childInitials = String(childName || "Child")
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
-      <div className="mx-auto max-w-6xl px-6 py-10 md:py-14">
+      <div className="mx-auto max-w-6xl px-4 py-4 md:px-6 md:py-8">
         {accountAccess && !accountAccess.canAddLogs ? (
           <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
             This family account is view-only. Existing diary entries, reports and
@@ -14239,47 +14227,22 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <section className="mb-4 rounded-[1.6rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/60 to-sky-50/70 p-3 shadow-sm sm:p-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setChildSwitcherOpen(true)}
-                className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-white bg-gradient-to-br from-violet-500 to-sky-500 text-sm font-black text-white shadow-sm"
-                aria-label={`Current child: ${childName}`}
-                title={`Current child: ${childName}`}
-              >
-                {childProfile.photoUrl || childProfile.photo_url ? (
-                  <img
-                    src={childProfile.photoUrl || childProfile.photo_url}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  childInitials
-                )}
-              </button>
-              <div className="min-w-0">
-                <h1 className="truncate text-lg font-black tracking-tight text-slate-950">
-                  {childName}
-                </h1>
-                <p className="text-xs font-bold text-slate-500">
-                  {new Date().toLocaleDateString("en-GB", {
-                    weekday: "long",
-                    day: "numeric",
-                    month: "long",
-                  })}
-                </p>
-              </div>
+          <div className="flex items-end justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
+                Today quick look
+              </p>
+              <h2 className="mt-0.5 text-base font-black text-slate-950">
+                Key care updates
+              </h2>
             </div>
-            {children.length > 1 && onSelectChild ? (
-              <button
-                type="button"
-                onClick={() => setChildSwitcherOpen(true)}
-                className="shrink-0 rounded-full border border-indigo-100 bg-white/90 px-3 py-2 text-xs font-black text-indigo-700 shadow-sm"
-              >
-                Switch
-              </button>
-            ) : null}
+            <p className="shrink-0 text-xs font-bold text-slate-500">
+              {new Date().toLocaleDateString("en-GB", {
+                weekday: "short",
+                day: "numeric",
+                month: "short",
+              })}
+            </p>
           </div>
 
           <div className="mt-3 grid gap-2.5 lg:grid-cols-[1.15fr_0.85fr]">
@@ -14389,7 +14352,7 @@ export default function KaylenCareMonitorDashboard({
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
-                        Food & fluids
+                        Hydration
                       </p>
                       <h2 className="mt-0.5 text-sm font-black text-slate-950">
                         {todayDashboard.fluidTargetMl
@@ -14423,7 +14386,7 @@ export default function KaylenCareMonitorDashboard({
 
           <div className="mt-2.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {homeSummaryCards
-              .filter((card) => !["medication", "fluids"].includes(card.key))
+              .filter((card) => card.key !== "medication")
               .map((card) => (
               <button
                 type="button"
