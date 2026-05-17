@@ -14090,6 +14090,12 @@ export default function KaylenCareMonitorDashboard({
     }
   };
 
+  const renderHomeModuleIcon = (sectionTitle, svgClassName = "h-5 w-5") => {
+    const section = sections.find((item) => item.title === sectionTitle);
+    if (!section) return renderSectionIcon(sectionTitle, svgClassName);
+    return renderDashboardIcon(section, svgClassName, "text-xl leading-none");
+  };
+
   const mobileNavButtonClass = (active, extra = "") =>
     `flex min-h-[3.35rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-2 text-[11px] font-black transition duration-200 active:scale-95 ${
       active
@@ -14259,7 +14265,7 @@ export default function KaylenCareMonitorDashboard({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-rose-600 shadow-sm">
-                      {renderSectionIcon("Medication", "h-5 w-5")}
+                      {renderHomeModuleIcon("Medication")}
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-700">
@@ -14348,7 +14354,7 @@ export default function KaylenCareMonitorDashboard({
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
                     <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-600 shadow-sm">
-                      {renderSectionIcon("Food Diary", "h-5 w-5")}
+                      {renderHomeModuleIcon("Food Diary")}
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-700">
@@ -14401,7 +14407,7 @@ export default function KaylenCareMonitorDashboard({
               >
                 <div className="flex min-w-0 items-center gap-2.5">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-700">
-                    {renderSectionIcon(card.section, "h-4 w-4")}
+                    {renderHomeModuleIcon(card.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
@@ -14465,7 +14471,7 @@ export default function KaylenCareMonitorDashboard({
                   className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2.5"
                 >
                   <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-violet-700 shadow-sm">
-                    {renderSectionIcon(entry.section, "h-4 w-4")}
+                    {renderHomeModuleIcon(entry.section, "h-4 w-4")}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center justify-between gap-2">
