@@ -4191,6 +4191,7 @@ export default function KaylenCareMonitorDashboard({
     const latestHealth = sharedLog.find(
       (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
     );
+    const latestMeasurement = sharedLog.find(isMeasurementEntry);
     const dueMedication = todayDashboard.requiredMedication.find(
       (medicine) => medicine.status !== "upcoming",
     );
@@ -4253,6 +4254,26 @@ export default function KaylenCareMonitorDashboard({
         meta: latestBehaviour?.time || "Patterns appear as logs build",
         section: "Behaviour",
         module: "behaviour",
+      },
+      {
+        key: "measurements",
+        title: "Measurements",
+        value:
+          latestMeasurement?.weightKg || latestMeasurement?.heightCm
+            ? [
+                latestMeasurement?.weightKg
+                  ? `${latestMeasurement.weightKg}kg`
+                  : "",
+                latestMeasurement?.heightCm
+                  ? `${latestMeasurement.heightCm}cm`
+                  : "",
+              ]
+                .filter(Boolean)
+                .join(" / ")
+            : latestMeasurement?.summary || "No measurements yet",
+        meta: latestMeasurement?.date || "Height and weight appear here",
+        section: "Growth / Measurements",
+        module: "measurements",
       },
       {
         key: "health",
@@ -14336,6 +14357,7 @@ export default function KaylenCareMonitorDashboard({
       toileting: "border-cyan-100 bg-gradient-to-br from-cyan-50 to-white text-cyan-700",
       behaviour: "border-orange-100 bg-gradient-to-br from-orange-50 to-white text-orange-700",
       health: "border-teal-100 bg-gradient-to-br from-teal-50 to-white text-teal-700",
+      measurements: "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700",
     })[key] ||
     "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
 
@@ -14348,6 +14370,7 @@ export default function KaylenCareMonitorDashboard({
       toileting: "bg-cyan-500 text-white",
       behaviour: "bg-orange-400 text-white",
       health: "bg-teal-500 text-white",
+      measurements: "bg-violet-500 text-white",
     })[key] || "bg-violet-500 text-white";
 
   const mobileNavButtonClass = (active, extra = "") =>
