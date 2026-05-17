@@ -7022,6 +7022,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <p className="truncate text-sm font-semibold text-slate-600">
                     {selectedChild ? childDisplayName(selectedChild) : "Choose child"}
                   </p>
+                  <p className="mt-0.5 text-xs font-bold text-slate-500">
+                    {new Date().toLocaleDateString("en-GB", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                    })}
+                  </p>
                   <div className="mt-2">
                     <button
                       type="button"

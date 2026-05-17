@@ -14481,31 +14481,13 @@ export default function KaylenCareMonitorDashboard({
         </section>
         ) : null}
 
-        <section className="mb-4 rounded-[1.6rem] border border-indigo-100 bg-gradient-to-br from-white via-indigo-50/60 to-sky-50/70 p-3 shadow-sm sm:p-4">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
-                Today quick look
-              </p>
-              <h2 className="mt-0.5 text-base font-black text-slate-950">
-                Key care updates
-              </h2>
-            </div>
-            <p className="shrink-0 text-xs font-bold text-slate-500">
-              {new Date().toLocaleDateString("en-GB", {
-                weekday: "short",
-                day: "numeric",
-                month: "short",
-              })}
-            </p>
-          </div>
-
+        <div className="mb-4">
           {homeStatusItems.length ? (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
               {homeStatusItems.map((item) => (
                 <span
                   key={item.key}
-                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm ${item.tone}`}
+                  className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-black shadow-sm/50 ${item.tone}`}
                 >
                   {item.text}
                 </span>
@@ -14513,7 +14495,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           ) : null}
 
-          <div className="mt-3 grid gap-3">
+          <div className="grid gap-3">
             {isModuleEnabled("drink") ? (
               <button
                 type="button"
@@ -14716,7 +14698,7 @@ export default function KaylenCareMonitorDashboard({
               ))}
             </div>
           ) : null}
-        </section>
+        </div>
         <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
           {orderedSections.map((section) => {
             const latestLines =
