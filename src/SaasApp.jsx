@@ -637,6 +637,10 @@ const isStandaloneDisplay = () => {
 const normaliseNotificationSettings = (value = {}) => ({
   ...DEFAULT_NOTIFICATION_SETTINGS,
   ...(value && typeof value === "object" ? value : {}),
+  timeZone:
+    value?.timeZone ||
+    Intl.DateTimeFormat?.().resolvedOptions?.().timeZone ||
+    "Europe/London",
   types: {
     ...DEFAULT_NOTIFICATION_SETTINGS.types,
     ...(value?.types && typeof value.types === "object" ? value.types : {}),
@@ -679,6 +683,12 @@ const asSafeDate = (value) => {
   if (!value) return null;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
+};
+
+const notificationDebug = (...args) => {
+  if (import.meta.env.DEV) {
+    console.info("[notification-debug]", ...args);
+  }
 };
 
 const fullAccessFlags = {
@@ -3085,7 +3095,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     enabled: false,
     publicKey: "",
     setupRequired: true,
+    schedulerEnabled: false,
   });
+  const [notificationRuntimeStatus, setNotificationRuntimeStatus] = useState(null);
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === "undefined" ? "unsupported" : Notification.permission,
   );
@@ -3393,13 +3405,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       if (!session?.user?.id) return;
 
       try {
-        const [config, settings] = await Promise.all([
+        const [config, settings, status] = await Promise.all([
           api.notificationConfig(),
           api.notificationSettings(),
+          api.notificationStatus().catch(() => null),
         ]);
         if (ignore) return;
         setNotificationConfig(config || {});
         setNotificationSettings(normaliseNotificationSettings(settings));
+        setNotificationRuntimeStatus(status);
         setNotificationPermission(
           typeof Notification === "undefined" ? "unsupported" : Notification.permission,
         );
@@ -3419,7 +3433,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   }, [session?.user?.id]);
 
   const saveNotificationSettings = async (nextSettings) => {
-    const normalised = normaliseNotificationSettings(nextSettings);
+    const normalised = normaliseNotificationSettings({
+      ...nextSettings,
+      timeZone:
+        Intl.DateTimeFormat?.().resolvedOptions?.().timeZone ||
+        nextSettings?.timeZone ||
+        "Europe/London",
+    });
     setNotificationSettings(normalised);
     try {
       const saved = await api.updateNotificationSettings(normalised);
@@ -3454,12 +3474,28 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     });
   };
 
+  const refreshNotificationRuntimeStatus = async () => {
+    try {
+      const status = await api.notificationStatus();
+      setNotificationRuntimeStatus(status);
+      setNotificationConfig((current) => ({
+        ...current,
+        ...(status?.config || {}),
+        schedulerEnabled: status?.schedulerEnabled ?? current.schedulerEnabled,
+      }));
+      return status;
+    } catch {
+      return null;
+    }
+  };
+
   const enablePushNotifications = async () => {
     setIsNotificationBusy(true);
     setNotificationStatusMessage("");
 
     try {
       const support = pushSupportStatus();
+      notificationDebug("Push support check", support);
       if (!support.supported) {
         setNotificationStatusMessage(support.reason);
         showToast({ message: support.reason, type: "warning" });
@@ -3467,6 +3503,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       }
 
       const latestConfig = await api.notificationConfig();
+      notificationDebug("Notification config", {
+        enabled: latestConfig?.enabled,
+        setupRequired: latestConfig?.setupRequired,
+        schedulerEnabled: latestConfig?.schedulerEnabled,
+      });
       setNotificationConfig(latestConfig || {});
       if (!latestConfig?.publicKey || latestConfig.setupRequired) {
         const message =
@@ -3477,6 +3518,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       }
 
       const permission = await Notification.requestPermission();
+      notificationDebug("Notification permission result", permission);
       setNotificationPermission(permission);
 
       if (permission !== "granted") {
@@ -3494,6 +3536,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       });
       await registration.update?.();
       const readyRegistration = await navigator.serviceWorker.ready;
+      notificationDebug("Service worker ready for push", {
+        scope: readyRegistration.scope,
+      });
       let subscription = await readyRegistration.pushManager.getSubscription();
 
       if (subscription) {
@@ -3519,8 +3564,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         ...notificationSettings,
         pushEnabled: true,
       });
+      notificationDebug("Push subscription saved", {
+        endpoint: subscription.endpoint,
+      });
       setNotificationSettings(normaliseNotificationSettings(saved));
       const testResult = await api.sendTestNotification();
+      await refreshNotificationRuntimeStatus();
       const message = testResult?.sent
         ? "Push reminders are enabled. A test notification was sent to this device."
         : "Push reminders were saved, but no test notification was delivered.";
@@ -3557,6 +3606,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         pushEnabled: false,
       });
       setNotificationSettings(normaliseNotificationSettings(saved));
+      await refreshNotificationRuntimeStatus();
       setNotificationStatusMessage("Push reminders are off on this device.");
       showToast({ message: "Notifications turned off", type: "info" });
     } catch (disableError) {
@@ -4912,6 +4962,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
     try {
       const result = await api.sendTestNotification();
+      await refreshNotificationRuntimeStatus();
       const message = result?.sent
         ? "Test notification sent to this device."
         : "No active push subscription was found for this device.";
@@ -8811,6 +8862,39 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </div>
                     ) : null}
 
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-xl border border-white bg-white/85 px-3 py-2 shadow-sm">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          Browser status
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800">
+                          {notificationPermission === "granted"
+                            ? "Notifications enabled"
+                            : notificationPermission === "denied"
+                              ? "Notifications blocked"
+                              : pushSupportStatus().iosNeedsPwa
+                                ? "iPhone reminders require Home Screen"
+                                : "Open settings to allow notifications"}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-white bg-white/85 px-3 py-2 shadow-sm">
+                        <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          Reminder service
+                        </p>
+                        <p className="mt-1 text-sm font-bold text-slate-800">
+                          {notificationConfig.schedulerEnabled
+                            ? "Reminder scanner is on"
+                            : "Reminder scanner needs enabling"}
+                        </p>
+                        {!notificationConfig.schedulerEnabled ? (
+                          <p className="mt-1 text-xs font-semibold text-slate-500">
+                            Add ENABLE_NOTIFICATION_SCHEDULER=true on the backend
+                            for timed medication reminders.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
                     {notificationStatusMessage ? (
                       <p className="mt-3 rounded-xl border border-slate-200 bg-white/80 px-3 py-2 text-sm font-semibold leading-6 text-slate-600">
                         {notificationStatusMessage}
@@ -8916,6 +9000,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </label>
                       <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
                         Current browser permission: {notificationPermission}.
+                        {notificationRuntimeStatus?.push?.activeSubscriptions
+                          ? ` Active devices: ${notificationRuntimeStatus.push.activeSubscriptions}.`
+                          : " No active push device is registered yet."}
+                        {notificationRuntimeStatus?.push?.lastFailureReason
+                          ? ` Last push error: ${notificationRuntimeStatus.push.lastFailureReason}.`
+                          : ""}
                       </p>
                     </div>
                   </div>

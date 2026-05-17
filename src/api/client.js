@@ -315,6 +315,7 @@ export const api = {
       method: "POST",
     }),
   notificationConfig: () => request("/notifications/config"),
+  notificationStatus: () => request("/notifications/status"),
   notificationSettings: () => request("/notifications/settings"),
   updateNotificationSettings: (payload) =>
     request("/notifications/settings", {

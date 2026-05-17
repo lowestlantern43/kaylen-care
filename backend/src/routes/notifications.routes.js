@@ -27,6 +27,7 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
     noLogsToday: false,
   },
   childSettings: {},
+  timeZone: "Europe/London",
 };
 
 function normaliseSettings(value = {}) {
@@ -47,6 +48,10 @@ function normaliseSettings(value = {}) {
       noLogsToday: Boolean(types.noLogsToday),
     },
     childSettings,
+    timeZone:
+      typeof value.timeZone === "string" && value.timeZone.trim()
+        ? value.timeZone.trim()
+        : DEFAULT_NOTIFICATION_SETTINGS.timeZone,
   };
 }
 
@@ -101,7 +106,67 @@ async function saveNotificationSettings(userId, settings) {
 notificationsRouter.get(
   "/config",
   asyncHandler(async (req, res) => {
-    res.json({ data: getPushConfig(), error: null });
+    res.json({
+      data: {
+        ...getPushConfig(),
+        schedulerEnabled:
+          String(process.env.ENABLE_NOTIFICATION_SCHEDULER || "").toLowerCase() ===
+          "true",
+      },
+      error: null,
+    });
+  }),
+);
+
+notificationsRouter.get(
+  "/status",
+  asyncHandler(async (req, res) => {
+    await ensureNotificationSchema();
+    const settings = await getNotificationSettings(req.user.id);
+    const { rows } = await query(
+      `
+        SELECT
+          count(*) FILTER (WHERE enabled = true)::int AS "activeSubscriptions",
+          max(last_success_at) AS "lastSuccessAt",
+          max(last_failure_at) AS "lastFailureAt",
+          max(failure_reason) AS "lastFailureReason"
+        FROM push_subscriptions
+        WHERE user_id = $1
+      `,
+      [req.user.id],
+    );
+    const recentEvents = await query(
+      `
+        SELECT notification_type AS "type",
+               delivery_status AS "status",
+               delivery_channel AS "channel",
+               title,
+               created_at AS "createdAt"
+        FROM notification_events
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 5
+      `,
+      [req.user.id],
+    );
+
+    res.json({
+      data: {
+        config: getPushConfig(),
+        schedulerEnabled:
+          String(process.env.ENABLE_NOTIFICATION_SCHEDULER || "").toLowerCase() ===
+          "true",
+        settings,
+        push: rows[0] || {
+          activeSubscriptions: 0,
+          lastSuccessAt: null,
+          lastFailureAt: null,
+          lastFailureReason: null,
+        },
+        recentEvents: recentEvents.rows,
+      },
+      error: null,
+    });
   }),
 );
 

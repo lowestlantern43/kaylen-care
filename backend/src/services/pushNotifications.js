@@ -200,6 +200,18 @@ const medicationWeekDays = [
   ["sat", 6],
 ];
 const medicationWeekDayKeys = medicationWeekDays.map(([key]) => key);
+const medicationTimeWindows = ["morning", "afternoon", "evening"];
+const windowReminderTimes = {
+  morning: "08:00",
+  afternoon: "13:00",
+  evening: "18:00",
+};
+
+const notificationDebug = (...args) => {
+  if (config.nodeEnv !== "production") {
+    console.info("[notification-debug]", ...args);
+  }
+};
 
 const normaliseMedicationScheduleDays = (value, { requiredDaily = false } = {}) => {
   const rawText = Array.isArray(value)
@@ -220,6 +232,22 @@ const normaliseMedicationScheduleDays = (value, { requiredDaily = false } = {}) 
   );
 
   return days.length ? days : requiredDaily ? ["every_day"] : [];
+};
+
+const normaliseMedicationTimeWindows = (value) => {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+        .split(",")
+        .map((item) => item.trim());
+
+  return Array.from(
+    new Set(
+      rawItems
+        .map((item) => cleanText(item).toLowerCase())
+        .filter((item) => medicationTimeWindows.includes(item)),
+    ),
+  );
 };
 
 const isMedicineScheduledForDate = (medicine, date) => {
@@ -249,30 +277,45 @@ const parseMedicationProfile = (value = "") =>
         requiredDaily = "",
         timeWindow = "",
         scheduleDays = "",
+        startDate = "",
+        endDate = "",
+        instructions = "",
+        frequency = "",
       ] = line.split("|").map(cleanText);
       const isRequiredDaily = requiredDaily === "required";
+      const timeWindows = normaliseMedicationTimeWindows(timeWindow);
+      const parsedTimes = times
+        .split(",")
+        .map((time) => time.trim())
+        .filter((time) => /^\d{2}:\d{2}$/.test(time));
 
       return {
         name,
         dose: [doseAmount, doseUnit].filter(Boolean).join(" "),
-        times: times
-          .split(",")
-          .map((time) => time.trim())
-          .filter((time) => /^\d{2}:\d{2}$/.test(time)),
+        times: parsedTimes.length
+          ? parsedTimes
+          : timeWindows
+              .map((windowName) => windowReminderTimes[windowName])
+              .filter(Boolean),
         active: active !== "inactive",
         notes,
         requiredDaily: isRequiredDaily,
-        timeWindow,
+        timeWindow: timeWindows[0] || timeWindow,
+        timeWindows,
         scheduleDays: normaliseMedicationScheduleDays(scheduleDays, {
           requiredDaily: isRequiredDaily,
         }),
+        startDate,
+        endDate,
+        instructions,
+        frequency,
       };
     })
     .filter((medicine) => medicine.name && medicine.active && medicine.requiredDaily);
 
-const londonParts = (date = new Date()) => {
+const localParts = (date = new Date(), timeZone = "Europe/London") => {
   const formatter = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Europe/London",
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -288,6 +331,19 @@ const londonParts = (date = new Date()) => {
     time: `${parts.hour}:${parts.minute}`,
   };
 };
+
+function userReminderTimeZone(user) {
+  const value = String(user?.settings?.timeZone || "").trim();
+  try {
+    if (value) {
+      new Intl.DateTimeFormat("en-GB", { timeZone: value }).format(new Date());
+      return value;
+    }
+  } catch {
+    // Invalid browser-provided timezone should not block reminders.
+  }
+  return "Europe/London";
+}
 
 const minutesFromTime = (time = "00:00") => {
   const [hours, minutes] = String(time).split(":").map(Number);
@@ -498,7 +554,7 @@ async function sendReminderOnce({
 export async function runDueReminderScan(now = new Date()) {
   await ensureNotificationSchema();
 
-  const current = londonParts(now);
+  const current = localParts(now);
   const currentMinutes = minutesFromTime(current.time);
   const currentDate = new Date(`${current.date}T12:00:00`);
   const results = {
@@ -522,20 +578,36 @@ export async function runDueReminderScan(now = new Date()) {
 
   for (const row of medicationRows) {
     const medicines = parseMedicationProfile(row.current_medications);
-    for (const medicine of medicines) {
-      if (!isMedicineScheduledForDate(medicine, currentDate)) continue;
-      for (const time of medicine.times) {
-        const dueMinutes = minutesFromTime(time);
-        if (Math.abs(currentMinutes - dueMinutes) > 5) continue;
+    const users = await familyReminderUsers(row.family_id, "medication");
+    for (const user of users) {
+      const userCurrent = localParts(now, userReminderTimeZone(user));
+      const userCurrentMinutes = minutesFromTime(userCurrent.time);
+      const userCurrentDate = new Date(`${userCurrent.date}T12:00:00`);
 
-        const users = await familyReminderUsers(row.family_id, "medication");
-        for (const user of users) {
+      for (const medicine of medicines) {
+        if (!isMedicineScheduledForDate(medicine, userCurrentDate)) continue;
+        for (const time of medicine.times) {
+          const dueMinutes = minutesFromTime(time);
+          const minutesSinceDue = userCurrentMinutes - dueMinutes;
+          if (minutesSinceDue < 0 || minutesSinceDue > 20) continue;
+
+          notificationDebug("Medication reminder due", {
+            familyId: row.family_id,
+            childId: row.child_id,
+            userId: user.id,
+            medicine: medicine.name,
+            time,
+            localDate: userCurrent.date,
+            localTime: userCurrent.time,
+            timeZone: userReminderTimeZone(user),
+          });
+
           const result = await sendReminderOnce({
             user,
             familyId: row.family_id,
             childId: row.child_id,
             type: "medication",
-            reminderKey: `medication:${row.child_id}:${current.date}:${medicine.name}:${time}`,
+            reminderKey: `medication:${row.child_id}:${userCurrent.date}:${medicine.name}:${time}`,
             title: "Medication reminder",
             body: `${row.first_name}: ${medicine.name}${medicine.dose ? ` (${medicine.dose})` : ""} is due.`,
             url: "/",
