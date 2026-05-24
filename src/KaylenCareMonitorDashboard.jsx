@@ -971,6 +971,7 @@ export default function KaylenCareMonitorDashboard({
     notes: "",
     outcome: "",
   });
+  const [appointmentPostNotes, setAppointmentPostNotes] = useState({});
 
   const [sleepForm, setSleepForm] = useState({
     date: todayValue(),
@@ -4202,6 +4203,27 @@ export default function KaylenCareMonitorDashboard({
         entry.section === sectionTitle && (predicate ? predicate(entry) : true),
     );
 
+  const dashboardEntryMeta = (entry, emptyText = "") => {
+    if (!entry) return emptyText;
+    const entryDate = parseDisplayDate(entry.date);
+    const todayDate = parseDisplayDate(todayValue());
+    if (
+      entry.time &&
+      entryDate &&
+      todayDate &&
+      entryDate.toDateString() === todayDate.toDateString()
+    ) {
+      return entry.time;
+    }
+    if (entryDate) {
+      return `Last logged ${entryDate.toLocaleDateString("en-GB", {
+        day: "numeric",
+        month: "short",
+      })}`;
+    }
+    return entry.time || entry.date || emptyText;
+  };
+
   const homeSummaryCards = useMemo(() => {
     const latestSleep = latestEntryForSection("Sleep");
     const latestMedication = latestEntryForSection("Medication");
@@ -4215,6 +4237,7 @@ export default function KaylenCareMonitorDashboard({
     );
     const latestToileting = latestEntryForSection("Toileting");
     const latestBehaviour = latestEntryForSection("Behaviour");
+    const latestAppointment = latestEntryForSection("Appointments");
     const latestHealth = sharedLog.find(
       (entry) => entry.section === "Health" && !isMeasurementEntry(entry),
     );
@@ -4222,6 +4245,14 @@ export default function KaylenCareMonitorDashboard({
     const dueMedication = todayDashboard.requiredMedication.find(
       (medicine) => medicine.status !== "upcoming",
     );
+    const now = new Date();
+    const upcomingAppointments = sharedLog
+      .filter((entry) => entry.section === "Appointments")
+      .filter((entry) => {
+        const date = getEntryDateTime(entry);
+        return date && date >= now;
+      });
+    const latestDocument = documents?.[0] || null;
 
     return [
       {
@@ -4231,29 +4262,15 @@ export default function KaylenCareMonitorDashboard({
           latestSleep?.durationMinutes > 0
             ? formatHoursMinutes(latestSleep.durationMinutes)
             : latestSleep?.summary || "Not logged yet",
-        meta: latestSleep?.time || latestSleep?.date || "Log sleep to build patterns",
+        meta: dashboardEntryMeta(latestSleep, "Log sleep to build patterns"),
         section: "Sleep",
         module: "sleep",
-      },
-      {
-        key: "medication",
-        title: dueMedication ? "Medication due" : "Medication",
-        value:
-          dueMedication?.name ||
-          latestMedication?.summary ||
-          "No medication logged today",
-        meta: dueMedication
-          ? dueMedication.statusLabel
-          : latestMedication?.time || "Required doses appear here",
-        section: "Medication",
-        module: "medication",
-        alert: Boolean(dueMedication),
       },
       {
         key: "food",
         title: "Latest meal",
         value: latestMeal?.summary || "No food logged yet",
-        meta: latestMeal?.time || "Meals appear here once logged",
+        meta: dashboardEntryMeta(latestMeal, "Meals appear here once logged"),
         section: "Food Diary",
         module: "food",
       },
@@ -4261,7 +4278,7 @@ export default function KaylenCareMonitorDashboard({
         key: "drink",
         title: "Last drink",
         value: latestDrink?.summary || "No drink logged yet",
-        meta: latestDrink?.time || "Drinks appear here once logged",
+        meta: dashboardEntryMeta(latestDrink, "Drinks appear here once logged"),
         section: "Hydration",
         preset: "Drink",
         module: "drink",
@@ -4270,7 +4287,7 @@ export default function KaylenCareMonitorDashboard({
         key: "toileting",
         title: "Toileting",
         value: latestToileting?.summary || "No toileting logged yet",
-        meta: latestToileting?.time || "Latest toilet/nappy entry",
+        meta: dashboardEntryMeta(latestToileting, "Latest toilet/nappy entry"),
         section: "Toileting",
         module: "toileting",
       },
@@ -4278,7 +4295,7 @@ export default function KaylenCareMonitorDashboard({
         key: "behaviour",
         title: "Behaviour",
         value: latestBehaviour?.summary || "No behaviour notes today",
-        meta: latestBehaviour?.time || "Patterns appear as logs build",
+        meta: dashboardEntryMeta(latestBehaviour, "Patterns appear as logs build"),
         section: "Behaviour",
         module: "behaviour",
       },
@@ -4298,7 +4315,7 @@ export default function KaylenCareMonitorDashboard({
                 .filter(Boolean)
                 .join(" / ")
             : latestMeasurement?.summary || "No measurements yet",
-        meta: latestMeasurement?.date || "Height and weight appear here",
+        meta: dashboardEntryMeta(latestMeasurement, "Height and weight appear here"),
         section: "Growth / Measurements",
         module: "measurements",
       },
@@ -4306,12 +4323,36 @@ export default function KaylenCareMonitorDashboard({
         key: "health",
         title: "Health notes",
         value: latestHealth?.summary || "No health concerns logged",
-        meta: latestHealth?.time || "Health updates appear here",
+        meta: dashboardEntryMeta(latestHealth, "Health updates appear here"),
         section: "Health",
         module: "health",
       },
+      {
+        key: "appointments",
+        title: "Appointments",
+        value:
+          upcomingAppointments[0]?.appointmentTitle ||
+          upcomingAppointments[0]?.summary ||
+          latestAppointment?.summary ||
+          "No appointments recorded",
+        meta: upcomingAppointments.length
+          ? `${upcomingAppointments.length} upcoming`
+          : dashboardEntryMeta(latestAppointment, "Add appointments and follow-up notes"),
+        section: "Appointments",
+        module: "appointments",
+      },
+      {
+        key: "documents",
+        title: "Document Vault",
+        value: latestDocument?.title || latestDocument?.fileName || "No documents yet",
+        meta: documents?.length
+          ? `${documents.length} document${documents.length === 1 ? "" : "s"} stored`
+          : "Upload EHCP, school or medical files",
+        section: "Document Vault",
+        module: "documents",
+      },
     ].filter((card) => isModuleEnabled(card.module));
-  }, [sharedLog, todayDashboard, visibleModules]);
+  }, [documents, sharedLog, todayDashboard, visibleModules]);
 
   const recentActivityPreview = useMemo(
     () => sharedLog.slice(0, 5),
@@ -9136,6 +9177,50 @@ export default function KaylenCareMonitorDashboard({
       !!appointmentForm.date.trim() &&
       !activeSaveAction;
 
+    const savePostAppointmentNotes = async (entry) => {
+      if (!useSaasApi || !familyId) {
+        alert("Post appointment notes are available in the FamilyTrack account version.");
+        return;
+      }
+
+      const logId = String(entry.id || "").replace(/^care-/, "");
+      const logDate = parseDateToIso(entry.date);
+      const outcome = appointmentPostNotes[entry.id] ?? entry.outcome ?? "";
+
+      if (!logId || !logDate) {
+        alert("This appointment could not be updated. Please refresh and try again.");
+        return;
+      }
+
+      try {
+        await runLockedSave(`appointment-post-${entry.id}`, async () => {
+          await api.updateCareLog(familyId, logId, {
+            childId: entry.childId || childId,
+            category: "appointment",
+            logDate,
+            logTime: entry.time || "",
+            data: {
+              title: entry.appointmentTitle || "Appointment",
+              location: entry.location || "",
+              professional: entry.professional || "",
+              category: entry.appointmentCategory || "Other",
+              outcome,
+            },
+            notes: entry.notes || "",
+          });
+
+          await loadEntriesFromSupabase();
+          showToast?.({
+            message: "Post appointment notes saved",
+            type: "success",
+          });
+        });
+      } catch (error) {
+        console.error("Post appointment notes save failed:", error);
+        alert(error.message || "Post appointment notes could not be saved.");
+      }
+    };
+
     const renderAppointmentList = (title, entries, emptyText) => (
       <div className={`${cardClassName} md:col-span-2`}>
         <div className="flex items-center justify-between gap-3">
@@ -9168,6 +9253,39 @@ export default function KaylenCareMonitorDashboard({
                   <p className="mt-2 line-clamp-2 text-xs font-semibold leading-5 text-slate-600">
                     {entry.details.slice(0, 2).join(" · ")}
                   </p>
+                ) : null}
+                {title.toLowerCase().includes("past") ? (
+                  <details className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3">
+                    <summary className="cursor-pointer text-xs font-black uppercase tracking-[0.12em] text-blue-700">
+                      Post Appointment Notes
+                    </summary>
+                    <label className="mt-3 block text-xs font-bold text-slate-600">
+                      Outcomes, advice, medication changes or follow-up actions
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={appointmentPostNotes[entry.id] ?? entry.outcome ?? ""}
+                      onChange={(event) =>
+                        setAppointmentPostNotes((current) => ({
+                          ...current,
+                          [entry.id]: event.target.value,
+                        }))
+                      }
+                      className={`${inputClassName} min-h-[96px] bg-white`}
+                      autoComplete="off"
+                      placeholder="Add notes after the appointment..."
+                    />
+                    <button
+                      type="button"
+                      disabled={activeSaveAction === `appointment-post-${entry.id}`}
+                      onClick={() => savePostAppointmentNotes(entry)}
+                      className="mt-3 w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {activeSaveAction === `appointment-post-${entry.id}`
+                        ? "Saving..."
+                        : "Save post appointment notes"}
+                    </button>
+                  </details>
                 ) : null}
               </article>
             ))}
@@ -14438,6 +14556,8 @@ export default function KaylenCareMonitorDashboard({
       behaviour: "border-orange-100 bg-gradient-to-br from-orange-50 to-white text-orange-700",
       health: "border-teal-100 bg-gradient-to-br from-teal-50 to-white text-teal-700",
       measurements: "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700",
+      appointments: "border-blue-100 bg-gradient-to-br from-blue-50 to-white text-blue-700",
+      documents: "border-slate-200 bg-gradient-to-br from-slate-50 to-white text-slate-700",
     })[key] ||
     "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
 
@@ -14451,6 +14571,8 @@ export default function KaylenCareMonitorDashboard({
       behaviour: "bg-orange-400 text-white",
       health: "bg-teal-500 text-white",
       measurements: "bg-violet-500 text-white",
+      appointments: "bg-blue-500 text-white",
+      documents: "bg-slate-600 text-white",
     })[key] || "bg-violet-500 text-white";
 
   const mobileNavButtonClass = (active, extra = "") =>
@@ -14641,7 +14763,7 @@ export default function KaylenCareMonitorDashboard({
               </button>
             ) : null}
 
-            {isModuleEnabled("medication") ? (
+            {isModuleEnabled("medication") && todayDashboard.medicationRequired ? (
               <article
                 className={`rounded-[1.55rem] border p-4 shadow-md ${
                   todayDashboard.requiredMedication.some(
@@ -14661,11 +14783,15 @@ export default function KaylenCareMonitorDashboard({
                         Medication
                       </p>
                       <h2 className="mt-0.5 text-base font-black text-slate-950">
-                        {todayDashboard.requiredMedication.length
+                        {todayDashboard.requiredMedication.some(
+                          (medicine) => medicine.status === "due" || medicine.status === "missed",
+                        )
                           ? "Doses needing attention"
-                          : todayDashboard.medicationRequired
-                            ? "All required doses logged"
-                            : "No required medication set"}
+                          : todayDashboard.requiredMedication.some(
+                              (medicine) => medicine.status === "upcoming",
+                            )
+                            ? "Next medication later today"
+                            : "No medication due right now"}
                       </h2>
                     </div>
                   </div>
@@ -14674,9 +14800,16 @@ export default function KaylenCareMonitorDashboard({
                   </span>
                 </div>
 
-                {todayDashboard.requiredMedication.length ? (
+                {todayDashboard.requiredMedication.some(
+                  (medicine) => medicine.status === "due" || medicine.status === "missed",
+                ) ? (
                   <div className="mt-3 space-y-2">
-                    {todayDashboard.requiredMedication.slice(0, 3).map((medicine) => (
+                    {todayDashboard.requiredMedication
+                      .filter(
+                        (medicine) => medicine.status === "due" || medicine.status === "missed",
+                      )
+                      .slice(0, 3)
+                      .map((medicine) => (
                       <button
                         type="button"
                         key={medicine.id}
@@ -14713,16 +14846,18 @@ export default function KaylenCareMonitorDashboard({
                                 : "bg-amber-100 text-amber-700"
                           }`}
                         >
-                          {medicine.statusLabel}
-                        </span>
-                      </button>
+                        {medicine.statusLabel}
+                      </span>
+                    </button>
                     ))}
                   </div>
                 ) : (
                   <p className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
-                    {todayDashboard.medicationRequired
-                      ? "Medication is up to date for today."
-                      : "Set daily medication in the child care profile if needed."}
+                    {todayDashboard.requiredMedication.some(
+                      (medicine) => medicine.status === "upcoming",
+                    )
+                      ? "Next medication is later today."
+                      : "No medication due right now."}
                   </p>
                 )}
               </article>
@@ -14794,7 +14929,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           ) : null}
         </div>
-        <section className="mt-8 hidden gap-5 md:grid md:grid-cols-2 xl:grid-cols-3">
+        <section className="hidden">
           {orderedSections.map((section) => {
             const latestLines =
               section.title !== "Reports"
@@ -14915,7 +15050,7 @@ export default function KaylenCareMonitorDashboard({
           })}
         </section>
 
-        <div className="mt-8 hidden flex-col gap-2 rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 shadow-sm md:flex md:flex-row md:items-center md:justify-between">
+        <div className="hidden">
           <div>
             <p className="text-sm font-bold text-slate-900">Dashboard order</p>
             <p className="text-xs font-medium text-slate-500">
@@ -15065,7 +15200,7 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         {moreNavOpen && mobileMoreItems.length ? (
-          <div className="mx-auto mb-3 w-full max-w-md rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
+          <div className="mx-auto mb-3 max-h-[min(74vh,34rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-[1.65rem] border border-white/70 bg-white/95 p-3 shadow-2xl shadow-slate-900/15 backdrop-blur-xl">
             <div className="mb-2 flex items-center justify-between px-1">
               <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
                 More

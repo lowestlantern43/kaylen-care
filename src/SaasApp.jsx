@@ -6766,6 +6766,84 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     families: [],
     setupRequired: false,
   };
+  const analyticsToday =
+    platformData.overview?.analyticsToday ||
+    platformData.overview?.todayStats ||
+    {};
+  const hasGoogleAnalytics =
+    Boolean(platformData.overview?.marketingSettings?.gaMeasurementId) ||
+    Boolean(platformData.overview?.analyticsSettings?.gaMeasurementId) ||
+    Boolean(platformData.overview?.googleAnalytics?.measurementId);
+  const todayRegistrations = platformData.users.filter((user) =>
+    isSameDay(safeDate(user.createdAt)),
+  ).length;
+  const todayTrialSignups = platformData.families.filter((family) => {
+    const createdToday = isSameDay(safeDate(family.createdAt));
+    const status = String(
+      family.billingStatus || family.subscriptionStatus || "",
+    ).toLowerCase();
+    return (
+      createdToday &&
+      (status === "trialing" ||
+        status === "trial" ||
+        Boolean(family.trialEndsAt))
+    );
+  }).length;
+  const adminTodayStatsCards = [
+    {
+      id: "today-visitors",
+      label: "Today's visitors",
+      value: analyticsToday.visitors ?? analyticsToday.users ?? "-",
+      detail:
+        analyticsToday.visitors != null || analyticsToday.users != null
+          ? "From analytics today"
+          : hasGoogleAnalytics
+            ? "Google Analytics linked"
+            : "Add GA to show visitors",
+      tone: "border-sky-100 bg-sky-50 text-sky-800",
+    },
+    {
+      id: "today-page-views",
+      label: "Page views",
+      value:
+        analyticsToday.pageViews ??
+        analyticsToday.pageviews ??
+        analyticsToday.views ??
+        "-",
+      detail:
+        analyticsToday.pageViews != null ||
+        analyticsToday.pageviews != null ||
+        analyticsToday.views != null
+          ? "Website and app views"
+          : hasGoogleAnalytics
+            ? "Waiting for GA data"
+            : "Add GA to show views",
+      tone: "border-indigo-100 bg-indigo-50 text-indigo-800",
+    },
+    {
+      id: "today-trials",
+      label: "Trial signups started",
+      value: analyticsToday.trialSignupsStarted ?? todayTrialSignups,
+      detail: "New trial accounts today",
+      tone: "border-purple-100 bg-purple-50 text-purple-800",
+    },
+    {
+      id: "today-registrations",
+      label: "New registrations",
+      value: analyticsToday.registrations ?? todayRegistrations,
+      detail: "Accounts created today",
+      tone: "border-emerald-100 bg-emerald-50 text-emerald-800",
+    },
+    analyticsToday.conversions != null
+      ? {
+          id: "today-conversions",
+          label: "Conversions",
+          value: analyticsToday.conversions,
+          detail: "Tracked conversion events",
+          tone: "border-amber-100 bg-amber-50 text-amber-800",
+        }
+      : null,
+  ].filter(Boolean);
 
   const adminStatsCards = [
     {
@@ -7167,7 +7245,28 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
-          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-14 shadow-md">
+          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-24 shadow-md">
+            <button
+              type="button"
+              onClick={() => openSettingsFromDashboard("notifications")}
+              className="absolute right-14 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-sky-100 bg-white/90 text-sky-700 shadow-sm transition hover:bg-sky-50 hover:text-sky-900"
+              title="Notifications"
+              aria-label="Open notifications"
+            >
+              <svg
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </button>
             <button
               type="button"
               onClick={onLogout}
@@ -9941,6 +10040,42 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         >
                           {isPlatformLoading ? "Refreshing..." : "Refresh stats"}
                         </button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-[0.16em] text-sky-700">
+                            Today&apos;s Stats
+                          </p>
+                          <h4 className="text-lg font-black text-slate-950">
+                            Daily platform activity
+                          </h4>
+                        </div>
+                        <p className="text-xs font-bold text-slate-500">
+                          {hasGoogleAnalytics
+                            ? "Google Analytics connected where available"
+                            : "Connect Google Analytics for visitor data"}
+                        </p>
+                      </div>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                        {adminTodayStatsCards.map((card) => (
+                          <div
+                            key={card.id}
+                            className={`rounded-2xl border px-3 py-3 shadow-sm ${card.tone}`}
+                          >
+                            <p className="text-[10px] font-black uppercase tracking-[0.14em] opacity-80">
+                              {card.label}
+                            </p>
+                            <p className="mt-2 text-2xl font-black leading-none text-slate-950">
+                              {card.value}
+                            </p>
+                            <p className="mt-1 text-xs font-bold opacity-80">
+                              {card.detail}
+                            </p>
+                          </div>
+                        ))}
                       </div>
                     </div>
 
