@@ -1016,6 +1016,14 @@ export default function KaylenCareMonitorDashboard({
       soft: "bg-amber-50 border-amber-300",
     },
     {
+      title: "Hydration",
+      subtitle: "Drink entries, fluid totals and daily progress",
+      button: "Open Hydration",
+      emoji: "DR",
+      color: "from-sky-400 to-cyan-500",
+      soft: "bg-sky-50 border-sky-300",
+    },
+    {
       title: "Medication",
       subtitle: "Medicine, dose, who gave it, and notes",
       button: "Open Log",
@@ -1125,6 +1133,8 @@ export default function KaylenCareMonitorDashboard({
     switch (title) {
       case "Food Diary":
         return "food";
+      case "Hydration":
+        return "drink";
       case "Medication":
         return "medication";
       case "Toileting":
@@ -1169,7 +1179,7 @@ export default function KaylenCareMonitorDashboard({
     () =>
       [
         { label: "Food", title: "Food Diary", preset: "", icon: "Food", module: "food" },
-        { label: "Fluids", title: "Food Diary", preset: "Drink", icon: "Drink", module: "drink" },
+        { label: "Fluids", title: "Hydration", preset: "", icon: "Drink", module: "drink" },
         { label: "Medication", title: "Medication", preset: "", icon: "Med", module: "medication" },
         { label: "Sleep", title: "Sleep", preset: "", icon: "Sleep", module: "sleep" },
         { label: "Toileting", title: "Toileting", preset: "", icon: "Toilet", module: "toileting" },
@@ -2097,6 +2107,7 @@ export default function KaylenCareMonitorDashboard({
     }
 
     if (title === "Food Diary") resetFoodForm();
+    if (title === "Hydration") resetHydrationForm();
     if (title === "Medication") resetMedicationForm();
     if (title === "Toileting") resetToiletingForm();
     if (title === "Health" || title === "Growth / Measurements") resetHealthForm();
@@ -2115,7 +2126,7 @@ export default function KaylenCareMonitorDashboard({
     setMoreNavOpen(false);
     setNotificationCentreOpen(false);
     if (section.title !== "Medication") setMedicationValue("");
-    if (section.title !== "Food Diary") setFoodValue("");
+    if (section.title !== "Food Diary" && section.title !== "Hydration") setFoodValue("");
     if (section.title !== "Reports") {
       setReportFiltersOpen(false);
     }
@@ -2129,7 +2140,17 @@ export default function KaylenCareMonitorDashboard({
     setLastQuickAddKey(quickAddKey);
     safeLocalStorageSet(quickAddMemoryKey, quickAddKey);
 
-    if (title === "Food Diary" && preset) {
+    if (title === "Hydration") {
+      setFoodValue("Drink");
+      setFoodForm((current) => ({
+        ...current,
+        entryType: "Drink",
+        mealContext: "",
+        item: "",
+        otherItem: "",
+        unit: getStoredDrinkUnit(),
+      }));
+    } else if (title === "Food Diary" && preset) {
       setFoodValue(preset);
       setFoodForm((current) => ({
         ...current,
@@ -2241,6 +2262,28 @@ export default function KaylenCareMonitorDashboard({
     setSaveFoodForFuture(false);
     setSaveLocationForFuture(false);
   };
+
+  const resetHydrationForm = () => {
+    setFoodForm({
+      date: todayValue(),
+      time: nowTimeValue(),
+      location: "",
+      otherLocation: "",
+      entryType: "Drink",
+      mealContext: "",
+      item: "",
+      otherItem: "",
+      amount: "",
+      unit: getStoredDrinkUnit(),
+      description: "",
+      intakeStatus: "normal",
+      notes: "",
+    });
+    setFoodValue("Drink");
+    setSaveFoodForFuture(false);
+    setSaveLocationForFuture(false);
+  };
+
 
   const resetMedicationForm = () => {
     setMedicationForm({
@@ -4280,7 +4323,7 @@ export default function KaylenCareMonitorDashboard({
         value: latestDrink?.summary || "No drink logged yet",
         meta: dashboardEntryMeta(latestDrink, "Drinks appear here once logged"),
         section: "Hydration",
-        preset: "Drink",
+        preset: "",
         module: "drink",
       },
       {
@@ -7731,7 +7774,7 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
-  const renderFoodForm = () => {
+  const renderFoodForm = ({ hydrationOnly = false } = {}) => {
     const typedFood = foodForm.otherItem?.trim() || "";
     const entryType = foodForm.entryType === "Drink" ? "Drink" : "Food";
     const isDrink = entryType === "Drink";
@@ -7854,36 +7897,38 @@ export default function KaylenCareMonitorDashboard({
         </div>
         ) : null}
 
-        <div className={`${cardClassName} md:col-span-2`}>
-          <label className="text-sm font-semibold text-slate-700">
-            Entry type
-          </label>
-          <div className="mt-2 grid grid-cols-2 gap-2">
-            {["Food", "Drink"].map((type) => (
-              <button
-                key={type}
-                type="button"
-                onClick={() => {
-                  setFoodValue(type === "Drink" ? "Drink" : "");
-                  setFoodForm({
-                    ...foodForm,
-                    entryType: type,
-                    mealContext:
-                      type === "Drink" ? "" : foodForm.mealContext || "",
-                    item: "",
-                  });
-                }}
-                className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
-                  entryType === type
-                    ? "border-amber-300 bg-amber-50 text-amber-800"
-                    : "border-slate-200 bg-white text-slate-700"
-                }`}
-              >
-                {type}
-              </button>
-            ))}
+        {!hydrationOnly ? (
+          <div className={`${cardClassName} md:col-span-2`}>
+            <label className="text-sm font-semibold text-slate-700">
+              Entry type
+            </label>
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              {["Food", "Drink"].map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  onClick={() => {
+                    setFoodValue(type === "Drink" ? "Drink" : "");
+                    setFoodForm({
+                      ...foodForm,
+                      entryType: type,
+                      mealContext:
+                        type === "Drink" ? "" : foodForm.mealContext || "",
+                      item: "",
+                    });
+                  }}
+                  className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
+                    entryType === type
+                      ? "border-amber-300 bg-amber-50 text-amber-800"
+                      : "border-slate-200 bg-white text-slate-700"
+                  }`}
+                >
+                  {type}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         {entryType === "Food" ? (
           <div className={`${cardClassName} md:col-span-2`}>
@@ -7909,7 +7954,7 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            Food or drink name
+            {hydrationOnly ? "Drink name" : "Food or drink name"}
           </label>
           <input
             type="text"
@@ -8118,12 +8163,18 @@ export default function KaylenCareMonitorDashboard({
             }
             className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
-            {activeSaveAction === "food" ? "Saving..." : "Save food entry"}
+            {activeSaveAction === "food"
+              ? "Saving..."
+              : isDrink
+                ? "Save drink entry"
+                : "Save food entry"}
           </button>
         </div>
       </div>
     );
   };
+
+  const renderHydrationForm = () => renderFoodForm({ hydrationOnly: true });
 
   const renderMedicationForm = () => {
     const showOtherMedication = medicationValue === "Other";
@@ -14238,6 +14289,8 @@ export default function KaylenCareMonitorDashboard({
     switch (activeSection.title) {
       case "Food Diary":
         return renderFoodForm();
+      case "Hydration":
+        return renderHydrationForm();
       case "Medication":
         return renderMedicationForm();
       case "Toileting":
@@ -14369,6 +14422,7 @@ export default function KaylenCareMonitorDashboard({
   );
   const isLogSectionOpen = [
     "Food Diary",
+    "Hydration",
     "Medication",
     "Sleep",
     "Toileting",
@@ -14411,6 +14465,9 @@ export default function KaylenCareMonitorDashboard({
     { type: "heading", label: "Care tools" },
     isModuleEnabled("timeline")
       ? { label: "Logs Timeline", title: "Timeline", icon: "logs" }
+      : null,
+    isModuleEnabled("drink")
+      ? { label: "Hydration", title: "Hydration", icon: "hydration" }
       : null,
     isModuleEnabled("snapshot")
       ? { label: "Care Snapshot", title: "Care Snapshot", icon: "snapshot" }
@@ -14474,6 +14531,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderMobileActionIcon = (icon, className = "h-5 w-5") => {
     if (icon === "logs") return renderSectionIcon("Timeline", className);
+    if (icon === "hydration") return renderSectionIcon("Hydration", className);
     if (icon === "snapshot") return renderSectionIcon("Care Snapshot", className);
     if (icon === "documents") return renderSectionIcon("Document Vault", className);
     if (icon === "appointments") return renderSectionIcon("Appointments", className);
@@ -14719,7 +14777,7 @@ export default function KaylenCareMonitorDashboard({
                 onClick={() =>
                   !isReadOnly &&
                   (todayDashboard.fluidTargetMl
-                    ? openQuickAdd("Food Diary", "Drink")
+                    ? openQuickAdd("Hydration")
                     : onOpenChildSetup?.())
                 }
                 disabled={isReadOnly}
@@ -15168,7 +15226,7 @@ export default function KaylenCareMonitorDashboard({
                   >
                     <span
                       className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl shadow-sm ${
-                        item.preset === "Drink"
+                        item.title === "Hydration" || item.preset === "Drink"
                           ? homeIconTone("drink")
                           : item.title === "Food Diary"
                             ? homeIconTone("food")
@@ -15188,7 +15246,7 @@ export default function KaylenCareMonitorDashboard({
                       }`}
                     >
                       {renderSectionIcon(
-                        item.preset === "Drink" ? "Hydration" : item.title,
+                        item.title === "Hydration" || item.preset === "Drink" ? "Hydration" : item.title,
                         "h-5 w-5",
                       )}
                     </span>
