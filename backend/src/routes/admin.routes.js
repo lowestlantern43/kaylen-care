@@ -951,6 +951,11 @@ adminRouter.get(
       planBreakdown,
       logsToday,
       logsThisWeek,
+      pageViewsToday,
+      visitorsToday,
+      trialSignupsStartedToday,
+      newRegistrationsToday,
+      conversionEventsToday,
       activeUsersLast7Days,
       newAccountsThisWeek,
       needsAttention,
@@ -1002,6 +1007,53 @@ adminRouter.get(
           FROM care_logs
           WHERE deleted_at IS NULL
             AND created_at >= date_trunc('day', now())
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM audit_logs
+          WHERE action = 'page_view'
+            AND created_at >= date_trunc('day', now())
+        `,
+      ),
+      query(
+        `
+          SELECT count(DISTINCT COALESCE(NULLIF(metadata->>'visitorId', ''), user_id::text, id::text))::int AS count
+          FROM audit_logs
+          WHERE action = 'page_view'
+            AND created_at >= date_trunc('day', now())
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM subscriptions
+          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
+            AND created_at >= date_trunc('day', now())
+            AND (
+              stripe_customer_id IS NOT NULL
+              OR stripe_subscription_id IS NOT NULL
+              OR status IN ('trialing', 'active', 'incomplete')
+              OR billing_status IN ('trialing', 'active', 'incomplete')
+            )
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM users
+          WHERE deleted_at IS NULL
+            AND created_at >= date_trunc('day', now())
+        `,
+      ),
+      query(
+        `
+          SELECT count(*)::int AS count
+          FROM subscriptions
+          WHERE family_id IN (SELECT id FROM families WHERE deleted_at IS NULL)
+            AND created_at >= date_trunc('day', now())
+            AND (status IN ('trialing', 'active') OR billing_status IN ('trialing', 'active'))
         `,
       ),
       query(
@@ -1076,6 +1128,15 @@ adminRouter.get(
         },
         logsToday: logsToday.rows[0].count,
         logsThisWeek: logsThisWeek.rows[0].count,
+        todayStats: {
+          visitors: visitorsToday.rows[0].count,
+          pageViews: pageViewsToday.rows[0].count,
+          trialSignupsStarted: trialSignupsStartedToday.rows[0].count,
+          registrations: newRegistrationsToday.rows[0].count,
+          conversions: conversionEventsToday.rows[0].count,
+          source: "familytrack_first_party",
+          note: "First-party FamilyTrack stats, independent of Google Analytics.",
+        },
         activeUsersLast7Days: activeUsersLast7Days.rows[0].count,
         newAccountsThisWeek: newAccountsThisWeek.rows[0].count,
         needsAttention,

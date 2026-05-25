@@ -169,6 +169,11 @@ export const api = {
       method: "POST",
     }),
   publicPricing: () => requestOptional("/public/pricing"),
+  trackPageView: (payload) =>
+    requestOptional("/public/analytics/page-view", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   changePassword: ({ currentPassword, newPassword }) =>
     request("/account/password", {
       method: "POST",

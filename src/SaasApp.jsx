@@ -6796,10 +6796,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       value: analyticsToday.visitors ?? analyticsToday.users ?? "-",
       detail:
         analyticsToday.visitors != null || analyticsToday.users != null
-          ? "From analytics today"
-          : hasGoogleAnalytics
-            ? "Google Analytics linked"
-            : "Add GA to show visitors",
+          ? "FamilyTrack first-party count"
+          : "Counting starts after deploy",
       tone: "border-sky-100 bg-sky-50 text-sky-800",
     },
     {
@@ -6815,9 +6813,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         analyticsToday.pageviews != null ||
         analyticsToday.views != null
           ? "Website and app views"
-          : hasGoogleAnalytics
-            ? "Waiting for GA data"
-            : "Add GA to show views",
+          : "Counting starts after deploy",
       tone: "border-indigo-100 bg-indigo-50 text-indigo-800",
     },
     {
@@ -10055,8 +10051,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         </div>
                         <p className="text-xs font-bold text-slate-500">
                           {hasGoogleAnalytics
-                            ? "Google Analytics connected where available"
-                            : "Connect Google Analytics for visitor data"}
+                            ? "Using FamilyTrack stats; Google Analytics remains optional"
+                            : "Using FamilyTrack's own first-party activity"}
                         </p>
                       </div>
                       <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -14897,6 +14893,74 @@ export default function SaasApp() {
   const [isCheckingSession, setIsCheckingSession] = useState(true);
   const [publicView, setPublicView] = useState("landing");
   const [publicPricing, setPublicPricing] = useState(DEFAULT_PUBLIC_PRICING);
+
+  useEffect(() => {
+    const visitorKey = "familytrack:first-party-visitor";
+    const lastTrackKey = "familytrack:last-page-view";
+
+    const visitorId = (() => {
+      try {
+        const existing = localStorage.getItem(visitorKey);
+        if (existing) return existing;
+        const next =
+          typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        localStorage.setItem(visitorKey, next);
+        return next;
+      } catch {
+        return "";
+      }
+    })();
+
+    const trackCurrentPage = () => {
+      const path = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const now = Date.now();
+
+      try {
+        const previous = JSON.parse(localStorage.getItem(lastTrackKey) || "{}");
+        if (previous.path === path && now - Number(previous.at || 0) < 30000) {
+          return;
+        }
+        localStorage.setItem(lastTrackKey, JSON.stringify({ path, at: now }));
+      } catch {
+        // Tracking is best-effort and should never affect app use.
+      }
+
+      api
+        .trackPageView({
+          path,
+          title: document.title,
+          visitorId,
+          referrer: document.referrer,
+        })
+        .catch(() => null);
+    };
+
+    const originalPushState = window.history.pushState;
+    const originalReplaceState = window.history.replaceState;
+    window.history.pushState = function pushStateWithTracking(...args) {
+      const result = originalPushState.apply(this, args);
+      setTimeout(trackCurrentPage, 0);
+      return result;
+    };
+    window.history.replaceState = function replaceStateWithTracking(...args) {
+      const result = originalReplaceState.apply(this, args);
+      setTimeout(trackCurrentPage, 0);
+      return result;
+    };
+
+    trackCurrentPage();
+    window.addEventListener("popstate", trackCurrentPage);
+    window.addEventListener("hashchange", trackCurrentPage);
+
+    return () => {
+      window.history.pushState = originalPushState;
+      window.history.replaceState = originalReplaceState;
+      window.removeEventListener("popstate", trackCurrentPage);
+      window.removeEventListener("hashchange", trackCurrentPage);
+    };
+  }, []);
 
   useEffect(() => {
     installMarketingMetadata();

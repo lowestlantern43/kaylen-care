@@ -101,3 +101,58 @@ publicRouter.get(
     });
   }),
 );
+
+publicRouter.post(
+  "/analytics/page-view",
+  asyncHandler(async (req, res) => {
+    const path =
+      typeof req.body?.path === "string" && req.body.path.trim()
+        ? req.body.path.trim().slice(0, 240)
+        : "/";
+    const title =
+      typeof req.body?.title === "string" ? req.body.title.trim().slice(0, 180) : "";
+    const visitorId =
+      typeof req.body?.visitorId === "string"
+        ? req.body.visitorId.trim().slice(0, 80)
+        : "";
+    const referrer =
+      typeof req.body?.referrer === "string"
+        ? req.body.referrer.trim().slice(0, 240)
+        : "";
+
+    try {
+      await query(
+        `
+          INSERT INTO audit_logs (
+            action,
+            entity_type,
+            metadata,
+            ip_address,
+            user_agent
+          )
+          VALUES ('page_view', 'page', $1, NULLIF($2, '')::inet, $3)
+        `,
+        [
+          JSON.stringify({
+            path,
+            title,
+            visitorId,
+            referrer,
+            source: "familytrack_first_party",
+          }),
+          req.ip || "",
+          req.get("user-agent") || "",
+        ],
+      );
+    } catch (error) {
+      if (error.code !== "42P01") {
+        console.error("First-party analytics page view failed.", {
+          code: error.code,
+          message: error.message,
+        });
+      }
+    }
+
+    res.json({ data: { tracked: true }, error: null });
+  }),
+);
