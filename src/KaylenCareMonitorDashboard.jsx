@@ -1573,6 +1573,9 @@ export default function KaylenCareMonitorDashboard({
       case "food":
         openSection(sections.find((section) => section.title === "Food Diary"));
         return;
+      case "hydration":
+        openSection(sections.find((section) => section.title === "Hydration"));
+        return;
       case "sleep":
         openSection(sections.find((section) => section.title === "Sleep"));
         return;
@@ -1779,6 +1782,7 @@ export default function KaylenCareMonitorDashboard({
       "Timeline",
       "Calendar",
       "Behaviour",
+      "Hydration",
     ].includes(sectionTitle);
 
   const renderSectionIcon = (sectionTitle, className = "h-8 w-8") => {
@@ -1850,8 +1854,9 @@ export default function KaylenCareMonitorDashboard({
       case "Hydration":
         return (
           <svg {...common}>
-            <path d="M12 3.5s6 6.1 6 10.4a6 6 0 0 1-12 0C6 9.6 12 3.5 12 3.5Z" />
-            <path d="M9.5 15.5c.8 1.3 2.4 2 4 1.5" />
+            <path d="M12 3.5s5.8 6 5.8 10.1a5.8 5.8 0 0 1-11.6 0C6.2 9.5 12 3.5 12 3.5Z" />
+            <path d="M8.5 14.5c1 .8 2.2 1.2 3.5 1.2s2.5-.4 3.5-1.2" />
+            <path d="M9 18.2c1.8 1.1 4.2 1.1 6 0" />
           </svg>
         );
       case "Behaviour":
@@ -1979,8 +1984,8 @@ export default function KaylenCareMonitorDashboard({
   ]);
 
   const defaultFoodOptions = useSaasApi
-    ? ["Drink", "Breakfast", "Lunch", "Dinner", "Dessert", "Snack", "Other"]
-    : ["Cottage pie", "Weetabix", "Heinz Fruit Custard", "Drink", "Other"];
+    ? ["Breakfast", "Lunch", "Dinner", "Dessert", "Snack", "Other"]
+    : ["Cottage pie", "Weetabix", "Heinz Fruit Custard", "Other"];
 
   const foodOptions = uniqueList([
     ...defaultFoodOptions.slice(0, -1),
@@ -3694,6 +3699,7 @@ export default function KaylenCareMonitorDashboard({
   const timelineCategoryOptions = [
     "All",
     "Food Diary",
+    "Hydration",
     "Medication",
     "Sleep",
     "Toileting",
@@ -3722,11 +3728,19 @@ export default function KaylenCareMonitorDashboard({
     switch (category) {
       case "Food Diary":
         return {
-          label: "Food / Drink",
+          label: "Food",
           icon: "Food",
           dot: "bg-amber-500",
           card: "border-amber-100 bg-amber-50/80",
           text: "text-amber-800",
+        };
+      case "Hydration":
+        return {
+          label: "Hydration",
+          icon: "Hydration",
+          dot: "bg-sky-500",
+          card: "border-sky-100 bg-sky-50/80",
+          text: "text-sky-800",
         };
       case "Medication":
         return {
@@ -3807,6 +3821,7 @@ export default function KaylenCareMonitorDashboard({
     if (item.category === "Food Diary") {
       return item.entry?.isMilk ? isModuleEnabled("drink") : isModuleEnabled("food");
     }
+    if (item.category === "Hydration") return isModuleEnabled("drink");
     if (item.category === "Medication") return isModuleEnabled("medication");
     if (item.category === "Sleep") return isModuleEnabled("sleep");
     if (item.category === "Toileting") return isModuleEnabled("toileting");
@@ -3840,7 +3855,7 @@ export default function KaylenCareMonitorDashboard({
       return {
         id: entry.id,
         kind: "log",
-        category: entry.section,
+        category: entry.section === "Food Diary" && entry.isMilk ? "Hydration" : entry.section,
         childId: entry.childId || childId,
         childName: entry.childName || getChildNameById(entry.childId, childName),
         dateObject,
@@ -3930,7 +3945,9 @@ export default function KaylenCareMonitorDashboard({
     const now = new Date();
     const rangeDays = Number(timelineFilters.range);
     const rangeStart =
-      timelineFilters.range === "all" || !rangeDays
+      timelineFilters.range === "24h"
+        ? new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        : timelineFilters.range === "all" || !rangeDays
         ? null
         : (() => {
             const start = new Date(now);
@@ -4211,10 +4228,13 @@ export default function KaylenCareMonitorDashboard({
     const requiredMedication = allRequiredMedication.filter(
       (item) => !["taken", "skipped"].includes(item.status),
     );
+    const activeRequiredMedication = requiredMedication.filter((item) =>
+      ["due", "missed"].includes(item.status),
+    );
 
     const alerts = [];
     if (!fluidMl) alerts.push("No fluids logged today");
-    if (requiredMedication.some((item) => item.status !== "upcoming")) {
+    if (activeRequiredMedication.length) {
       alerts.push("Medication due but not fully logged");
     }
 
@@ -4232,6 +4252,7 @@ export default function KaylenCareMonitorDashboard({
       medicationRequired: allRequiredMedication.length,
       allRequiredMedication,
       requiredMedication,
+      activeRequiredMedication,
       alerts,
     };
   }, [
@@ -4265,6 +4286,29 @@ export default function KaylenCareMonitorDashboard({
       })}`;
     }
     return entry.time || entry.date || emptyText;
+  };
+
+  const openLastLoggedView = (categoryKey) => {
+    setTimelineFilters({
+      childId: childId || "all",
+      range: "24h",
+      category:
+        categoryKey === "drink"
+          ? "Hydration"
+          : categoryKey === "food"
+            ? "Food Diary"
+            : categoryKey,
+      severity: "All",
+      search:
+        categoryKey === "drink"
+          ? ""
+          : categoryKey === "food"
+            ? ""
+            : "",
+    });
+    openSection(sections.find((section) => section.title === "Timeline"), {
+      reset: false,
+    });
   };
 
   const homeSummaryCards = useMemo(() => {
@@ -4407,10 +4451,6 @@ export default function KaylenCareMonitorDashboard({
     const dueNow = todayDashboard.requiredMedication.find(
       (medicine) => medicine.status === "due" || medicine.status === "missed",
     );
-    const laterMedication = todayDashboard.requiredMedication.find(
-      (medicine) => medicine.status === "upcoming",
-    );
-
     if (dueNow) {
       items.push({
         key: "medication",
@@ -4419,12 +4459,6 @@ export default function KaylenCareMonitorDashboard({
             ? "Medication needs checking"
             : `${dueNow.name || "Medication"} due now`,
         tone: "border-rose-200 bg-rose-50 text-rose-800",
-      });
-    } else if (laterMedication) {
-      items.push({
-        key: "medication-later",
-        text: `${laterMedication.name || "Medication"} due later`,
-        tone: "border-sky-200 bg-sky-50 text-sky-800",
       });
     } else if (todayDashboard.medicationRequired) {
       items.push({
@@ -5692,9 +5726,19 @@ export default function KaylenCareMonitorDashboard({
       },
       {
         label: "Add first meal",
-        completed: sharedLog.some((entry) => entry.section === "Food Diary"),
+        completed: sharedLog.some(
+          (entry) => entry.section === "Food Diary" && !entry.isMilk,
+        ),
         action: "food",
         module: "foodDiary",
+      },
+      {
+        label: "Add first drink",
+        completed: sharedLog.some(
+          (entry) => entry.section === "Food Diary" && entry.isMilk,
+        ),
+        action: "hydration",
+        module: "drink",
       },
       {
         label: "Add first sleep entry",
@@ -5720,6 +5764,9 @@ export default function KaylenCareMonitorDashboard({
       if (item.module === "core") return true;
       if (item.module === "foodDiary") {
         return isModuleEnabled("food");
+      }
+      if (item.module === "drink") {
+        return isModuleEnabled("drink");
       }
       return isModuleEnabled(item.module);
     });
@@ -7776,7 +7823,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderFoodForm = ({ hydrationOnly = false } = {}) => {
     const typedFood = foodForm.otherItem?.trim() || "";
-    const entryType = foodForm.entryType === "Drink" ? "Drink" : "Food";
+    const entryType = hydrationOnly ? "Drink" : "Food";
     const isDrink = entryType === "Drink";
     const selectedFood = typedFood || foodForm.item || (isDrink ? "Drink" : "");
     const mealContextOptions = [
@@ -7897,39 +7944,6 @@ export default function KaylenCareMonitorDashboard({
         </div>
         ) : null}
 
-        {!hydrationOnly ? (
-          <div className={`${cardClassName} md:col-span-2`}>
-            <label className="text-sm font-semibold text-slate-700">
-              Entry type
-            </label>
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              {["Food", "Drink"].map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  onClick={() => {
-                    setFoodValue(type === "Drink" ? "Drink" : "");
-                    setFoodForm({
-                      ...foodForm,
-                      entryType: type,
-                      mealContext:
-                        type === "Drink" ? "" : foodForm.mealContext || "",
-                      item: "",
-                    });
-                  }}
-                  className={`rounded-xl border px-4 py-3 text-sm font-bold transition ${
-                    entryType === type
-                      ? "border-amber-300 bg-amber-50 text-amber-800"
-                      : "border-slate-200 bg-white text-slate-700"
-                  }`}
-                >
-                  {type}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
         {entryType === "Food" ? (
           <div className={`${cardClassName} md:col-span-2`}>
             <label className="text-sm font-semibold text-slate-700">
@@ -7954,7 +7968,7 @@ export default function KaylenCareMonitorDashboard({
 
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
-            {hydrationOnly ? "Drink name" : "Food or drink name"}
+            {hydrationOnly ? "Drink name" : "Food name"}
           </label>
           <input
             type="text"
@@ -7998,11 +8012,11 @@ export default function KaylenCareMonitorDashboard({
               disabled={!canSaveTypedFood}
               className="h-4 w-4 rounded border-slate-300 disabled:opacity-50"
             />
-            Save this food or drink for later
+            {hydrationOnly ? "Save this drink for later" : "Save this food for later"}
           </label>
           {!canSaveTypedFood ? (
             <p className="mt-2 text-xs font-medium text-slate-500">
-              Type a specific food or drink name to save it for next time.
+              Type a specific {hydrationOnly ? "drink" : "food"} name to save it for next time.
             </p>
           ) : null}
         </div>
@@ -8161,7 +8175,7 @@ export default function KaylenCareMonitorDashboard({
                 closeSection();
               })
             }
-            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
+            className={`w-full rounded-2xl bg-gradient-to-r px-5 py-4 text-base font-semibold text-white shadow-md ${hydrationOnly ? "from-sky-400 to-cyan-500" : activeSection.color} disabled:cursor-not-allowed disabled:opacity-50`}
           >
             {activeSaveAction === "food"
               ? "Saving..."
@@ -12172,6 +12186,12 @@ export default function KaylenCareMonitorDashboard({
           </button>
         </div>
 
+        {timelineFilters.range === "24h" ? (
+          <div className="mt-3 rounded-2xl border border-indigo-100 bg-white/80 px-3 py-2 text-sm font-bold text-indigo-800">
+            Last logged view: showing matching entries from the last 24 hours.
+          </div>
+        ) : null}
+
         <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr]">
           <label className="min-w-0 text-sm font-bold text-slate-700">
             Global search
@@ -12221,6 +12241,7 @@ export default function KaylenCareMonitorDashboard({
               className={inputClassName}
             >
               <option value="7">Last 7 days</option>
+              <option value="24h">Last 24 hours</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
               <option value="all">All history</option>
@@ -12247,11 +12268,12 @@ export default function KaylenCareMonitorDashboard({
                     return true;
                   }
                   if (category === "Documents") return isModuleEnabled("documents");
+                  if (category === "Hydration") return isModuleEnabled("drink");
                   return reportCategoryOptions.includes(category);
                 })
                 .map((category) => (
                   <option key={category} value={category}>
-                    {category === "Food Diary" ? "Food and drink" : category}
+                    {category === "Food Diary" ? "Food" : category}
                   </option>
                 ))}
             </select>
@@ -14772,20 +14794,21 @@ export default function KaylenCareMonitorDashboard({
         <div className="mb-4">
           <div className="grid gap-3">
             {isModuleEnabled("drink") ? (
-              <button
-                type="button"
-                onClick={() =>
-                  !isReadOnly &&
-                  (todayDashboard.fluidTargetMl
-                    ? openQuickAdd("Hydration")
-                    : onOpenChildSetup?.())
-                }
-                disabled={isReadOnly}
-                className="rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition active:scale-[0.99] disabled:cursor-default"
-              >
+              <article className="relative overflow-hidden rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition">
+                <button
+                  type="button"
+                  onClick={() =>
+                    !isReadOnly &&
+                    (todayDashboard.fluidTargetMl
+                      ? openQuickAdd("Hydration")
+                      : onOpenChildSetup?.())
+                  }
+                  disabled={isReadOnly}
+                  className="relative z-10 w-full text-left transition active:scale-[0.99] disabled:cursor-default"
+                >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-sm">
+                    <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-500 to-cyan-500 text-white shadow-sm">
                       {renderHomeModuleIcon("Hydration", "h-6 w-6")}
                     </span>
                     <div className="min-w-0">
@@ -14805,26 +14828,43 @@ export default function KaylenCareMonitorDashboard({
                     </span>
                   ) : null}
                 </div>
-                <div className="mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
+                <div className="relative mt-3 h-4 overflow-hidden rounded-full bg-white shadow-inner">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-500 transition-all duration-700 ease-out"
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-cyan-400 to-blue-500 transition-all duration-700 ease-out"
                     style={{
                       width: `${todayDashboard.fluidTargetMl ? todayDashboard.fluidPercent : 0}%`,
                     }}
                   />
+                  <div className="pointer-events-none absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/30 to-transparent" />
                 </div>
                 {!todayDashboard.fluidTargetMl ? (
                   <p className="mt-3 rounded-xl border border-sky-200 bg-white px-3 py-2 text-xs font-black text-sky-700">
                     Set daily fluid target
                   </p>
                 ) : null}
-              </button>
+                </button>
+                {todayDashboard.fluidTargetMl && todayDashboard.fluidPercent >= 100 ? (
+                  <span className="absolute right-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-cyan-700 shadow-sm animate-bounce">
+                    Goal reached
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openLastLoggedView("drink");
+                  }}
+                  className="relative z-10 mt-3 rounded-full border border-sky-200 bg-white/90 px-3 py-1.5 text-xs font-black text-sky-700 shadow-sm transition hover:bg-sky-50"
+                >
+                  Last logged
+                </button>
+              </article>
             ) : null}
 
-            {isModuleEnabled("medication") && todayDashboard.medicationRequired ? (
+            {isModuleEnabled("medication") && todayDashboard.activeRequiredMedication.length ? (
               <article
                 className={`rounded-[1.55rem] border p-4 shadow-md ${
-                  todayDashboard.requiredMedication.some(
+                  todayDashboard.activeRequiredMedication.some(
                     (medicine) => medicine.status === "due" || medicine.status === "missed",
                   )
                     ? "border-rose-200 bg-gradient-to-br from-rose-100 via-pink-50 to-white shadow-rose-100/70"
@@ -14841,15 +14881,11 @@ export default function KaylenCareMonitorDashboard({
                         Medication
                       </p>
                       <h2 className="mt-0.5 text-base font-black text-slate-950">
-                        {todayDashboard.requiredMedication.some(
+                        {todayDashboard.activeRequiredMedication.some(
                           (medicine) => medicine.status === "due" || medicine.status === "missed",
                         )
                           ? "Doses needing attention"
-                          : todayDashboard.requiredMedication.some(
-                              (medicine) => medicine.status === "upcoming",
-                            )
-                            ? "Next medication later today"
-                            : "No medication due right now"}
+                          : "No medication due right now"}
                       </h2>
                     </div>
                   </div>
@@ -14858,14 +14894,11 @@ export default function KaylenCareMonitorDashboard({
                   </span>
                 </div>
 
-                {todayDashboard.requiredMedication.some(
+                {todayDashboard.activeRequiredMedication.some(
                   (medicine) => medicine.status === "due" || medicine.status === "missed",
                 ) ? (
                   <div className="mt-3 space-y-2">
-                    {todayDashboard.requiredMedication
-                      .filter(
-                        (medicine) => medicine.status === "due" || medicine.status === "missed",
-                      )
+                    {todayDashboard.activeRequiredMedication
                       .slice(0, 3)
                       .map((medicine) => (
                       <button
@@ -14911,13 +14944,16 @@ export default function KaylenCareMonitorDashboard({
                   </div>
                 ) : (
                   <p className="mt-3 rounded-2xl bg-white/80 px-3 py-2 text-sm font-bold text-slate-700">
-                    {todayDashboard.requiredMedication.some(
-                      (medicine) => medicine.status === "upcoming",
-                    )
-                      ? "Next medication is later today."
-                      : "No medication due right now."}
+                    No medication due right now.
                   </p>
                 )}
+                <button
+                  type="button"
+                  onClick={() => openLastLoggedView("Medication")}
+                  className="mt-3 rounded-full border border-rose-200 bg-white/90 px-3 py-1.5 text-xs font-black text-rose-700 shadow-sm transition hover:bg-rose-50"
+                >
+                  Last logged
+                </button>
               </article>
             ) : null}
           </div>
@@ -14953,6 +14989,46 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   </div>
                 </div>
+                {["food", "drink", "sleep", "toileting", "behaviour", "health", "measurements", "appointments"].includes(card.key) ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openLastLoggedView(
+                        card.key === "food"
+                          ? "food"
+                          : card.key === "drink"
+                            ? "drink"
+                            : card.key === "health"
+                              ? "health"
+                              : card.key === "measurements"
+                                ? "measurements"
+                                : card.section,
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        openLastLoggedView(
+                          card.key === "food"
+                            ? "food"
+                            : card.key === "drink"
+                              ? "drink"
+                              : card.key === "health"
+                                ? "health"
+                                : card.key === "measurements"
+                                  ? "measurements"
+                                  : card.section,
+                        );
+                      }
+                    }}
+                    className="mt-2 inline-flex rounded-full border border-white/80 bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm"
+                  >
+                    Last logged
+                  </span>
+                ) : null}
               </button>
             ))}
           </div>
@@ -15421,7 +15497,3 @@ export default function KaylenCareMonitorDashboard({
     </div>
   );
 }
-
-
-
-
