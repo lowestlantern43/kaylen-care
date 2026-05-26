@@ -155,6 +155,11 @@ const MODULE_VISIBILITY_OPTIONS = [
     description: "Hospital, school, EHCP and care dates.",
   },
   {
+    key: "ask",
+    label: "Ask FamilyTrack",
+    description: "Care-log pattern summaries and appointment preparation prompts.",
+  },
+  {
     key: "timeline",
     label: "Timeline / Search",
     description: "A searchable family timeline across logs, documents and appointments.",
@@ -194,6 +199,7 @@ const MODULE_VISIBILITY_ICONS = {
   snapshot: "Snap",
   documents: "File",
   appointments: "Date",
+  ask: "Ask",
   timeline: "Search",
   calendar: "Cal",
 };
