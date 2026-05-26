@@ -808,6 +808,7 @@ export default function KaylenCareMonitorDashboard({
   const [timelineDocuments, setTimelineDocuments] = useState([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [expandedTimelineItem, setExpandedTimelineItem] = useState("");
+  const [lastLoggedView, setLastLoggedView] = useState(null);
   const [documentForm, setDocumentForm] = useState({
     title: "",
     category: "EHCP",
@@ -2127,6 +2128,7 @@ export default function KaylenCareMonitorDashboard({
       resetFormForNewEntry(section.title);
     }
     setActiveSection(section);
+    if (section.title !== "Last logged") setLastLoggedView(null);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
     setNotificationCentreOpen(false);
@@ -2172,6 +2174,7 @@ export default function KaylenCareMonitorDashboard({
 
   const closeSection = () => {
     setActiveSection(null);
+    setLastLoggedView(null);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
     setNotificationCentreOpen(false);
@@ -4289,26 +4292,59 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const openLastLoggedView = (categoryKey) => {
-    setTimelineFilters({
-      childId: childId || "all",
-      range: "24h",
-      category:
-        categoryKey === "drink"
-          ? "Hydration"
-          : categoryKey === "food"
-            ? "Food Diary"
-            : categoryKey,
-      severity: "All",
-      search:
-        categoryKey === "drink"
-          ? ""
-          : categoryKey === "food"
-            ? ""
-            : "",
+    const config =
+      categoryKey === "drink"
+        ? {
+            key: "drink",
+            title: "Hydration",
+            section: "Hydration",
+            tone: "from-sky-400 to-cyan-500",
+            empty: "No drinks logged in the last 24 hours.",
+          }
+        : categoryKey === "food"
+          ? {
+              key: "food",
+              title: "Food",
+              section: "Food Diary",
+              tone: "from-emerald-400 to-green-500",
+              empty: "No food logged in the last 24 hours.",
+            }
+          : categoryKey === "health"
+            ? {
+                key: "health",
+                title: "Health notes",
+                section: "Health",
+                tone: "from-teal-400 to-emerald-500",
+                empty: "No health notes logged in the last 24 hours.",
+              }
+            : categoryKey === "measurements"
+              ? {
+                  key: "measurements",
+                  title: "Measurements",
+                  section: "Growth / Measurements",
+                  tone: "from-violet-400 to-purple-500",
+                  empty: "No measurements logged in the last 24 hours.",
+                }
+              : {
+                  key: categoryKey,
+                  title: categoryKey,
+                  section: categoryKey,
+                  tone: sections.find((section) => section.title === categoryKey)?.color || "from-slate-500 to-indigo-600",
+                  empty: `No ${String(categoryKey).toLowerCase()} entries logged in the last 24 hours.`,
+                };
+
+    setLastLoggedView(config);
+    setActiveSection({
+      title: "Last logged",
+      subtitle: `${config.title} entries from the last 24 hours`,
+      button: "View logs",
+      emoji: "LOG",
+      color: config.tone,
+      soft: "bg-white border-slate-200",
     });
-    openSection(sections.find((section) => section.title === "Timeline"), {
-      reset: false,
-    });
+    setQuickAddOpen(false);
+    setMoreNavOpen(false);
+    setNotificationCentreOpen(false);
   };
 
   const homeSummaryCards = useMemo(() => {
@@ -12159,6 +12195,109 @@ export default function KaylenCareMonitorDashboard({
     });
   };
 
+  const renderLastLoggedForm = () => {
+    const view = lastLoggedView || {
+      key: "all",
+      title: "Entries",
+      section: "Timeline",
+      empty: "No entries logged in the last 24 hours.",
+    };
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    const matchesView = (entry) => {
+      if (view.key === "drink") {
+        return entry.section === "Food Diary" && entry.isMilk;
+      }
+      if (view.key === "food") {
+        return entry.section === "Food Diary" && !entry.isMilk;
+      }
+      if (view.key === "health") {
+        return entry.section === "Health" && !isMeasurementEntry(entry);
+      }
+      if (view.key === "measurements") {
+        return isMeasurementEntry(entry);
+      }
+      return entry.section === view.section || entry.section === view.key;
+    };
+    const entries = sharedLog
+      .filter((entry) => {
+        if (!matchesView(entry)) return false;
+        const loggedAt =
+          getEntryDateTime(entry) ||
+          (entry.createdAt ? new Date(entry.createdAt) : null);
+        return (
+          loggedAt &&
+          !Number.isNaN(loggedAt.getTime()) &&
+          loggedAt.getTime() >= cutoff
+        );
+      })
+      .sort(
+        (a, b) =>
+          (getEntryDateTime(b)?.getTime() || 0) -
+          (getEntryDateTime(a)?.getTime() || 0),
+      );
+
+    return (
+      <div className="mt-6 space-y-3">
+        <section className="rounded-[1.5rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-sky-50 p-4 shadow-sm">
+          <div className="flex items-start gap-3">
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-white shadow-sm ${view.tone || "from-slate-500 to-indigo-600"}`}>
+              {renderHomeModuleIcon(view.section, "h-5 w-5")}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Last logged
+              </p>
+              <h4 className="mt-0.5 text-lg font-black text-slate-950">
+                {view.title}
+              </h4>
+              <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
+                Entries recorded in the last 24 hours. Timeline filters are left unchanged.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {entries.length ? (
+          <div className="space-y-2">
+            {entries.map((entry) => (
+              <article
+                key={`last-logged-${entry.id}`}
+                className="rounded-2xl border border-slate-100 bg-white p-3 shadow-sm"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="break-words text-sm font-black text-slate-950">
+                      {entry.summary || view.title}
+                    </p>
+                    <p className="mt-1 text-xs font-bold text-slate-500">
+                      {[entry.date, entry.time].filter(Boolean).join(" at ")}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600">
+                    {view.title}
+                  </span>
+                </div>
+                {entry.details?.length ? (
+                  <p className="mt-2 line-clamp-3 text-xs font-semibold leading-5 text-slate-600">
+                    {entry.details.slice(0, 3).join(" - ")}
+                  </p>
+                ) : entry.notes ? (
+                  <p className="mt-2 line-clamp-3 text-xs font-semibold leading-5 text-slate-600">
+                    {entry.notes}
+                  </p>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 bg-white/80 px-4 py-6 text-center text-sm font-bold text-slate-500">
+            {view.empty}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderUnifiedTimelineForm = () => (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
@@ -14335,6 +14474,8 @@ export default function KaylenCareMonitorDashboard({
         return renderAppointmentsForm();
       case "Timeline":
         return renderUnifiedTimelineForm();
+      case "Last logged":
+        return renderLastLoggedForm();
       case "Calendar":
         return renderCalendarForm();
       default:
