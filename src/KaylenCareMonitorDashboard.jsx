@@ -19,7 +19,6 @@ const DEFAULT_MODULE_VISIBILITY = {
   appointments: true,
   timeline: true,
   calendar: true,
-  ask: true,
 };
 
 const DOCUMENT_CATEGORIES = [
@@ -68,16 +67,6 @@ const APPOINTMENT_CATEGORIES = [
   "Medication review",
   "Dentist",
   "Other",
-];
-
-const ASK_FAMILYTRACK_SUGGESTIONS = [
-  "What has changed this week?",
-  "Any patterns between sleep and behaviour?",
-  "Is hydration lower on some days?",
-  "Prepare notes for an appointment",
-  "Summarise the last 7 days",
-  "Any medication concerns?",
-  "What should I keep an eye on?",
 ];
 
 const normalizeModuleVisibility = (value = {}) => ({
@@ -819,12 +808,6 @@ export default function KaylenCareMonitorDashboard({
   const [timelineDocuments, setTimelineDocuments] = useState([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [expandedTimelineItem, setExpandedTimelineItem] = useState("");
-  const [askRangeDays, setAskRangeDays] = useState(7);
-  const [askQuestion, setAskQuestion] = useState("Summarise the last 7 days");
-  const [askResult, setAskResult] = useState(null);
-  const [isAskLoading, setIsAskLoading] = useState(false);
-  const [askError, setAskError] = useState("");
-  const [askCopied, setAskCopied] = useState(false);
   const [documentForm, setDocumentForm] = useState({
     title: "",
     category: "EHCP",
@@ -1121,14 +1104,6 @@ export default function KaylenCareMonitorDashboard({
       soft: "bg-blue-50 border-blue-300",
     },
     {
-      title: "Ask FamilyTrack",
-      subtitle: "Spot patterns in your care logs",
-      button: "Ask",
-      emoji: "ASK",
-      color: "from-violet-400 via-fuchsia-400 to-sky-400",
-      soft: "bg-violet-50 border-violet-300",
-    },
-    {
       title: "Timeline",
       subtitle: "Search logs, documents, appointments and care history",
       button: "Open Timeline",
@@ -1180,8 +1155,6 @@ export default function KaylenCareMonitorDashboard({
         return "documents";
       case "Appointments":
         return "appointments";
-      case "Ask FamilyTrack":
-        return "ask";
       case "Timeline":
         return "timeline";
       case "Calendar":
@@ -1806,7 +1779,6 @@ export default function KaylenCareMonitorDashboard({
       "Care Snapshot",
       "Document Vault",
       "Appointments",
-      "Ask FamilyTrack",
       "Timeline",
       "Calendar",
       "Behaviour",
@@ -1934,15 +1906,6 @@ export default function KaylenCareMonitorDashboard({
             <path d="M3 11h18" />
             <path d="M9 16h.01" />
             <path d="M13 16h.01" />
-          </svg>
-        );
-      case "Ask FamilyTrack":
-        return (
-          <svg {...common}>
-            <path d="M21 12a7.5 7.5 0 0 1-7.5 7.5H8l-5 2 1.6-4.3A7.5 7.5 0 1 1 21 12Z" />
-            <path d="M12 8.2 12.8 10l1.8.8-1.8.8-.8 1.8-.8-1.8-1.8-.8 1.8-.8.8-1.8Z" />
-            <path d="M17 5.5v2" />
-            <path d="M16 6.5h2" />
           </svg>
         );
       case "Calendar":
@@ -3399,8 +3362,6 @@ export default function KaylenCareMonitorDashboard({
         return "Store and download private family documents for school, medical and care use.";
       case "Appointments":
         return "Record hospital, school, EHCP and care appointments with follow-up notes.";
-      case "Ask FamilyTrack":
-        return "Ask careful questions about patterns in the selected child's logged care data.";
       case "Timeline":
         return "Search across logs, documents, appointments and care history.";
       case "Calendar":
@@ -4552,226 +4513,6 @@ export default function KaylenCareMonitorDashboard({
 
     return insights.slice(0, 2);
   }, [sharedLog, todayDashboard]);
-
-  const buildAskFamilyTrackInsights = (questionText = askQuestion, rangeDays = askRangeDays) => {
-    const now = new Date();
-    const currentStart = new Date(now);
-    currentStart.setDate(currentStart.getDate() - Math.max(1, Number(rangeDays || 7)) + 1);
-    currentStart.setHours(0, 0, 0, 0);
-    const previousEnd = new Date(currentStart.getTime() - 1);
-    const previousStart = new Date(previousEnd);
-    previousStart.setDate(previousStart.getDate() - Math.max(1, Number(rangeDays || 7)) + 1);
-    previousStart.setHours(0, 0, 0, 0);
-
-    const inRange = (entry, start, end) => {
-      const date = getEntryDateTime(entry);
-      if (!date) return false;
-      return date >= start && date <= end;
-    };
-    const currentEntries = sharedLog.filter((entry) => inRange(entry, currentStart, now));
-    const previousEntries = sharedLog.filter((entry) =>
-      inRange(entry, previousStart, previousEnd),
-    );
-    const count = (entries, section) =>
-      entries.filter((entry) => entry.section === section).length;
-    const drinkTotal = (entries) =>
-      entries
-        .filter((entry) => entry.section === "Food Diary")
-        .reduce((sum, entry) => sum + getFluidMlFromEntry(entry), 0);
-    const sleepMinutes = (entries) =>
-      entries
-        .filter((entry) => entry.section === "Sleep")
-        .map((entry) => Number(entry.durationMinutes || 0))
-        .filter((minutes) => minutes > 0);
-    const average = (values) =>
-      values.length
-        ? values.reduce((sum, value) => sum + value, 0) / values.length
-        : 0;
-    const currentSleep = sleepMinutes(currentEntries);
-    const previousSleep = sleepMinutes(previousEntries);
-    const currentFluid = drinkTotal(currentEntries);
-    const previousFluid = drinkTotal(previousEntries);
-    const behaviourEntries = currentEntries.filter(
-      (entry) => entry.section === "Behaviour",
-    );
-    const medicationEntries = currentEntries.filter(
-      (entry) => entry.section === "Medication",
-    );
-    const medicationConcerns = medicationEntries.filter((entry) =>
-      ["missed", "late", "refused", "skipped"].includes(
-        String(entry.medicationStatus || "").toLowerCase(),
-      ),
-    );
-    const sleepByDay = new Map();
-    currentEntries
-      .filter((entry) => entry.section === "Sleep" && Number(entry.durationMinutes || 0) > 0)
-      .forEach((entry) => sleepByDay.set(entry.date, Number(entry.durationMinutes || 0)));
-    const behaviourAfterShortSleep = behaviourEntries.filter((entry) => {
-      const sleep = sleepByDay.get(entry.date);
-      return sleep && sleep < 7 * 60;
-    });
-    const fluidTarget = Number(childProfile.dailyFluidTargetMl || 0);
-    const fluidByDay = new Map();
-    currentEntries
-      .filter((entry) => entry.section === "Food Diary")
-      .forEach((entry) => {
-        const ml = getFluidMlFromEntry(entry);
-        if (ml > 0) fluidByDay.set(entry.date, (fluidByDay.get(entry.date) || 0) + ml);
-      });
-    const lowFluidDays = Array.from(fluidByDay.entries()).filter(([, total]) =>
-      fluidTarget ? total < fluidTarget * 0.7 : total < (currentFluid / Math.max(1, fluidByDay.size)) * 0.75,
-    );
-    const triggerCounts = new Map();
-    behaviourEntries.forEach((entry) => {
-      (entry.triggers || []).forEach((trigger) => {
-        triggerCounts.set(trigger, (triggerCounts.get(trigger) || 0) + 1);
-      });
-    });
-    const topTrigger = Array.from(triggerCounts.entries()).sort((a, b) => b[1] - a[1])[0];
-
-    const logCounts = {
-      sleep: count(currentEntries, "Sleep"),
-      hydration: currentEntries.filter(
-        (entry) => entry.section === "Food Diary" && getFluidMlFromEntry(entry) > 0,
-      ).length,
-      food: currentEntries.filter(
-        (entry) => entry.section === "Food Diary" && !entry.isMilk,
-      ).length,
-      medication: medicationEntries.length,
-      toileting: count(currentEntries, "Toileting"),
-      behaviour: behaviourEntries.length,
-      health: count(currentEntries, "Health"),
-      appointments: count(currentEntries, "Appointments"),
-    };
-    const totalLogs = Object.values(logCounts).reduce((sum, value) => sum + value, 0);
-    const patterns = [];
-    const watchItems = [];
-    const appointmentNotes = [];
-    const limitations = [
-      "AI insights are not fully configured yet, so this is a basic rule-based summary from your logs.",
-      "This summarises logged information only and does not provide medical advice.",
-    ];
-
-    if (currentSleep.length && previousSleep.length) {
-      const diffMinutes = average(currentSleep) - average(previousSleep);
-      if (Math.abs(diffMinutes) >= 30) {
-        patterns.push(
-          `Sleep average is ${diffMinutes > 0 ? "higher" : "lower"} than the previous ${rangeDays} days by about ${formatHoursMinutes(Math.abs(Math.round(diffMinutes)))}.`,
-        );
-      }
-    } else if (!currentSleep.length) {
-      watchItems.push("No completed sleep entries were found in this period.");
-    }
-
-    if (currentFluid || previousFluid) {
-      const fluidDiff = currentFluid - previousFluid;
-      if (previousFluid && Math.abs(fluidDiff) >= 250) {
-        patterns.push(
-          `Hydration is ${fluidDiff > 0 ? "up" : "down"} compared with the previous ${rangeDays} days.`,
-        );
-      }
-      if (lowFluidDays.length) {
-        watchItems.push(
-          fluidTarget
-            ? `${lowFluidDays.length} day${lowFluidDays.length === 1 ? "" : "s"} were below 70% of the fluid target.`
-            : `${lowFluidDays.length} day${lowFluidDays.length === 1 ? "" : "s"} were lower than this period's usual fluid intake.`,
-        );
-      }
-    }
-
-    if (medicationConcerns.length) {
-      patterns.push(
-        `${medicationConcerns.length} medication entr${medicationConcerns.length === 1 ? "y was" : "ies were"} logged as skipped, missed, late or refused.`,
-      );
-      watchItems.push("Medication concerns are worth mentioning to the relevant professional if they continue.");
-    }
-
-    if (behaviourEntries.length) {
-      patterns.push(`${behaviourEntries.length} behaviour entr${behaviourEntries.length === 1 ? "y was" : "ies were"} logged in this period.`);
-      if (topTrigger) {
-        patterns.push(`Most repeated behaviour trigger logged: ${topTrigger[0]}.`);
-      }
-      if (behaviourAfterShortSleep.length) {
-        patterns.push(
-          `There may be a pattern between shorter sleep and behaviour entries on ${behaviourAfterShortSleep.length} day${behaviourAfterShortSleep.length === 1 ? "" : "s"}.`,
-        );
-      }
-    }
-
-    if (count(currentEntries, "Toileting")) {
-      patterns.push(`${count(currentEntries, "Toileting")} toileting entr${count(currentEntries, "Toileting") === 1 ? "y" : "ies"} were logged.`);
-    }
-    if (count(currentEntries, "Health")) {
-      watchItems.push("Health notes were logged in this period; include them in appointment notes if relevant.");
-    }
-
-    const latestExamples = currentEntries.slice(0, 5).map((entry) =>
-      `${entry.date}${entry.time ? ` ${entry.time}` : ""}: ${entry.summary || entry.section}`,
-    );
-    if (latestExamples.length) {
-      appointmentNotes.push(`Recent examples: ${latestExamples.join("; ")}.`);
-    }
-    if (patterns.length) appointmentNotes.push(`Key points to discuss: ${patterns.slice(0, 3).join(" ")}`);
-    appointmentNotes.push("Questions to consider: Have routines changed? Are there specific times, triggers or missed doses to discuss?");
-
-    const question = String(questionText || "").toLowerCase();
-    if (question.includes("appointment") || question.includes("prepare")) {
-      patterns.unshift("Appointment preparation view: focusing on recent changes, concerns and examples with dates.");
-    }
-    if (question.includes("sleep") && !currentSleep.length) {
-      limitations.push("Sleep patterns need completed bedtime and wake-time entries.");
-    }
-    if (question.includes("hydration") && !currentFluid) {
-      limitations.push("Hydration patterns need drink entries with amounts.");
-    }
-
-    const confidence =
-      totalLogs < 5 ? "low" : totalLogs < Math.max(10, rangeDays) ? "medium" : "high";
-    const summary = totalLogs
-      ? `I found ${totalLogs} logged item${totalLogs === 1 ? "" : "s"} for ${childName} in the last ${rangeDays} days. The strongest signals are based on logged entries only.`
-      : "There isn't enough logged information yet to spot reliable patterns.";
-
-    return {
-      summary,
-      patterns: patterns.length ? patterns : ["Not enough data to confirm a clear pattern yet."],
-      watchItems: watchItems.length
-        ? watchItems
-        : ["Keep logging sleep, hydration, medication, food, toileting and behaviour to build clearer patterns."],
-      appointmentNotes,
-      dataUsed: {
-        childName,
-        range: `Last ${rangeDays} days`,
-        comparedWith: `Previous ${rangeDays} days`,
-        logCounts,
-      },
-      confidence,
-      limitations,
-    };
-  };
-
-  const runAskFamilyTrack = (questionText = askQuestion) => {
-    setAskQuestion(questionText);
-    setAskError("");
-    setIsAskLoading(true);
-    window.setTimeout(() => {
-      try {
-        setAskResult(buildAskFamilyTrackInsights(questionText, askRangeDays));
-      } catch (error) {
-        console.error("Ask FamilyTrack failed", error);
-        setAskError("Ask FamilyTrack couldn't load insights right now. Your logs are safe - please try again.");
-      } finally {
-        setIsAskLoading(false);
-      }
-    }, 300);
-  };
-
-  const copyAskAppointmentNotes = async () => {
-    if (!askResult?.appointmentNotes?.length || !navigator.clipboard?.writeText) return;
-    await navigator.clipboard.writeText(askResult.appointmentNotes.join("\n"));
-    setAskCopied(true);
-    showToast?.({ message: "Appointment notes copied", type: "success" });
-    window.setTimeout(() => setAskCopied(false), 1800);
-  };
 
   const notificationCentreItems = useMemo(() => {
     const items = homeStatusItems.map((item) => ({
@@ -12575,210 +12316,6 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
-  const renderAskFamilyTrackForm = () => {
-    const result = askResult;
-    const hasEnoughData =
-      result &&
-      Object.values(result.dataUsed?.logCounts || {}).reduce(
-        (sum, value) => sum + Number(value || 0),
-        0,
-      ) > 0;
-
-    return (
-      <div className="mt-6 space-y-4">
-        <section className="overflow-hidden rounded-[1.75rem] border border-violet-100 bg-gradient-to-br from-violet-50 via-fuchsia-50 to-sky-50 p-4 shadow-sm">
-          <div className="flex items-start gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-sky-500 text-white shadow-sm">
-              {renderSectionIcon("Ask FamilyTrack", "h-6 w-6")}
-            </span>
-            <div className="min-w-0">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-violet-700">
-                Helpful insights from your care logs
-              </p>
-              <h3 className="mt-1 text-xl font-black text-slate-950">
-                Ask FamilyTrack
-              </h3>
-              <p className="mt-2 text-sm font-semibold leading-6 text-slate-700">
-                Ask FamilyTrack can help spot patterns, trends and changes in your logged care information.
-              </p>
-            </div>
-          </div>
-          <div className="mt-4 rounded-2xl border border-white/80 bg-white/85 px-4 py-3 text-sm font-bold leading-6 text-slate-700 shadow-sm">
-            Ask FamilyTrack summarises logged information only. It does not provide medical advice, diagnosis or emergency support.
-          </div>
-          <p className="mt-3 text-xs font-bold text-violet-700">
-            Only data you have permission to access is used.
-          </p>
-        </section>
-
-        <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            {[7, 14, 30].map((days) => (
-              <button
-                key={`ask-range-${days}`}
-                type="button"
-                onClick={() => setAskRangeDays(days)}
-                className={`rounded-full px-3 py-2 text-xs font-black transition ${
-                  askRangeDays === days
-                    ? "bg-violet-600 text-white shadow-sm"
-                    : "border border-slate-200 bg-slate-50 text-slate-600"
-                }`}
-              >
-                {days} days
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {ASK_FAMILYTRACK_SUGGESTIONS.map((suggestion) => (
-              <button
-                key={suggestion}
-                type="button"
-                onClick={() => runAskFamilyTrack(suggestion)}
-                className="rounded-full border border-violet-100 bg-violet-50 px-3 py-2 text-xs font-black text-violet-700 transition hover:bg-violet-100"
-              >
-                {suggestion}
-              </button>
-            ))}
-          </div>
-
-          <form
-            className="mt-4 space-y-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              runAskFamilyTrack(askQuestion);
-            }}
-          >
-            <textarea
-              value={askQuestion}
-              onChange={(event) => setAskQuestion(event.target.value)}
-              placeholder="Ask about sleep, behaviour, medication, hydration, food or routines..."
-              className="min-h-[104px] w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-base font-semibold leading-6 text-slate-900 outline-none transition focus:border-violet-300 focus:bg-white focus:ring-4 focus:ring-violet-100"
-            />
-            <button
-              type="submit"
-              disabled={isAskLoading}
-              className="w-full rounded-2xl bg-gradient-to-r from-violet-600 to-sky-500 px-4 py-3 text-sm font-black text-white shadow-md shadow-violet-500/20 transition active:scale-[0.99] disabled:opacity-70"
-            >
-              {isAskLoading ? "Checking the logs and looking for patterns..." : "Ask FamilyTrack"}
-            </button>
-          </form>
-        </section>
-
-        {askError ? (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-800">
-            {askError}
-          </div>
-        ) : null}
-
-        {!result && !isAskLoading ? (
-          <div className="rounded-[1.5rem] border border-dashed border-violet-200 bg-white/80 px-4 py-6 text-center">
-            <p className="text-sm font-black text-slate-900">
-              Add a few more logs and Ask FamilyTrack will be able to spot more useful trends.
-            </p>
-            <p className="mt-2 text-xs font-bold leading-5 text-slate-500">
-              Helpful areas to log include sleep, hydration, medication, behaviour, food and toileting.
-            </p>
-          </div>
-        ) : null}
-
-        {result ? (
-          <div className="space-y-3">
-            <section className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                    Summary
-                  </p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-slate-800">
-                    {result.summary}
-                  </p>
-                </div>
-                <span className="rounded-full bg-violet-50 px-3 py-1.5 text-[11px] font-black uppercase tracking-[0.12em] text-violet-700">
-                  {result.confidence} confidence
-                </span>
-              </div>
-              {!hasEnoughData ? (
-                <p className="mt-3 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                  There isn't enough logged information yet to spot reliable patterns.
-                </p>
-              ) : null}
-            </section>
-
-            {[
-              ["Patterns noticed", result.patterns, "border-violet-100 bg-violet-50/80 text-violet-900"],
-              ["Keep an eye on", result.watchItems, "border-amber-100 bg-amber-50/80 text-amber-900"],
-              ["Useful notes for appointments", result.appointmentNotes, "border-sky-100 bg-sky-50/80 text-sky-900"],
-            ].map(([title, items, tone]) => (
-              <section
-                key={title}
-                className={`rounded-[1.5rem] border p-4 shadow-sm ${tone}`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-sm font-black text-slate-950">{title}</h4>
-                  {title === "Useful notes for appointments" ? (
-                    <button
-                      type="button"
-                      onClick={copyAskAppointmentNotes}
-                      className="rounded-full bg-white/80 px-3 py-1.5 text-[11px] font-black text-slate-700 shadow-sm"
-                    >
-                      {askCopied ? "Copied" : "Copy notes"}
-                    </button>
-                  ) : null}
-                </div>
-                <ul className="mt-3 space-y-2">
-                  {(items || []).map((item) => (
-                    <li
-                      key={`${title}-${item}`}
-                      className="rounded-2xl bg-white/70 px-3 py-2 text-sm font-semibold leading-6"
-                    >
-                      {item}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            ))}
-
-            <section className="grid gap-3 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
-              <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                  Data used
-                </p>
-                <p className="mt-2 text-sm font-bold text-slate-800">
-                  {result.dataUsed.childName} - {result.dataUsed.range}
-                </p>
-                <p className="mt-1 text-xs font-bold text-slate-500">
-                  Compared with {result.dataUsed.comparedWith.toLowerCase()}.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {Object.entries(result.dataUsed.logCounts || {}).map(([key, value]) => (
-                  <span
-                    key={`ask-count-${key}`}
-                    className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-black capitalize text-slate-600"
-                  >
-                    {key}: {value}
-                  </span>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-4">
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
-                Limitations
-              </p>
-              <ul className="mt-2 space-y-1 text-xs font-bold leading-5 text-slate-600">
-                {(result.limitations || []).map((item) => (
-                  <li key={`ask-limit-${item}`}>{item}</li>
-                ))}
-              </ul>
-            </section>
-          </div>
-        ) : null}
-      </div>
-    );
-  };
-
   const renderUnifiedTimelineForm = () => (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
@@ -14953,8 +14490,6 @@ export default function KaylenCareMonitorDashboard({
         return renderDocumentVaultForm();
       case "Appointments":
         return renderAppointmentsForm();
-      case "Ask FamilyTrack":
-        return renderAskFamilyTrackForm();
       case "Timeline":
         return renderUnifiedTimelineForm();
       case "Calendar":
@@ -15125,9 +14660,6 @@ export default function KaylenCareMonitorDashboard({
     isModuleEnabled("appointments")
       ? { label: "Appointments", title: "Appointments", icon: "appointments" }
       : null,
-    isModuleEnabled("ask")
-      ? { label: "Ask FamilyTrack", title: "Ask FamilyTrack", icon: "ask" }
-      : null,
     isModuleEnabled("calendar")
       ? { label: "Calendar", title: "Calendar", icon: "calendar" }
       : null,
@@ -15182,7 +14714,6 @@ export default function KaylenCareMonitorDashboard({
     if (icon === "snapshot") return renderSectionIcon("Care Snapshot", className);
     if (icon === "documents") return renderSectionIcon("Document Vault", className);
     if (icon === "appointments") return renderSectionIcon("Appointments", className);
-    if (icon === "ask") return renderSectionIcon("Ask FamilyTrack", className);
     if (icon === "calendar") return renderSectionIcon("Calendar", className);
     if (icon === "measurements") return renderSectionIcon("Growth / Measurements", className);
     if (icon === "subscription") return renderSectionIcon("Reports", className);
@@ -15264,7 +14795,6 @@ export default function KaylenCareMonitorDashboard({
       measurements: "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700",
       appointments: "border-blue-100 bg-gradient-to-br from-blue-50 to-white text-blue-700",
       documents: "border-slate-200 bg-gradient-to-br from-slate-50 to-white text-slate-700",
-      ask: "border-violet-100 bg-gradient-to-br from-violet-50 via-fuchsia-50 to-sky-50 text-violet-700",
     })[key] ||
     "border-violet-100 bg-gradient-to-br from-violet-50 to-white text-violet-700";
 
@@ -15280,7 +14810,6 @@ export default function KaylenCareMonitorDashboard({
       measurements: "bg-violet-500 text-white",
       appointments: "bg-blue-500 text-white",
       documents: "bg-slate-600 text-white",
-      ask: "bg-violet-500 text-white",
     })[key] || "bg-violet-500 text-white";
 
   const mobileNavButtonClass = (active, extra = "") =>
@@ -15566,37 +15095,6 @@ export default function KaylenCareMonitorDashboard({
                   </p>
                 )}
               </article>
-            ) : null}
-
-            {isModuleEnabled("ask") ? (
-              <button
-                type="button"
-                onClick={() =>
-                  openSection(
-                    sections.find((section) => section.title === "Ask FamilyTrack"),
-                    { reset: false },
-                  )
-                }
-                className="group relative overflow-hidden rounded-[1.55rem] border border-violet-200 bg-gradient-to-br from-violet-100 via-fuchsia-50 to-sky-50 p-4 text-left shadow-md shadow-violet-100/70 transition active:scale-[0.99]"
-              >
-                <div className="absolute -right-8 -top-10 h-28 w-28 rounded-full bg-white/45 blur-2xl transition group-hover:scale-110" />
-                <div className="relative flex items-start gap-3">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-sky-500 text-white shadow-sm">
-                    {renderHomeModuleIcon("Ask FamilyTrack", "h-6 w-6")}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-black uppercase tracking-[0.16em] text-violet-700">
-                      Ask FamilyTrack
-                    </p>
-                    <h2 className="mt-0.5 text-lg font-black text-slate-950">
-                      Spot patterns in your care logs
-                    </h2>
-                    <p className="mt-1 text-sm font-bold leading-5 text-slate-600">
-                      Ask about sleep, hydration, behaviour, medication or appointment notes.
-                    </p>
-                  </div>
-                </div>
-              </button>
             ) : null}
           </div>
 
