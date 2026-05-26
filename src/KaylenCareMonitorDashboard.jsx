@@ -808,7 +808,6 @@ export default function KaylenCareMonitorDashboard({
   const [timelineDocuments, setTimelineDocuments] = useState([]);
   const [isLoadingTimeline, setIsLoadingTimeline] = useState(false);
   const [expandedTimelineItem, setExpandedTimelineItem] = useState("");
-  const [lastLoggedView, setLastLoggedView] = useState(null);
   const [documentForm, setDocumentForm] = useState({
     title: "",
     category: "EHCP",
@@ -2128,7 +2127,6 @@ export default function KaylenCareMonitorDashboard({
       resetFormForNewEntry(section.title);
     }
     setActiveSection(section);
-    if (section.title !== "Last logged") setLastLoggedView(null);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
     setNotificationCentreOpen(false);
@@ -2174,7 +2172,6 @@ export default function KaylenCareMonitorDashboard({
 
   const closeSection = () => {
     setActiveSection(null);
-    setLastLoggedView(null);
     setQuickAddOpen(false);
     setMoreNavOpen(false);
     setNotificationCentreOpen(false);
@@ -4289,62 +4286,6 @@ export default function KaylenCareMonitorDashboard({
       })}`;
     }
     return entry.time || entry.date || emptyText;
-  };
-
-  const openLastLoggedView = (categoryKey) => {
-    const config =
-      categoryKey === "drink"
-        ? {
-            key: "drink",
-            title: "Hydration",
-            section: "Hydration",
-            tone: "from-sky-400 to-cyan-500",
-            empty: "No drinks logged in the last 24 hours.",
-          }
-        : categoryKey === "food"
-          ? {
-              key: "food",
-              title: "Food",
-              section: "Food Diary",
-              tone: "from-emerald-400 to-green-500",
-              empty: "No food logged in the last 24 hours.",
-            }
-          : categoryKey === "health"
-            ? {
-                key: "health",
-                title: "Health notes",
-                section: "Health",
-                tone: "from-teal-400 to-emerald-500",
-                empty: "No health notes logged in the last 24 hours.",
-              }
-            : categoryKey === "measurements"
-              ? {
-                  key: "measurements",
-                  title: "Measurements",
-                  section: "Growth / Measurements",
-                  tone: "from-violet-400 to-purple-500",
-                  empty: "No measurements logged in the last 24 hours.",
-                }
-              : {
-                  key: categoryKey,
-                  title: categoryKey,
-                  section: categoryKey,
-                  tone: sections.find((section) => section.title === categoryKey)?.color || "from-slate-500 to-indigo-600",
-                  empty: `No ${String(categoryKey).toLowerCase()} entries logged in the last 24 hours.`,
-                };
-
-    setLastLoggedView(config);
-    setActiveSection({
-      title: "Last logged",
-      subtitle: `${config.title} entries from the last 24 hours`,
-      button: "View logs",
-      emoji: "LOG",
-      color: config.tone,
-      soft: "bg-white border-slate-200",
-    });
-    setQuickAddOpen(false);
-    setMoreNavOpen(false);
-    setNotificationCentreOpen(false);
   };
 
   const homeSummaryCards = useMemo(() => {
@@ -12195,13 +12136,87 @@ export default function KaylenCareMonitorDashboard({
     });
   };
 
-  const renderLastLoggedForm = () => {
-    const view = lastLoggedView || {
-      key: "all",
-      title: "Entries",
-      section: "Timeline",
-      empty: "No entries logged in the last 24 hours.",
+  const getFormLastLoggedConfig = (sectionTitle) => {
+    const configBySection = {
+      Hydration: {
+        key: "drink",
+        title: "Hydration",
+        section: "Hydration",
+        tone: "from-sky-400 to-cyan-500",
+        empty: "No drinks logged in the last 24 hours.",
+      },
+      "Food Diary": {
+        key: "food",
+        title: "Food",
+        section: "Food Diary",
+        tone: "from-emerald-400 to-green-500",
+        empty: "No food logged in the last 24 hours.",
+      },
+      Medication: {
+        key: "medication",
+        title: "Medication",
+        section: "Medication",
+        tone: "from-rose-400 to-pink-500",
+        empty: "No medication logged in the last 24 hours.",
+      },
+      Sleep: {
+        key: "sleep",
+        title: "Sleep",
+        section: "Sleep",
+        tone: "from-violet-400 to-purple-500",
+        empty: "No sleep logged in the last 24 hours.",
+      },
+      Toileting: {
+        key: "toileting",
+        title: "Toileting",
+        section: "Toileting",
+        tone: "from-cyan-400 to-blue-500",
+        empty: "No toileting logged in the last 24 hours.",
+      },
+      Health: {
+        key: "health",
+        title: "Health notes",
+        section: "Health",
+        tone: "from-teal-400 to-emerald-500",
+        empty: "No health notes logged in the last 24 hours.",
+      },
+      Behaviour: {
+        key: "behaviour",
+        title: "Behaviour",
+        section: "Behaviour",
+        tone: "from-orange-400 to-amber-500",
+        empty: "No behaviour logged in the last 24 hours.",
+      },
+      "Growth / Measurements": {
+        key: "measurements",
+        title: "Measurements",
+        section: "Growth / Measurements",
+        tone: "from-violet-400 to-purple-500",
+        empty: "No measurements logged in the last 24 hours.",
+      },
+      Appointments: {
+        key: "appointments",
+        title: "Appointments",
+        section: "Appointments",
+        tone: "from-indigo-400 to-blue-500",
+        empty: "No appointments logged in the last 24 hours.",
+      },
+      "Document Vault": {
+        key: "documents",
+        title: "Documents",
+        section: "Documents",
+        tone: "from-slate-500 to-indigo-600",
+        empty: "No documents added in the last 24 hours.",
+      },
     };
+
+    return configBySection[sectionTitle] || null;
+  };
+
+  const renderFormLastLoggedPanel = () => {
+    const view = getFormLastLoggedConfig(activeSection?.title);
+    if (!view) return null;
+
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const matchesView = (entry) => {
       if (view.key === "drink") {
@@ -12215,6 +12230,9 @@ export default function KaylenCareMonitorDashboard({
       }
       if (view.key === "measurements") {
         return isMeasurementEntry(entry);
+      }
+      if (view.key === "documents") {
+        return entry.section === "Documents" || entry.category === "Documents";
       }
       return entry.section === view.section || entry.section === view.key;
     };
@@ -12251,7 +12269,7 @@ export default function KaylenCareMonitorDashboard({
                 {view.title}
               </h4>
               <p className="mt-1 text-sm font-semibold leading-6 text-slate-600">
-                Entries recorded in the last 24 hours. Timeline filters are left unchanged.
+                Recent entries from the last 24 hours, shown here inside the form.
               </p>
             </div>
           </div>
@@ -14474,8 +14492,6 @@ export default function KaylenCareMonitorDashboard({
         return renderAppointmentsForm();
       case "Timeline":
         return renderUnifiedTimelineForm();
-      case "Last logged":
-        return renderLastLoggedForm();
       case "Calendar":
         return renderCalendarForm();
       default:
@@ -14989,16 +15005,6 @@ export default function KaylenCareMonitorDashboard({
                     Goal reached
                   </span>
                 ) : null}
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    openLastLoggedView("drink");
-                  }}
-                  className="relative z-10 mt-3 rounded-full border border-sky-200 bg-white/90 px-3 py-1.5 text-xs font-black text-sky-700 shadow-sm transition hover:bg-sky-50"
-                >
-                  Last logged
-                </button>
               </article>
             ) : null}
 
@@ -15088,13 +15094,6 @@ export default function KaylenCareMonitorDashboard({
                     No medication due right now.
                   </p>
                 )}
-                <button
-                  type="button"
-                  onClick={() => openLastLoggedView("Medication")}
-                  className="mt-3 rounded-full border border-rose-200 bg-white/90 px-3 py-1.5 text-xs font-black text-rose-700 shadow-sm transition hover:bg-rose-50"
-                >
-                  Last logged
-                </button>
               </article>
             ) : null}
           </div>
@@ -15130,46 +15129,6 @@ export default function KaylenCareMonitorDashboard({
                     </p>
                   </div>
                 </div>
-                {["food", "drink", "sleep", "toileting", "behaviour", "health", "measurements", "appointments"].includes(card.key) ? (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openLastLoggedView(
-                        card.key === "food"
-                          ? "food"
-                          : card.key === "drink"
-                            ? "drink"
-                            : card.key === "health"
-                              ? "health"
-                              : card.key === "measurements"
-                                ? "measurements"
-                                : card.section,
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        openLastLoggedView(
-                          card.key === "food"
-                            ? "food"
-                            : card.key === "drink"
-                              ? "drink"
-                              : card.key === "health"
-                                ? "health"
-                                : card.key === "measurements"
-                                  ? "measurements"
-                                  : card.section,
-                        );
-                      }
-                    }}
-                    className="mt-2 inline-flex rounded-full border border-white/80 bg-white/80 px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-slate-600 shadow-sm"
-                  >
-                    Last logged
-                  </span>
-                ) : null}
               </button>
             ))}
           </div>
@@ -15631,6 +15590,7 @@ export default function KaylenCareMonitorDashboard({
               </div>
 
               {renderActiveForm()}
+              {renderFormLastLoggedPanel()}
             </div>
           </div>
         </div>
