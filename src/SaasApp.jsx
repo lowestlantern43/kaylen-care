@@ -219,8 +219,8 @@ const publicPages = {
   "/": {
     title: "FamilyTrack - Simple Care Tracking for Families",
     description:
-      "FamilyTrack helps busy parents and carers log food, medication, sleep, toileting and health, then create clearer reports for doctors, school and reviews.",
-    h1: "FamilyTrack — simple care tracking for families",
+      "FamilyTrack helps parents and carers keep medication, sleep, hydration, behaviour and appointments organised in one secure place.",
+    h1: "When appointments ask questions you can't fully remember.",
     canonical: `${PRODUCTION_URL}/`,
     ogImage: `${PRODUCTION_URL}/screenshots/dashboard.png`,
   },
@@ -1769,32 +1769,28 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
               {page.h1}
             </h1>
             <p className="mt-5 max-w-2xl text-base font-medium leading-7 text-slate-600 sm:text-lg">
-              FamilyTrack is a simple care tracking app for busy parents and
-              carers, including SEN families and children with additional needs.
-              Record food, medication, sleep, toileting and health logs, then
-              turn daily notes into reports for doctors, school and reviews.
+              FamilyTrack helps parents and carers keep medication, sleep,
+              hydration, behaviour and appointments organised in one secure
+              place - built after years of managing hospital visits, routines,
+              medications and daily care needs.
             </p>
             <p className="mt-4 inline-flex rounded-full border border-sky-100 bg-white/80 px-4 py-2 text-sm font-black text-sky-800 shadow-sm">
               {trialDays}-day free trial. £{familyPrice}/month after trial unless cancelled.
             </p>
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <button type="button" onClick={onStartFree} className={buttonClass}>
-                Start tracking
+                Start free trial
               </button>
               <a
-                href="#reports-example"
+                href="#why-familytrack"
                 className={secondaryButtonClass}
               >
-                View reports example
+                See how it works
               </a>
-              <button
-                type="button"
-                onClick={onStartFree}
-                className="flex w-full items-center justify-center rounded-2xl border border-indigo-200 bg-indigo-50 px-5 py-4 text-base font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 sm:w-auto"
-              >
-                Try FamilyTrack
-              </button>
             </div>
+            <p className="mt-4 text-sm font-bold text-slate-500">
+              Designed for real families managing complex care routines.
+            </p>
           </div>
 
           <MarketingScreenshot
@@ -1822,27 +1818,80 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
         </div>
       </section>
 
-      <section className="bg-white px-5 py-12">
+      <section id="why-familytrack" className="bg-white px-5 py-12">
         <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2 lg:items-center">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
-              Built from real family life
+              Why it exists
             </p>
             <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
-              Designed by a parent, for everyday care
+              Why FamilyTrack exists
             </h2>
             <p className="mt-4 text-base font-medium leading-8 text-slate-600">
-              FamilyTrack was created from real family need. When care involves
-              food, drink, medication, sleep, toileting, routines, health notes
-              and important changes, small details can be hard to remember.
-              FamilyTrack helps keep those notes clear and shareable.
+              FamilyTrack was created after years of juggling appointments,
+              routines, medications, sleep tracking and daily care needs - while
+              constantly trying to remember important details during stressful
+              moments.
+            </p>
+            <p className="mt-4 text-base font-medium leading-8 text-slate-600">
+              What started as a personal tool quickly became something bigger:
+              a simple way to keep everything together in one place when life
+              feels overwhelming.
+            </p>
+            <p className="mt-4 text-base font-bold leading-8 text-slate-700">
+              Because when doctors, schools or specialists ask questions,
+              relying on memory alone is hard.
             </p>
           </div>
-          <MarketingScreenshot
-            src="/screenshots/logging-food.png"
-            alt="FamilyTrack food and drink logging form from the real app"
-            size="compact"
-          />
+          <div className="rounded-[2rem] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-6 shadow-sm">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
+              <span aria-hidden="true">♡</span>
+            </div>
+            <h3 className="mt-5 text-2xl font-black tracking-tight text-slate-950">
+              Built for the moments when memory is not enough
+            </h3>
+            <p className="mt-3 text-sm font-semibold leading-7 text-slate-600">
+              Keep the small details close: what happened, when it happened,
+              what helped, and what needs sharing later.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-12">
+        <div className="mx-auto max-w-6xl">
+          <div className="max-w-3xl">
+            <p className="text-sm font-bold uppercase tracking-[0.18em] text-sky-600">
+              Real life care routines
+            </p>
+            <h2 className="mt-3 text-3xl font-black tracking-tight text-slate-950">
+              Built for real life, not perfect routines.
+            </h2>
+          </div>
+          <div className="mt-6 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Medication", "Forgot when medication was last given?"],
+              ["Sleep", "Trying to remember sleep patterns at appointments?"],
+              ["Notes", "Keeping notes across paper, WhatsApp and phone reminders?"],
+              ["Reports", "Need quick reports for doctors, schools or carers?"],
+            ].map(([label, copy]) => (
+              <article
+                key={copy}
+                className="rounded-[1.5rem] border border-slate-200 bg-white p-5 shadow-sm"
+              >
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-indigo-50 text-xs font-black uppercase tracking-[0.12em] text-indigo-700">
+                  {label.slice(0, 2)}
+                </div>
+                <p className="mt-4 text-base font-black leading-6 text-slate-950">
+                  {copy}
+                </p>
+              </article>
+            ))}
+          </div>
+          <p className="mt-6 max-w-3xl text-base font-bold leading-7 text-slate-700">
+            FamilyTrack keeps everything together, so you're not relying on
+            memory when it matters.
+          </p>
         </div>
       </section>
 
@@ -1867,6 +1916,30 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
                 Try FamilyTrack
               </button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-5 py-6">
+        <div className="mx-auto max-w-6xl rounded-[1.5rem] border border-indigo-100 bg-white/90 p-4 shadow-sm">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              "No app install needed",
+              "Cancel anytime",
+              "Secure family accounts",
+              "Designed around real care routines",
+              "14-day free trial",
+            ].map((item) => (
+              <div
+                key={item}
+                className="flex items-center gap-2 rounded-2xl bg-indigo-50 px-3 py-3 text-sm font-black text-slate-700"
+              >
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-xs text-indigo-700 shadow-sm">
+                  ✓
+                </span>
+                <span>{item}</span>
+              </div>
+            ))}
           </div>
         </div>
       </section>
