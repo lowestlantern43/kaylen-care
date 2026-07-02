@@ -657,6 +657,233 @@ const sectionTheme = {
   },
 };
 
+const REPORT_BUILDER_LAYOUTS = [
+  { value: "summary", label: "Summary report" },
+  { value: "daily", label: "Daily log report" },
+  { value: "timeline", label: "Timeline report" },
+  { value: "table", label: "Table/export report" },
+  { value: "charts", label: "Charts/visual report" },
+];
+
+const REPORT_BUILDER_GROUP_OPTIONS = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "category", label: "Category" },
+  { value: "tag", label: "Tag/context" },
+];
+
+const REPORT_BUILDER_CATEGORY_OPTIONS = [
+  "Food",
+  "Drink",
+  "Medication",
+  "Toileting",
+  "Sleep",
+  "Health",
+  "Behaviour",
+  "Notes",
+  "Appointments",
+  "Measurements",
+];
+
+const REPORT_BUILDER_COLUMN_DEFINITIONS = [
+  { key: "date", label: "Date" },
+  { key: "time", label: "Time" },
+  { key: "child", label: "Child" },
+  { key: "category", label: "Category" },
+  { key: "summary", label: "Summary" },
+  { key: "amount", label: "Amount" },
+  { key: "status", label: "Status" },
+  { key: "duration", label: "Duration" },
+  { key: "quality", label: "Quality" },
+  { key: "severity", label: "Severity" },
+  { key: "location", label: "Location/context" },
+  { key: "notes", label: "Notes/details" },
+];
+
+const REPORT_BUILDER_DEFAULT_COLUMNS = [
+  "date",
+  "time",
+  "category",
+  "summary",
+  "status",
+  "notes",
+];
+
+const REPORT_BUILDER_PRESETS = [
+  {
+    id: "food-drink-summary",
+    name: "Food & Drink Summary",
+    layout: "summary",
+    groupBy: "day",
+    categories: ["Food", "Drink"],
+    columns: ["date", "time", "category", "summary", "amount", "notes"],
+  },
+  {
+    id: "medication-log",
+    name: "Medication Log",
+    layout: "table",
+    groupBy: "day",
+    categories: ["Medication"],
+    columns: ["date", "time", "summary", "status", "notes"],
+  },
+  {
+    id: "toileting-report",
+    name: "Toileting Report",
+    layout: "daily",
+    groupBy: "day",
+    categories: ["Toileting"],
+    columns: ["date", "time", "summary", "status", "notes"],
+  },
+  {
+    id: "health-seizure-timeline",
+    name: "Health/Seizure Timeline",
+    layout: "timeline",
+    groupBy: "category",
+    categories: ["Health", "Behaviour"],
+    columns: ["date", "time", "category", "summary", "severity", "location", "notes"],
+  },
+  {
+    id: "full-daily-diary",
+    name: "Full Daily Diary",
+    layout: "daily",
+    groupBy: "day",
+    categories: [...REPORT_BUILDER_CATEGORY_OPTIONS],
+    columns: REPORT_BUILDER_DEFAULT_COLUMNS,
+  },
+];
+
+const getReportBuilderCategory = (entry) => {
+  if (isMeasurementEntry(entry)) return "Measurements";
+  if (entry?.section === "Food Diary") return entry?.isMilk ? "Drink" : "Food";
+  if (entry?.section === "General Notes") return "Notes";
+  return entry?.section || "Notes";
+};
+
+const getReportBuilderDetailsText = (entry) =>
+  [
+    ...(Array.isArray(entry?.details) ? entry.details : []),
+    entry?.notes,
+    entry?.detail,
+    entry?.description,
+    entry?.location,
+    entry?.behaviourType,
+    Array.isArray(entry?.triggers) ? entry.triggers.join(", ") : entry?.triggers,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+
+const getReportBuilderFieldValue = (entry, fieldKey, childName = "") => {
+  const category = getReportBuilderCategory(entry);
+  const detailText = getReportBuilderDetailsText(entry);
+  const fluidMl = getFluidMlFromEntry(entry);
+
+  switch (fieldKey) {
+    case "date":
+      return entry?.date || "";
+    case "time":
+      return entry?.time || "";
+    case "child":
+      return childName || "";
+    case "category":
+      return category;
+    case "summary":
+      return entry?.summary || entry?.event || entry?.type || category;
+    case "amount":
+      if (fluidMl > 0) return `${Math.round(fluidMl)}ml`;
+      return [entry?.amount, entry?.dose, entry?.doseAmount, entry?.intakeStatus]
+        .filter(Boolean)
+        .join(" ");
+    case "status":
+      return (
+        entry?.medicationStatus ||
+        entry?.status ||
+        entry?.intakeStatus ||
+        entry?.result ||
+        entry?.quality ||
+        ""
+      );
+    case "duration":
+      return entry?.durationMinutes ? formatHoursMinutes(entry.durationMinutes) : entry?.duration || "";
+    case "quality":
+      return entry?.quality || "";
+    case "severity":
+      return entry?.severity ? `Severity ${entry.severity}` : "";
+    case "location":
+      return entry?.location || detailText.match(/Location:\s*([^|]+)/i)?.[1]?.trim() || "";
+    case "notes":
+      return detailText;
+    default:
+      return "";
+  }
+};
+
+const getReportBuilderSearchText = (entry) =>
+  [
+    getReportBuilderCategory(entry),
+    entry?.section,
+    entry?.summary,
+    entry?.event,
+    entry?.type,
+    entry?.status,
+    entry?.medicationStatus,
+    entry?.intakeStatus,
+    getReportBuilderDetailsText(entry),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const getReportBuilderTimeOfDay = (entry) => {
+  const hour = Number(String(entry?.time || "").slice(0, 2));
+  if (!Number.isFinite(hour)) return "unknown";
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 18) return "afternoon";
+  if (hour >= 18) return "evening";
+  return "overnight";
+};
+
+const getReportBuilderGroupKey = (entry, groupBy) => {
+  if (groupBy === "category") return getReportBuilderCategory(entry);
+  if (groupBy === "tag") {
+    const category = getReportBuilderCategory(entry);
+    if (entry?.behaviourType) return entry.behaviourType;
+    if (entry?.appointmentCategory) return entry.appointmentCategory;
+    if (entry?.medicationStatus) return `${category}: ${entry.medicationStatus}`;
+    if (entry?.quality) return `${category}: ${entry.quality}`;
+    return category;
+  }
+  const parsed = parseDisplayDate(entry?.date);
+  if (groupBy === "week" && parsed) {
+    const weekStart = new Date(parsed);
+    const day = weekStart.getDay() || 7;
+    weekStart.setDate(weekStart.getDate() - day + 1);
+    return `Week of ${weekStart.toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    })}`;
+  }
+  return entry?.date || "Undated";
+};
+
+const createReportBuilderGroups = (entries, groupBy) => {
+  const groups = new Map();
+  entries.forEach((entry) => {
+    const key = getReportBuilderGroupKey(entry, groupBy);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(entry);
+  });
+  return Array.from(groups.entries()).map(([label, items]) => ({
+    label,
+    entries: items,
+  }));
+};
+
+const escapeCsvCell = (value) => {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+};
+
 const getDefaultDoseForMedicine = (medicine) => {
   switch ((medicine || "").trim()) {
     case "Kepra (Levetiracetam)":
@@ -789,6 +1016,43 @@ export default function KaylenCareMonitorDashboard({
     attachmentType: "trends",
     confirmed: false,
   });
+  const reportBuilderTemplateStorageKey = `familytrack:report-builder-templates:${
+    familyId || "local"
+  }:${childId || "current-child"}`;
+  const [reportBuilderFilters, setReportBuilderFilters] = useState(() => {
+    const start = new Date();
+    start.setDate(start.getDate() - 29);
+    return {
+      startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(
+        2,
+        "0",
+      )}-${String(start.getDate()).padStart(2, "0")}`,
+      endDate: todayIsoValue(),
+      categories: [...REPORT_BUILDER_CATEGORY_OPTIONS],
+      child: "current",
+      tags: "",
+      timeOfDay: "all",
+      location: "",
+    };
+  });
+  const [reportBuilderLayout, setReportBuilderLayout] = useState("summary");
+  const [reportBuilderGroupBy, setReportBuilderGroupBy] = useState("day");
+  const [reportBuilderColumns, setReportBuilderColumns] = useState(
+    REPORT_BUILDER_DEFAULT_COLUMNS,
+  );
+  const [reportBuilderTemplateName, setReportBuilderTemplateName] = useState("");
+  const [reportBuilderSavedTemplates, setReportBuilderSavedTemplates] = useState(
+    () => {
+      try {
+        const saved = JSON.parse(
+          safeLocalStorageGet(reportBuilderTemplateStorageKey) || "[]",
+        );
+        return Array.isArray(saved) ? saved : [];
+      } catch {
+        return [];
+      }
+    },
+  );
   const [documents, setDocuments] = useState([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [isUploadingDocument, setIsUploadingDocument] = useState(false);
@@ -840,6 +1104,7 @@ export default function KaylenCareMonitorDashboard({
 
   const [activeSaveAction, setActiveSaveAction] = useState("");
   const saveLockRef = useRef(false);
+  const reportBuilderPreviewRef = useRef(null);
   const [reportOverviewIndex, setReportOverviewIndex] = useState(0);
   const offlineQueueKey = `familytrack:offline-log-queue:${familyId || "legacy"}`;
   const careSnapshotPromptKey = `familytrack:care-snapshot-prompt-dismissed:${familyId || "legacy"}:${childId || "legacy"}`;
@@ -3414,6 +3679,242 @@ export default function KaylenCareMonitorDashboard({
     reportRangeStart,
     sharedLog,
   ]);
+
+  const reportBuilderFilteredEntries = useMemo(() => {
+    const start = parseIsoDate(reportBuilderFilters.startDate);
+    const end = parseIsoDate(reportBuilderFilters.endDate, true);
+    const selectedCategories = new Set(reportBuilderFilters.categories || []);
+    const tagSearch = String(reportBuilderFilters.tags || "").trim().toLowerCase();
+    const locationSearch = String(reportBuilderFilters.location || "").trim().toLowerCase();
+
+    return sharedLog
+      .filter((entry) => {
+        const parsed = getEntryDateTime(entry);
+        if (!parsed) return false;
+        if (start && parsed < start) return false;
+        if (end && parsed > end) return false;
+
+        const category = getReportBuilderCategory(entry);
+        if (selectedCategories.size && !selectedCategories.has(category)) {
+          return false;
+        }
+
+        if (
+          reportBuilderFilters.timeOfDay !== "all" &&
+          getReportBuilderTimeOfDay(entry) !== reportBuilderFilters.timeOfDay
+        ) {
+          return false;
+        }
+
+        const searchText = getReportBuilderSearchText(entry);
+        if (tagSearch && !searchText.includes(tagSearch)) return false;
+        if (locationSearch && !searchText.includes(locationSearch)) return false;
+
+        return true;
+      })
+      .sort((entryA, entryB) => {
+        const dateA = getEntryDateTime(entryA)?.getTime() || 0;
+        const dateB = getEntryDateTime(entryB)?.getTime() || 0;
+        if (dateA !== dateB) return dateA - dateB;
+        return String(entryA.time || "").localeCompare(String(entryB.time || ""));
+      });
+  }, [reportBuilderFilters, sharedLog]);
+
+  const reportBuilderGroups = useMemo(
+    () => createReportBuilderGroups(reportBuilderFilteredEntries, reportBuilderGroupBy),
+    [reportBuilderFilteredEntries, reportBuilderGroupBy],
+  );
+
+  const reportBuilderStats = useMemo(() => {
+    const byCategory = REPORT_BUILDER_CATEGORY_OPTIONS.map((category) => ({
+      category,
+      count: reportBuilderFilteredEntries.filter(
+        (entry) => getReportBuilderCategory(entry) === category,
+      ).length,
+    })).filter((item) => item.count > 0);
+    const daysWithEntries = new Set(
+      reportBuilderFilteredEntries.map((entry) => entry.date).filter(Boolean),
+    ).size;
+    const fluidTotal = reportBuilderFilteredEntries.reduce(
+      (sum, entry) => sum + getFluidMlFromEntry(entry),
+      0,
+    );
+    const medicationSkipped = reportBuilderFilteredEntries.filter(
+      (entry) =>
+        getReportBuilderCategory(entry) === "Medication" &&
+        String(entry.medicationStatus || entry.status || "")
+          .toLowerCase()
+          .includes("skipped"),
+    ).length;
+    const sleepEntries = reportBuilderFilteredEntries.filter(
+      (entry) =>
+        getReportBuilderCategory(entry) === "Sleep" &&
+        toFiniteNumber(entry.durationMinutes) > 0,
+    );
+    const averageSleepMinutes = sleepEntries.length
+      ? sleepEntries.reduce((sum, entry) => sum + toFiniteNumber(entry.durationMinutes), 0) /
+        sleepEntries.length
+      : 0;
+
+    return {
+      total: reportBuilderFilteredEntries.length,
+      daysWithEntries,
+      byCategory,
+      fluidTotal,
+      medicationSkipped,
+      averageSleepMinutes,
+    };
+  }, [reportBuilderFilteredEntries]);
+
+  const updateReportBuilderFilter = (key, value) => {
+    setReportBuilderFilters((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  };
+
+  const setReportBuilderPresetRange = (days) => {
+    const end = todayIsoValue();
+    const start = new Date();
+    start.setDate(start.getDate() - days + 1);
+    updateReportBuilderFilter("startDate", `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`);
+    updateReportBuilderFilter("endDate", end);
+  };
+
+  const toggleReportBuilderCategory = (category) => {
+    setReportBuilderFilters((current) => {
+      const categories = current.categories || [];
+      const next = categories.includes(category)
+        ? categories.filter((item) => item !== category)
+        : [...categories, category];
+      return {
+        ...current,
+        categories: next,
+      };
+    });
+  };
+
+  const toggleReportBuilderColumn = (columnKey) => {
+    setReportBuilderColumns((current) =>
+      current.includes(columnKey)
+        ? current.filter((item) => item !== columnKey)
+        : [...current, columnKey],
+    );
+  };
+
+  const moveReportBuilderColumn = (columnKey, direction) => {
+    setReportBuilderColumns((current) => {
+      const index = current.indexOf(columnKey);
+      if (index < 0) return current;
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
+      const next = [...current];
+      const [item] = next.splice(index, 1);
+      next.splice(nextIndex, 0, item);
+      return next;
+    });
+  };
+
+  const applyReportBuilderTemplate = (template) => {
+    if (!template) return;
+    setReportBuilderLayout(template.layout || "summary");
+    setReportBuilderGroupBy(template.groupBy || "day");
+    setReportBuilderColumns(template.columns?.length ? template.columns : REPORT_BUILDER_DEFAULT_COLUMNS);
+    setReportBuilderFilters((current) => ({
+      ...current,
+      categories: template.categories?.length
+        ? template.categories
+        : [...REPORT_BUILDER_CATEGORY_OPTIONS],
+    }));
+  };
+
+  const saveReportBuilderTemplate = () => {
+    const name = reportBuilderTemplateName.trim();
+    if (!name) {
+      showToast?.({ message: "Add a template name before saving.", type: "info" });
+      return;
+    }
+    const template = {
+      id: safeRandomId(),
+      name,
+      layout: reportBuilderLayout,
+      groupBy: reportBuilderGroupBy,
+      categories: reportBuilderFilters.categories,
+      columns: reportBuilderColumns,
+    };
+    const next = [...reportBuilderSavedTemplates, template];
+    setReportBuilderSavedTemplates(next);
+    safeLocalStorageSet(reportBuilderTemplateStorageKey, JSON.stringify(next));
+    setReportBuilderTemplateName("");
+    showToast?.({ message: "Report template saved.", type: "success" });
+  };
+
+  const exportReportBuilderCsv = () => {
+    const columns = reportBuilderColumns.length
+      ? reportBuilderColumns
+      : REPORT_BUILDER_DEFAULT_COLUMNS;
+    const header = columns.map(
+      (columnKey) =>
+        REPORT_BUILDER_COLUMN_DEFINITIONS.find((column) => column.key === columnKey)
+          ?.label || columnKey,
+    );
+    const rows = reportBuilderFilteredEntries.map((entry) =>
+      columns.map((columnKey) =>
+        getReportBuilderFieldValue(entry, columnKey, childName),
+      ),
+    );
+    const csv = [header, ...rows]
+      .map((row) => row.map(escapeCsvCell).join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const printReportBuilder = () => {
+    window.print();
+  };
+
+  const exportReportBuilderPdf = async () => {
+    if (!reportBuilderPreviewRef.current) return;
+    setIsExportingPdf(true);
+    try {
+      const canvas = await html2canvas(reportBuilderPreviewRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+      });
+      const pdf = new jsPDF("p", "mm", "a4");
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const imageWidth = pageWidth;
+      const imageHeight = (canvas.height * imageWidth) / canvas.width;
+      let heightLeft = imageHeight;
+      let position = 0;
+      const imageData = canvas.toDataURL("image/png");
+      pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
+      heightLeft -= pageHeight;
+      while (heightLeft > 0) {
+        position = heightLeft - imageHeight;
+        pdf.addPage();
+        pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
+        heightLeft -= pageHeight;
+      }
+      pdf.save(`familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.pdf`);
+    } catch (error) {
+      console.error("Report builder PDF export failed", error);
+      showToast?.({
+        message: "PDF export could not be created. Please try print or CSV.",
+        type: "error",
+      });
+    } finally {
+      setIsExportingPdf(false);
+    }
+  };
 
   const childDob = childDetails?.dateOfBirth || childDetails?.date_of_birth || "";
   const childAge = calculateAge(childDob);
@@ -13552,6 +14053,669 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
+  const renderDesktopReportBuilder = (reportInputClassName) => {
+    const visibleColumns = reportBuilderColumns.length
+      ? reportBuilderColumns
+      : REPORT_BUILDER_DEFAULT_COLUMNS;
+    const visibleColumnDefinitions = visibleColumns
+      .map((columnKey) =>
+        REPORT_BUILDER_COLUMN_DEFINITIONS.find((column) => column.key === columnKey),
+      )
+      .filter(Boolean);
+    const reportBuilderInvalidRange =
+      reportBuilderFilters.startDate &&
+      reportBuilderFilters.endDate &&
+      parseIsoDate(reportBuilderFilters.startDate) >
+        parseIsoDate(reportBuilderFilters.endDate, true);
+    const maxCategoryCount = Math.max(
+      1,
+      ...reportBuilderStats.byCategory.map((item) => item.count),
+    );
+    const rangeLabel =
+      reportBuilderFilters.startDate && reportBuilderFilters.endDate
+        ? `${formatLongDateFromIso(reportBuilderFilters.startDate)} to ${formatLongDateFromIso(
+            reportBuilderFilters.endDate,
+          )}`
+        : "Custom date range";
+    const allTemplates = [
+      ...REPORT_BUILDER_PRESETS,
+      ...reportBuilderSavedTemplates.map((template) => ({
+        ...template,
+        isSaved: true,
+      })),
+    ];
+
+    const renderBuilderEntry = (entry) => {
+      const category = getReportBuilderCategory(entry);
+      const theme = sectionTheme[entry.section] || {
+        badge: "bg-slate-100 text-slate-700",
+        report: "border-slate-100 bg-slate-50",
+      };
+      return (
+        <article
+          key={entry.id || `${entry.date}-${entry.time}-${entry.summary}`}
+          className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-[0.12em] ${
+                    theme.badge
+                  }`}
+                >
+                  {category}
+                </span>
+                <span className="text-xs font-bold text-slate-500">
+                  {entry.date || "No date"} {entry.time ? `· ${entry.time}` : ""}
+                </span>
+              </div>
+              <h4 className="mt-2 text-sm font-black leading-6 text-slate-950">
+                {getReportBuilderFieldValue(entry, "summary", childName)}
+              </h4>
+              {getReportBuilderFieldValue(entry, "notes", childName) ? (
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  {getReportBuilderFieldValue(entry, "notes", childName)}
+                </p>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2 text-xs font-bold text-slate-600">
+              {["status", "amount", "duration", "severity"].map((fieldKey) => {
+                const value = getReportBuilderFieldValue(entry, fieldKey, childName);
+                return value ? (
+                  <span
+                    key={fieldKey}
+                    className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1"
+                  >
+                    {value}
+                  </span>
+                ) : null;
+              })}
+            </div>
+          </div>
+        </article>
+      );
+    };
+
+    const renderBuilderPreviewContent = () => {
+      if (reportBuilderInvalidRange) {
+        return (
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-8 text-center">
+            <p className="text-base font-black text-rose-900">
+              The start date is after the end date.
+            </p>
+            <p className="mt-2 text-sm font-semibold text-rose-700">
+              Adjust the date range to build this report.
+            </p>
+          </div>
+        );
+      }
+
+      if (!reportBuilderFilteredEntries.length) {
+        return (
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-slate-50/80 p-8 text-center">
+            <p className="text-base font-black text-slate-900">
+              No entries match these filters.
+            </p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+              Try widening the date range, selecting more categories, or clearing the tag/location filters.
+            </p>
+          </div>
+        );
+      }
+
+      if (reportBuilderLayout === "table") {
+        return (
+          <div className="overflow-x-auto rounded-2xl border border-slate-200">
+            <table className="min-w-full divide-y divide-slate-200 bg-white text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  {visibleColumnDefinitions.map((column) => (
+                    <th
+                      key={column.key}
+                      className="px-4 py-3 text-left text-[11px] font-black uppercase tracking-[0.14em] text-slate-500"
+                    >
+                      {column.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {reportBuilderFilteredEntries.map((entry) => (
+                  <tr key={entry.id || `${entry.date}-${entry.time}-${entry.summary}`}>
+                    {visibleColumns.map((columnKey) => (
+                      <td
+                        key={columnKey}
+                        className="max-w-[18rem] px-4 py-3 align-top text-sm font-semibold leading-6 text-slate-700"
+                      >
+                        {getReportBuilderFieldValue(entry, columnKey, childName) || "-"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      }
+
+      if (reportBuilderLayout === "charts") {
+        return (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Entries by category
+              </p>
+              <div className="mt-4 space-y-3">
+                {reportBuilderStats.byCategory.map((item) => (
+                  <div key={item.category}>
+                    <div className="flex items-center justify-between text-xs font-black text-slate-600">
+                      <span>{item.category}</span>
+                      <span>{item.count}</span>
+                    </div>
+                    <div className="mt-1 h-3 rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-sky-500"
+                        style={{
+                          width: `${Math.max(8, (item.count / maxCategoryCount) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-500">
+                Useful totals
+              </p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                {[
+                  ["Total entries", reportBuilderStats.total],
+                  ["Days with entries", reportBuilderStats.daysWithEntries],
+                  ["Fluid logged", reportBuilderStats.fluidTotal ? `${Math.round(reportBuilderStats.fluidTotal)}ml` : "No fluid amounts"],
+                  ["Avg sleep", reportBuilderStats.averageSleepMinutes ? formatHoursMinutes(reportBuilderStats.averageSleepMinutes) : "No completed sleep"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-[0.12em] text-slate-500">
+                      {label}
+                    </p>
+                    <p className="mt-1 text-lg font-black text-slate-950">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        );
+      }
+
+      if (reportBuilderLayout === "timeline") {
+        return (
+          <div className="space-y-3">
+            {reportBuilderFilteredEntries.map((entry) => (
+              <div
+                key={entry.id || `${entry.date}-${entry.time}-${entry.summary}`}
+                className="relative rounded-2xl border border-slate-200 bg-white p-4 pl-6 shadow-sm before:absolute before:left-3 before:top-5 before:h-[calc(100%-2.5rem)] before:w-1 before:rounded-full before:bg-indigo-200"
+              >
+                {renderBuilderEntry(entry)}
+              </div>
+            ))}
+          </div>
+        );
+      }
+
+      return (
+        <div className="space-y-4">
+          {reportBuilderGroups.map((group) => (
+            <section
+              key={group.label}
+              className="rounded-3xl border border-slate-200 bg-slate-50/70 p-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h4 className="text-base font-black text-slate-950">{group.label}</h4>
+                <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-slate-600 shadow-sm">
+                  {group.entries.length} entr{group.entries.length === 1 ? "y" : "ies"}
+                </span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {reportBuilderLayout === "summary"
+                  ? group.entries.slice(0, 5).map(renderBuilderEntry)
+                  : group.entries.map(renderBuilderEntry)}
+              </div>
+              {reportBuilderLayout === "summary" && group.entries.length > 5 ? (
+                <p className="mt-3 text-xs font-bold text-slate-500">
+                  {group.entries.length - 5} more entries included in the totals.
+                </p>
+              ) : null}
+            </section>
+          ))}
+        </div>
+      );
+    };
+
+    return (
+      <section className="rounded-[2rem] border border-slate-200 bg-slate-50/80 p-3 shadow-sm sm:p-4">
+        <style>{`
+          @media print {
+            body * { visibility: hidden; }
+            [data-report-builder-preview], [data-report-builder-preview] * { visibility: visible; }
+            [data-report-builder-preview] {
+              position: absolute;
+              inset: 0 auto auto 0;
+              width: 100%;
+              padding: 24px;
+              background: white;
+            }
+          }
+        `}</style>
+        <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
+              Desktop Reports
+            </p>
+            <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
+              Report Builder
+            </h3>
+            <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
+              Build professional reports from one shared care-log data layer, then print,
+              export PDF, or download CSV.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={printReportBuilder}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
+            >
+              Print
+            </button>
+            <button
+              type="button"
+              onClick={exportReportBuilderCsv}
+              disabled={!reportBuilderFilteredEntries.length}
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              CSV
+            </button>
+            <button
+              type="button"
+              onClick={exportReportBuilderPdf}
+              disabled={isExportingPdf || !reportBuilderFilteredEntries.length}
+              className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {isExportingPdf ? "Exporting..." : "Export PDF"}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
+          <aside className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Person / child
+              </label>
+              {children.length > 1 && onSelectChild ? (
+                <select
+                  className={reportInputClassName}
+                  value={selectedChildId || childId || ""}
+                  onChange={(event) => onSelectChild(event.target.value)}
+                >
+                  {children.map((child) => {
+                    const id = child.id || child.child_id || child.childId;
+                    return (
+                      <option key={id} value={id}>
+                        {child.name || child.child_name || child.childName || "Child"}
+                      </option>
+                    );
+                  })}
+                </select>
+              ) : (
+                <div className="mt-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-black text-slate-700">
+                  {childName}
+                </div>
+              )}
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <div>
+                <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                  Start date
+                </label>
+                <input
+                  type="date"
+                  className={reportInputClassName}
+                  value={reportBuilderFilters.startDate}
+                  onChange={(event) =>
+                    updateReportBuilderFilter("startDate", event.target.value)
+                  }
+                />
+              </div>
+              <div>
+                <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                  End date
+                </label>
+                <input
+                  type="date"
+                  className={reportInputClassName}
+                  value={reportBuilderFilters.endDate}
+                  onChange={(event) =>
+                    updateReportBuilderFilter("endDate", event.target.value)
+                  }
+                />
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {[7, 14, 30].map((days) => (
+                <button
+                  key={days}
+                  type="button"
+                  onClick={() => setReportBuilderPresetRange(days)}
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-white"
+                >
+                  {days} days
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                  Categories
+                </label>
+                <button
+                  type="button"
+                  onClick={() =>
+                    updateReportBuilderFilter("categories", [
+                      ...REPORT_BUILDER_CATEGORY_OPTIONS,
+                    ])
+                  }
+                  className="text-xs font-black text-indigo-700"
+                >
+                  Select all
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {REPORT_BUILDER_CATEGORY_OPTIONS.map((category) => (
+                  <label
+                    key={category}
+                    className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-3 py-2 text-xs font-black transition ${
+                      reportBuilderFilters.categories.includes(category)
+                        ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                        : "border-slate-200 bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300"
+                      checked={reportBuilderFilters.categories.includes(category)}
+                      onChange={() => toggleReportBuilderCategory(category)}
+                    />
+                    {category}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Time of day
+              </label>
+              <select
+                className={reportInputClassName}
+                value={reportBuilderFilters.timeOfDay}
+                onChange={(event) =>
+                  updateReportBuilderFilter("timeOfDay", event.target.value)
+                }
+              >
+                <option value="all">Any time</option>
+                <option value="overnight">Overnight</option>
+                <option value="morning">Morning</option>
+                <option value="afternoon">Afternoon</option>
+                <option value="evening">Evening</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Tags / keywords
+              </label>
+              <input
+                className={reportInputClassName}
+                value={reportBuilderFilters.tags}
+                onChange={(event) =>
+                  updateReportBuilderFilter("tags", event.target.value)
+                }
+                placeholder="e.g. seizure, school, refused"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Location / context
+              </label>
+              <input
+                className={reportInputClassName}
+                value={reportBuilderFilters.location}
+                onChange={(event) =>
+                  updateReportBuilderFilter("location", event.target.value)
+                }
+                placeholder="e.g. home, school, hospital"
+              />
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                Saved reports
+              </p>
+              <div className="mt-3 space-y-2">
+                {allTemplates.map((template) => (
+                  <button
+                    key={template.id}
+                    type="button"
+                    onClick={() => applyReportBuilderTemplate(template)}
+                    className="block w-full rounded-xl border border-white bg-white px-3 py-2 text-left text-xs font-black text-slate-700 shadow-sm transition hover:border-indigo-200 hover:text-indigo-700"
+                  >
+                    {template.name}
+                    {template.isSaved ? (
+                      <span className="ml-2 text-[10px] uppercase tracking-[0.12em] text-slate-400">
+                        saved
+                      </span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </aside>
+
+          <main className="min-w-0 space-y-4">
+            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    Preview controls
+                  </p>
+                  <h4 className="mt-1 text-lg font-black text-slate-950">
+                    {REPORT_BUILDER_LAYOUTS.find(
+                      (layout) => layout.value === reportBuilderLayout,
+                    )?.label || "Report preview"}
+                  </h4>
+                  <p className="mt-1 text-sm font-semibold text-slate-500">
+                    {rangeLabel} · {reportBuilderStats.total} matching entr
+                    {reportBuilderStats.total === 1 ? "y" : "ies"}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {REPORT_BUILDER_LAYOUTS.map((layout) => (
+                    <button
+                      key={layout.value}
+                      type="button"
+                      onClick={() => setReportBuilderLayout(layout.value)}
+                      className={`rounded-full px-3 py-2 text-xs font-black transition ${
+                        reportBuilderLayout === layout.value
+                          ? "bg-indigo-600 text-white shadow-sm"
+                          : "border border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
+                      }`}
+                    >
+                      {layout.label.replace(" report", "")}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr]">
+                <div>
+                  <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    Group by
+                  </label>
+                  <select
+                    className={reportInputClassName}
+                    value={reportBuilderGroupBy}
+                    onChange={(event) => setReportBuilderGroupBy(event.target.value)}
+                  >
+                    {REPORT_BUILDER_GROUP_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
+                    Save current template
+                  </label>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      className="block min-h-[44px] min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200"
+                      value={reportBuilderTemplateName}
+                      onChange={(event) => setReportBuilderTemplateName(event.target.value)}
+                      placeholder="Template name"
+                    />
+                    <button
+                      type="button"
+                      onClick={saveReportBuilderTemplate}
+                      className="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-black text-white shadow-sm transition hover:bg-indigo-700"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <details className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                <summary className="cursor-pointer text-sm font-black text-slate-700">
+                  Choose and reorder columns
+                </summary>
+                <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                  {REPORT_BUILDER_COLUMN_DEFINITIONS.map((column) => (
+                    <div
+                      key={column.key}
+                      className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2"
+                    >
+                      <label className="flex cursor-pointer items-center gap-2 text-xs font-black text-slate-700">
+                        <input
+                          type="checkbox"
+                          checked={reportBuilderColumns.includes(column.key)}
+                          onChange={() => toggleReportBuilderColumn(column.key)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        {column.label}
+                      </label>
+                      {reportBuilderColumns.includes(column.key) ? (
+                        <div className="flex gap-1">
+                          <button
+                            type="button"
+                            onClick={() => moveReportBuilderColumn(column.key, -1)}
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-black text-slate-500"
+                          >
+                            Up
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveReportBuilderColumn(column.key, 1)}
+                            className="rounded-lg border border-slate-200 px-2 py-1 text-xs font-black text-slate-500"
+                          >
+                            Down
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            </div>
+
+            <div
+              ref={reportBuilderPreviewRef}
+              data-report-builder-preview
+              className="min-h-[38rem] rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm"
+            >
+              <div className="border-b border-slate-200 pb-4">
+                <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-700">
+                  Kaylen's Diary
+                </p>
+                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="text-2xl font-black tracking-tight text-slate-950">
+                      {REPORT_BUILDER_LAYOUTS.find(
+                        (layout) => layout.value === reportBuilderLayout,
+                      )?.label || "Care report"}
+                    </h3>
+                    <p className="mt-1 text-sm font-semibold text-slate-600">
+                      {childName} · {rangeLabel}
+                    </p>
+                  </div>
+                  <p className="text-xs font-bold text-slate-500">
+                    Generated {new Date().toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ["Entries", reportBuilderStats.total, "Matching filters"],
+                  ["Days", reportBuilderStats.daysWithEntries, "With logged data"],
+                  [
+                    "Fluids",
+                    reportBuilderStats.fluidTotal
+                      ? `${Math.round(reportBuilderStats.fluidTotal)}ml`
+                      : "No amounts",
+                    "Drink entries only",
+                  ],
+                  [
+                    "Sleep avg",
+                    reportBuilderStats.averageSleepMinutes
+                      ? formatHoursMinutes(reportBuilderStats.averageSleepMinutes)
+                      : "No data",
+                    "Completed sleep only",
+                  ],
+                ].map(([label, value, meta]) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3"
+                  >
+                    <p className="text-[10px] font-black uppercase tracking-[0.13em] text-slate-500">
+                      {label}
+                    </p>
+                    <p className="mt-1 text-xl font-black text-slate-950">{value}</p>
+                    <p className="mt-1 text-xs font-bold text-slate-500">{meta}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5">{renderBuilderPreviewContent()}</div>
+            </div>
+          </main>
+        </div>
+      </section>
+    );
+  };
+
   const renderShareableReportsForm = () => {
     const reportInputClassName =
       "mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
@@ -14120,7 +15284,9 @@ export default function KaylenCareMonitorDashboard({
       <>
         {renderPdfExportArea()}
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-6 space-y-6">
+          {renderDesktopReportBuilder(reportInputClassName)}
+
           <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
             <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-900 p-4 text-white sm:p-5">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -15562,7 +16728,11 @@ export default function KaylenCareMonitorDashboard({
           <div className="flex min-h-full items-start justify-center py-2 md:items-center md:py-4">
             <div
               className={`relative my-auto w-full rounded-[2rem] border border-slate-200 bg-white p-4 shadow-2xl sm:p-5 md:p-8 ${
-                isReportsOpen ? "max-w-5xl" : "max-w-2xl"
+                activeSection?.title === "Reports"
+                  ? "max-w-7xl"
+                  : isReportsOpen
+                    ? "max-w-5xl"
+                    : "max-w-2xl"
               }`}
             >
               <button
