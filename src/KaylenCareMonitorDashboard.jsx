@@ -15282,8 +15282,6 @@ export default function KaylenCareMonitorDashboard({
 
     return (
       <>
-        {renderPdfExportArea()}
-
         <div className="mt-6 space-y-6">
           {renderDesktopReportBuilder(reportInputClassName)}
 
@@ -15297,6 +15295,11 @@ export default function KaylenCareMonitorDashboard({
                   <h3 className="mt-2 text-2xl font-black tracking-tight">
                     Full Care Report
                   </h3>
+                  <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/15 px-4 py-3 text-sm font-bold leading-6 text-sky-50">
+                    New desktop Report Builder is now at the top of this Reports
+                    screen, with filters, layouts, columns, saved templates,
+                    print, PDF and CSV export.
+                  </div>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-sky-50/90">
                     A clear summary of care logs, trends, and detailed records
                     for the selected period.
@@ -15622,6 +15625,7 @@ export default function KaylenCareMonitorDashboard({
           </section>
 
         </div>
+        {renderPdfExportArea()}
         {renderReportEmailModal(reportInputClassName)}
 
       </>
