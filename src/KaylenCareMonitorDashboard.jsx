@@ -16333,6 +16333,40 @@ export default function KaylenCareMonitorDashboard({
             </div>
           ) : null}
         </div>
+
+        {isModuleEnabled("reports") ? (
+          <section className="mb-4 hidden rounded-[1.65rem] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4 shadow-sm md:block">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 text-white shadow-sm">
+                  {renderSectionIcon("Reports", "h-6 w-6")}
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-700">
+                    Desktop reports
+                  </p>
+                  <h2 className="mt-1 text-lg font-black text-slate-950">
+                    Build school, medical and EHCP reports
+                  </h2>
+                  <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
+                    Open the desktop Report Builder for filters, saved templates,
+                    custom columns, PDF, print and CSV export.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() =>
+                  openSection(sections.find((section) => section.title === "Reports"))
+                }
+                className="w-full rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-sm transition hover:bg-indigo-700 lg:w-auto"
+              >
+                Open Report Builder
+              </button>
+            </div>
+          </section>
+        ) : null}
+
         <section className="hidden">
           {orderedSections.map((section) => {
             const latestLines =
