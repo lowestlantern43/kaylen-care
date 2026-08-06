@@ -4413,36 +4413,7 @@ export default function KaylenCareMonitorDashboard({
       };
     });
 
-    const actionItems = [
-      {
-        id: "timeline-care-snapshot",
-        kind: "action",
-        category: "Reports / Snapshot",
-        childId,
-        childName,
-        dateObject: new Date(),
-        title: "Care Snapshot",
-        summary: "Open the latest 72-hour emergency handover summary.",
-        details: ["Useful for hospital, school, carer and professional handovers."],
-        searchText: "care snapshot 72 hour emergency handover report",
-        type: "Snapshot",
-      },
-      {
-        id: "timeline-full-report",
-        kind: "action",
-        category: "Reports / Snapshot",
-        childId,
-        childName,
-        dateObject: new Date(),
-        title: "Full Care Report",
-        summary: "Open the reports area for trends, summaries and PDF export.",
-        details: ["Useful for EHCP, GP, dietitian, school and hospital reports."],
-        searchText: "full care report trends pdf export ehcp school hospital",
-        type: "Report",
-      },
-    ];
-
-    const allItems = [...logItems, ...documentItems, ...actionItems];
+    const allItems = [...logItems, ...documentItems];
     const now = new Date();
     const rangeDays = Number(timelineFilters.range);
     const rangeStart =
