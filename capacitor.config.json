@@ -1,0 +1,11 @@
+{
+  "appId": "care.familytrack.app",
+  "appName": "FamilyTrack",
+  "webDir": "dist",
+  "backgroundColor": "#f8fafc",
+  "ios": {
+    "contentInset": "automatic",
+    "preferredContentMode": "mobile",
+    "scheme": "FamilyTrack"
+  }
+}

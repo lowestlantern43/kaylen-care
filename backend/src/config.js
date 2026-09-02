@@ -10,6 +10,12 @@ export const config = {
     process.env.PUBLIC_APP_URL ||
     process.env.FRONTEND_URL ||
     "http://localhost:5173",
+  nativeAppOrigins: String(
+    process.env.NATIVE_APP_ORIGINS || "capacitor://localhost",
+  )
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
   stripePriceId:

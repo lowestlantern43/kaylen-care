@@ -12,7 +12,8 @@ export function createApp() {
   const configuredOrigins = config.frontendUrl
     .split(",")
     .map((origin) => origin.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .concat(config.nativeAppOrigins);
 
   app.use(helmet());
   app.use(
