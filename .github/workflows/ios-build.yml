@@ -1,0 +1,63 @@
+name: iOS build check
+
+on:
+  push:
+    branches:
+      - codex/ios-app
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ios-simulator:
+    name: Build iPhone Simulator app
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out iOS branch
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Build and sync iOS project
+        run: npm run ios:sync
+
+      - name: Compile unsigned simulator app
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package simulator build
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/DerivedData/Build/Products/Debug-iphonesimulator/App.app \
+            FamilyTrack-Simulator.zip
+
+      - name: Upload simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FamilyTrack-iOS-Simulator
+          path: FamilyTrack-Simulator.zip
+          if-no-files-found: error
+          retention-days: 14
