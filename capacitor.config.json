@@ -7,5 +7,13 @@
     "contentInset": "automatic",
     "preferredContentMode": "mobile",
     "scheme": "FamilyTrack"
+  },
+  "plugins": {
+    "CapacitorCookies": {
+      "enabled": true
+    },
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }

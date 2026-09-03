@@ -1,4 +1,5 @@
 ﻿import html2canvas from "html2canvas";
+import { Capacitor } from "@capacitor/core";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -15,6 +16,7 @@ const GOOGLE_SITE_VERIFICATION =
   import.meta.env.VITE_GOOGLE_SITE_VERIFICATION || "";
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
+const IS_NATIVE_APP = Capacitor.isNativePlatform();
 const DEFAULT_PUBLIC_PRICING = {
   familyMonthlyPriceGbp: 4.99,
   oneOffEventPriceGbp: 0,
@@ -2239,8 +2241,15 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
   );
 }
 
-function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
-  const [mode, setMode] = useState(initialMode);
+function AuthScreen({
+  onAuthenticated,
+  initialMode = "signup",
+  onBack,
+  allowSignup = true,
+}) {
+  const [mode, setMode] = useState(
+    allowSignup ? initialMode : "login",
+  );
   const [form, setForm] = useState({
     fullName: "",
     email: "",
@@ -2404,18 +2413,20 @@ function AuthScreen({ onAuthenticated, initialMode = "signup", onBack }) {
             </button>
           </form>
 
-          <button
-            type="button"
-            className="mt-4 text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4"
-            onClick={() => {
-              setMode(isSignup ? "login" : "signup");
-              setError("");
-            }}
-          >
-            {isSignup
-              ? "Already have an account? Log in"
-              : "Need a family workspace? Sign up"}
-          </button>
+          {allowSignup ? (
+            <button
+              type="button"
+              className="mt-4 text-sm font-semibold text-slate-600 underline decoration-slate-300 underline-offset-4"
+              onClick={() => {
+                setMode(isSignup ? "login" : "signup");
+                setError("");
+              }}
+            >
+              {isSignup
+                ? "Already have an account? Log in"
+                : "Need a family workspace? Sign up"}
+            </button>
+          ) : null}
           {onBack ? (
             <button
               type="button"
@@ -14964,7 +14975,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 export default function SaasApp() {
   const [session, setSession] = useState(null);
   const [isCheckingSession, setIsCheckingSession] = useState(true);
-  const [publicView, setPublicView] = useState("landing");
+  const [publicView, setPublicView] = useState(
+    IS_NATIVE_APP ? "login" : "landing",
+  );
   const [publicPricing, setPublicPricing] = useState(DEFAULT_PUBLIC_PRICING);
 
   useEffect(() => {
@@ -15122,7 +15135,8 @@ export default function SaasApp() {
         <AuthScreen
           initialMode="login"
           onAuthenticated={setSession}
-          onBack={() => setPublicView("landing")}
+          onBack={IS_NATIVE_APP ? undefined : () => setPublicView("landing")}
+          allowSignup={!IS_NATIVE_APP}
         />
       );
     }
@@ -15228,4 +15242,3 @@ function CompleteStripeSetupScreen({
     </div>
   );
 }
-
