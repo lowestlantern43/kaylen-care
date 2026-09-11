@@ -1,5 +1,6 @@
 ﻿import html2canvas from "html2canvas";
-import { Capacitor } from "@capacitor/core";
+import { IS_NATIVE_APP } from "./platform";
+import CompanionAccessScreen from "./CompanionAccessScreen";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -16,7 +17,6 @@ const GOOGLE_SITE_VERIFICATION =
   import.meta.env.VITE_GOOGLE_SITE_VERIFICATION || "";
 const UPGRADE_BANNER_SNOOZE_DAYS = 7;
 const PRODUCTION_URL = "https://familytrack.care";
-const IS_NATIVE_APP = Capacitor.isNativePlatform();
 const DEFAULT_PUBLIC_PRICING = {
   familyMonthlyPriceGbp: 4.99,
   oneOffEventPriceGbp: 0,
@@ -2293,7 +2293,19 @@ function AuthScreen({
         return;
       }
 
-      onAuthenticated(data);
+      // Confirm the native cookie session works before opening the workspace.
+      // A successful password check alone does not prove iOS retained the cookie.
+      if (IS_NATIVE_APP) {
+        try {
+          onAuthenticated(await api.me());
+        } catch (sessionError) {
+          throw new Error(sessionError.status === 401
+            ? "Your login was accepted, but the app could not keep you signed in. Please try again."
+            : sessionError.message);
+        }
+      } else {
+        onAuthenticated(data);
+      }
     } catch (caughtError) {
       setIsOpeningCheckout(false);
       setError(caughtError.message);
@@ -3412,6 +3424,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     ? `Trial · ${trialDaysLeft} day${trialDaysLeft === 1 ? "" : "s"} left`
     : "Trial active";
   const showTrialBadge =
+    !IS_NATIVE_APP &&
     isTrialing &&
     !showPlatformAdmin &&
     (!session?.user?.isPlatformAdmin || Boolean(platformViewAsUser));
@@ -5186,6 +5199,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const startCheckout = async () => {
+    if (IS_NATIVE_APP) return;
     if (!session?.user?.id) {
       setError("You need to be logged in before starting Stripe Checkout.");
       return;
@@ -5258,6 +5272,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const startDocumentVaultCheckout = async (tierId) => {
+    if (IS_NATIVE_APP) return;
     if (!selectedFamilyId || !tierId) return;
 
     setIsCheckoutLoading(true);
@@ -5322,6 +5337,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const openBillingPortal = async () => {
+    if (IS_NATIVE_APP) return;
     if (!selectedFamilyId) return;
 
     setIsBillingPortalLoading(true);
@@ -5368,6 +5384,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const openPlatformAdmin = async () => {
+    if (IS_NATIVE_APP) return;
     setShowPlatformAdmin(true);
     setShowAdmin(false);
     setIsPlatformLoading(true);
@@ -7177,6 +7194,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     );
   }
 
+  if (IS_NATIVE_APP && (!selectedFamily || selectedFamilyAccess.reason === "checkout_required")) {
+    return <CompanionAccessScreen error={error} busy={isCheckoutLoading}
+      onRefresh={async () => {
+        if (selectedFamilyId) await refreshSubscriptionStatus();
+        else window.location.reload();
+      }} onLogout={onLogout} />;
+  }
+
   if (!selectedFamily && !showPlatformAdmin) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 px-6 py-10">
@@ -7391,7 +7416,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <div className="mt-2">
                     <button
                       type="button"
-                      onClick={() => setShowBillingPanel(true)}
+                      onClick={() => IS_NATIVE_APP ? openSettingsFromDashboard("account") : setShowBillingPanel(true)}
                       className={`inline-flex w-fit items-center rounded-full border px-2.5 py-1 text-xs font-black shadow-sm transition ${
                         showTrialBadge
                           ? "border-sky-200 bg-sky-50 text-sky-700 hover:bg-sky-100"
@@ -7452,7 +7477,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       </div>
       ) : null}
 
-      {showBillingPanel && !showPlatformAdmin ? (
+      {!IS_NATIVE_APP && showBillingPanel && !showPlatformAdmin ? (
         <div className="fixed inset-0 z-[80] flex items-end bg-slate-950/30 px-3 py-4 sm:items-center sm:justify-center">
           <div className="w-full max-w-lg rounded-[1.75rem] border border-sky-100 bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
@@ -7548,7 +7573,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         </div>
       ) : null}
 
-      {!showAdmin && !showPlatformAdmin && selectedFamilyAccess ? (
+      {!IS_NATIVE_APP && !showAdmin && !showPlatformAdmin && selectedFamilyAccess ? (
         <div className="mx-auto max-w-6xl px-3 pt-3">
           {showTrialUpgradeBanner ? (
             <div className="relative flex flex-col gap-3 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 pr-12 text-sm shadow-sm sm:flex-row sm:items-center sm:justify-between">
@@ -7891,6 +7916,18 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </form>
               </section>
 
+              {IS_NATIVE_APP ? (
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
+                  <h3 className="font-bold text-slate-900">Account access</h3>
+                  <p className="mt-2 text-sm text-slate-600">
+                    Status: {subscription?.status || "inactive"}
+                  </p>
+                  <button type="button" onClick={() => refreshSubscriptionStatus()}
+                    disabled={isCheckoutLoading} className={`${secondaryButtonClass} mt-3`}>
+                    {isCheckoutLoading ? "Checking access..." : "Refresh access"}
+                  </button>
+                </section>
+              ) : (
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
@@ -7984,7 +8021,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </div>
                 </div>
               </section>
-              {subscription?.documentVault?.settings?.enabled ? (
+              )}
+              {!IS_NATIVE_APP && subscription?.documentVault?.settings?.enabled ? (
                 <section className="rounded-2xl border border-cyan-100 bg-cyan-50/70 p-4 shadow-sm lg:col-span-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div>
@@ -13143,12 +13181,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           onOpenChildSetup={openChildSetupFromDashboard}
           onOpenSettings={() => openSettingsFromDashboard("account")}
           onOpenNotifications={() => openSettingsFromDashboard("notifications")}
-          onOpenSubscription={() => setShowBillingPanel(true)}
+          onOpenSubscription={() => IS_NATIVE_APP ? openSettingsFromDashboard("account") : setShowBillingPanel(true)}
           onOpenSupport={() => {
             window.location.href = SUPPORT_MAILTO;
           }}
           onReportIssue={openReportIssueFromDashboard}
-          canOpenPlatformAdmin={Boolean(session.user?.isPlatformAdmin)}
+          canOpenPlatformAdmin={!IS_NATIVE_APP && Boolean(session.user?.isPlatformAdmin)}
           onOpenPlatformAdmin={openPlatformAdmin}
           onLogout={onLogout}
           onAddRegularMedication={addRegularMedicationFromDiary}
@@ -15120,7 +15158,7 @@ export default function SaasApp() {
     const currentPath = window.location.pathname.replace(/\/$/, "") || "/";
     const seoPage = publicPages[currentPath];
 
-    if (publicView === "auth") {
+    if (!IS_NATIVE_APP && publicView === "auth") {
       return (
         <AuthScreen
           initialMode="signup"
@@ -15130,7 +15168,7 @@ export default function SaasApp() {
       );
     }
 
-    if (publicView === "login") {
+    if (IS_NATIVE_APP || publicView === "login") {
       return (
         <AuthScreen
           initialMode="login"

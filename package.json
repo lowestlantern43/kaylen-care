@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "test:ios": "node scripts/test-ios-companion.mjs",
     "dev": "vite",
     "dev:lan": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/create-static-seo-pages.mjs",

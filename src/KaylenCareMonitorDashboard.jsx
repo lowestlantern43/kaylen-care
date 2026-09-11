@@ -3,6 +3,7 @@ import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { supabase } from "./Supabase";
 import { api } from "./api/client";
+import { IS_NATIVE_APP } from "./platform";
 
 const DEFAULT_MODULE_VISIBILITY = {
   food: true,
@@ -13251,7 +13252,12 @@ export default function KaylenCareMonitorDashboard({
         </section>
       ) : null}
 
-      {shouldPromptForDocumentVault ? (
+      {IS_NATIVE_APP && shouldPromptForDocumentVault ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+          Document uploads are not active for this family. Existing documents remain viewable.
+        </section>
+      ) : null}
+      {!IS_NATIVE_APP && shouldPromptForDocumentVault ? (
         <section className="rounded-[1.75rem] border border-cyan-100 bg-cyan-50/80 p-4 shadow-sm">
           <p className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-700">
             Optional storage add-on
@@ -15762,7 +15768,7 @@ export default function KaylenCareMonitorDashboard({
     { type: "heading", label: "Account" },
     { label: "Settings", icon: "settings", action: onOpenSettings },
     { label: "Profile", icon: "profile", action: onOpenSettings },
-    { label: "Subscription", icon: "subscription", action: onOpenSubscription },
+    { label: IS_NATIVE_APP ? "Account access" : "Subscription", icon: "subscription", action: onOpenSubscription },
     { type: "heading", label: "Family" },
     { label: "Child Profiles", icon: "profile", action: onOpenChildSetup },
     {

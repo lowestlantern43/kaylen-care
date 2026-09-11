@@ -1,13 +1,21 @@
+import { requireWebBilling } from "../platform";
+import { fetchJson } from "./transport";
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
 async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  if (/\/subscription\/(checkout|document-vault\/checkout|portal)$/.test(path)) {
+    requireWebBilling();
+  }
+  const response = await fetchJson(`${API_BASE_URL}${path}`, {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
     ...options,
+  }).catch(() => {
+    throw new Error("FamilyTrack could not connect. Check your internet connection and try again.");
   });
 
   const payload = await response.json().catch(() => ({

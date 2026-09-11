@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - codex/ios-app
+      - codex/ios-companion
   workflow_dispatch:
 
 permissions:
@@ -34,6 +35,9 @@ jobs:
 
       - name: Build and sync iOS project
         run: npm run ios:sync
+
+      - name: Check companion billing and session behaviour
+        run: npm run test:ios
 
       - name: Compile unsigned simulator app
         run: |

@@ -26,9 +26,36 @@ The bundle identifier is `care.familytrack.app`.
 
 - Test login, logout, uploads, reports, PDF export, invitations, and session persistence on
   a physical iPhone.
-- Add StoreKit in-app subscriptions and restore-purchases support. Do not expose Stripe web
-  checkout for the app's digital subscription inside the submitted iOS build.
+- The companion build keeps Stripe subscriptions on the website. Native screens must not
+  expose checkout, billing portal, paid storage upgrades, or prompts to buy elsewhere.
+  Submit this model transparently for review under guideline 3.1.3(f); eligibility is
+  subject to Apple's review, not guaranteed by hiding checkout. If Apple classifies the
+  app under 3.1.3(b), reassess the purchase model before release.
 - Add final App Store icon and launch artwork.
 - Add the privacy manifest, privacy disclosures, support URL, terms, account-deletion flow,
   and App Review test account.
-- Configure signing, App Store Connect products, sandbox testers, and TestFlight.
+- Configure signing, App Store Connect, and TestFlight.
+
+## Companion branch verification
+
+Worktree: `FamilyTrack-iOS`, branch: `codex/ios-companion`.
+
+Validation completed locally: web build, iOS web build, Capacitor asset copy,
+`npm run test:ios` (native/browser transport, payment blocking, HTTP/network errors,
+inactive account screen), and browser inspection of the login-only opening screen.
+These checks do not establish physical iPhone session persistence or App Store approval.
+
+- `npm run build:ios` selects companion screens even in a browser preview.
+- JSON API requests use CapacitorHttp on the device, sharing the native cookie store;
+  browser builds use fetch. Login verifies `/auth/me` before accepting the session.
+- Keep CapacitorHttp enabled for binary uploads. Test photo/document upload and downloads
+  separately on iOS; a JSON login check does not validate file handling.
+- Missing workspace/checkout-required accounts see refresh, logout and support actions.
+  Existing server-side access rules still control reads and writes.
+- The website retains signup, Stripe checkout, portal and storage purchasing.
+- Production currently did not return an allow-origin header for `capacitor://localhost`
+  in the unauthenticated check on 2026-09-11. Native HTTP avoids browser CORS for JSON
+  requests; the backend origin change on the older iOS branch is not proof of deployment.
+- Before release: verify valid login, wrong password, restart persistence, logout,
+  expired/trial/inactive accounts and no purchase links using test accounts on iPhone.
+  No real customer credentials or data are needed in build artifacts.
