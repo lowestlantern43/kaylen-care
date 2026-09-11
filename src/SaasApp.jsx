@@ -7662,8 +7662,16 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               </span>
             </div>
 
-            <div className="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-              <div className="flex min-w-max gap-2">
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <label htmlFor="settings-section" className="block text-sm font-semibold text-slate-700">
+                Settings section
+              </label>
+              <select
+                id="settings-section"
+                value={settingsTab}
+                onChange={(event) => setSettingsTab(event.target.value)}
+                className="mt-2 min-h-[48px] w-full min-w-0 rounded-xl border border-slate-300 bg-white px-3 py-3 text-base font-semibold text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              >
                 {[
                   ["account", "Account"],
                   ["family", "Family"],
@@ -7673,20 +7681,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   ["data", "Data & Export"],
                   ["privacy", "Security / Privacy"],
                 ].map(([tabId, label]) => (
-                  <button
-                    key={tabId}
-                    type="button"
-                    onClick={() => setSettingsTab(tabId)}
-                    className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm font-bold transition ${
-                      settingsTab === tabId
-                        ? "bg-slate-900 text-white shadow-sm"
-                        : "bg-slate-50 text-slate-700 hover:bg-indigo-50"
-                    }`}
-                  >
+                  <option key={tabId} value={tabId}>
                     {label}
-                  </button>
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
 
             {error ? (
