@@ -39,6 +39,11 @@ jobs:
       - name: Check companion billing and session behaviour
         run: npm run test:ios
 
+      - name: Check notification registration and reminder delivery
+        run: |
+          npm ci --prefix backend
+          npm run test:notifications
+
       - name: Compile unsigned simulator app
         run: |
           set -o pipefail

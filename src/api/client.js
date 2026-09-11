@@ -345,9 +345,10 @@ export const api = {
       method: "DELETE",
       body: JSON.stringify({ endpoint }),
     }),
-  sendTestNotification: () =>
+  sendTestNotification: (endpoint) =>
     request("/notifications/test", {
       method: "POST",
+      body: JSON.stringify({ endpoint }),
     }),
   feedbackConfig: () => request("/feedback/config"),
   submitIssue: (payload) =>

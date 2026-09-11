@@ -1,5 +1,6 @@
 ﻿import html2canvas from "html2canvas";
 import { IS_NATIVE_APP } from "./platform";
+import { hasNativePush, nativePermission, registerNativePush, disableNativePush, currentPushEndpoint, savedNativePush, listenForPushTap } from "./nativePush";
 import CompanionAccessScreen from "./CompanionAccessScreen";
 import "./settings-layout.css";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
@@ -662,6 +663,7 @@ const urlBase64ToUint8Array = (base64String) => {
 };
 
 const pushSupportStatus = () => {
+  if (hasNativePush()) return { supported: true, reason: "" };
   if (typeof window === "undefined" || typeof navigator === "undefined") {
     return { supported: false, reason: "Push reminders need a browser session." };
   }
@@ -3234,6 +3236,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     schedulerEnabled: false,
   });
   const [notificationRuntimeStatus, setNotificationRuntimeStatus] = useState(null);
+  const [pushDeviceEnabled, setPushDeviceEnabled] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState(() =>
     typeof Notification === "undefined" ? "unsupported" : Notification.permission,
   );
@@ -3547,12 +3550,16 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           api.notificationStatus().catch(() => null),
         ]);
         if (ignore) return;
-        setNotificationConfig(config || {});
+        setNotificationConfig(hasNativePush() ? { ...config, ...config?.ios, setupRequired: !config?.ios?.enabled } : config || {});
         setNotificationSettings(normaliseNotificationSettings(settings));
         setNotificationRuntimeStatus(status);
-        setNotificationPermission(
-          typeof Notification === "undefined" ? "unsupported" : Notification.permission,
-        );
+        setPushDeviceEnabled(Boolean(settings.pushEnabled && await currentPushEndpoint() &&
+          (!hasNativePush() || savedNativePush()?.userId === session.user.id)));
+        setNotificationPermission(hasNativePush() ? await nativePermission() :
+          typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+        if (hasNativePush() && settings.pushEnabled && config?.ios?.enabled && savedNativePush()?.userId === session.user.id) {
+          await registerNativePush(api, session.user.id);
+        }
       } catch (loadError) {
         if (!ignore) {
           setNotificationStatusMessage(
@@ -3563,8 +3570,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     }
 
     loadNotificationPreferences();
+    const onVisible = () => { if (document.visibilityState === "visible") loadNotificationPreferences(); };
+    document.addEventListener("visibilitychange", onVisible);
+    const tapListener = hasNativePush() ? listenForPushTap() : null;
     return () => {
       ignore = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      tapListener?.then((handle) => handle.remove()).catch(() => {});
     };
   }, [session?.user?.id]);
 
@@ -3617,6 +3629,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setNotificationConfig((current) => ({
         ...current,
         ...(status?.config || {}),
+        ...(hasNativePush() ? { ...status?.config?.ios, setupRequired: !status?.config?.ios?.enabled } : {}),
         schedulerEnabled: status?.schedulerEnabled ?? current.schedulerEnabled,
       }));
       return status;
@@ -3630,6 +3643,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     setNotificationStatusMessage("");
 
     try {
+      if (hasNativePush()) {
+        const config = await api.notificationConfig();
+        setNotificationConfig({ ...config, ...config?.ios, setupRequired: !config?.ios?.enabled });
+        if (!config?.ios?.enabled) throw new Error("iPhone notifications are awaiting Apple account setup. Your reminder preferences can be saved now.");
+        const endpoint = await registerNativePush(api, session.user.id, true);
+        setNotificationPermission(await nativePermission());
+        const saved = await api.updateNotificationSettings({ ...notificationSettings, pushEnabled: true });
+        setNotificationSettings(normaliseNotificationSettings(saved));
+        setPushDeviceEnabled(true);
+        await api.sendTestNotification(endpoint);
+        await refreshNotificationRuntimeStatus();
+        setNotificationStatusMessage("Apple accepted the test notification. Check this iPhone for the alert.");
+        return;
+      }
       const support = pushSupportStatus();
       notificationDebug("Push support check", support);
       if (!support.supported) {
@@ -3704,7 +3731,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         endpoint: subscription.endpoint,
       });
       setNotificationSettings(normaliseNotificationSettings(saved));
-      const testResult = await api.sendTestNotification();
+      setPushDeviceEnabled(true);
+      const testResult = await api.sendTestNotification(subscription.endpoint);
       await refreshNotificationRuntimeStatus();
       const message = testResult?.sent
         ? "Push reminders are enabled. A test notification was sent to this device."
@@ -3729,21 +3757,20 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const disablePushNotifications = async () => {
     setIsNotificationBusy(true);
     try {
-      if ("serviceWorker" in navigator) {
-        const registration = await navigator.serviceWorker.ready.catch(() => null);
+      if (hasNativePush()) {
+        await disableNativePush(api);
+      } else if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration("/");
         const subscription = await registration?.pushManager?.getSubscription?.();
         if (subscription) {
-          await api.disablePushSubscription(subscription.endpoint).catch(() => null);
-          await subscription.unsubscribe().catch(() => null);
+          await api.disablePushSubscription(subscription.endpoint);
+          await subscription.unsubscribe();
         }
       }
-      const saved = await api.updateNotificationSettings({
-        ...notificationSettings,
-        pushEnabled: false,
-      });
-      setNotificationSettings(normaliseNotificationSettings(saved));
+      // Keep the account preference enabled for its other registered devices.
       await refreshNotificationRuntimeStatus();
-      setNotificationStatusMessage("Push reminders are off on this device.");
+      setNotificationStatusMessage("Push reminders are off on this device. Your other devices are unchanged.");
+      setPushDeviceEnabled(false);
       showToast({ message: "Notifications turned off", type: "info" });
     } catch (disableError) {
       setNotificationStatusMessage(
@@ -5252,10 +5279,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     setNotificationStatusMessage("");
 
     try {
-      const result = await api.sendTestNotification();
+      const endpoint = await currentPushEndpoint();
+      if (!endpoint) throw new Error("Enable notifications on this device first.");
+      const result = await api.sendTestNotification(endpoint);
       await refreshNotificationRuntimeStatus();
       const message = result?.sent
-        ? "Test notification sent to this device."
+        ? "Test notification accepted for this device. Check for the alert."
         : "No active push subscription was found for this device.";
       setNotificationStatusMessage(message);
       showToast({
@@ -9243,12 +9272,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     </div>
                     <span
                       className={`w-fit rounded-full px-3 py-1 text-xs font-black uppercase tracking-[0.12em] ${
-                        notificationSettings.pushEnabled
+                        pushDeviceEnabled
                           ? "bg-emerald-50 text-emerald-700"
                           : "bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {notificationSettings.pushEnabled ? "Push on" : "Push off"}
+                      {pushDeviceEnabled ? "Push on this device" : "Push off this device"}
                     </span>
                   </div>
 
@@ -9260,7 +9289,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       Medication, appointments and gentle care nudges
                     </h4>
                     <p className="mt-2 text-sm leading-6 text-slate-600">
-                      FamilyTrack will only ask the browser for permission after
+                      FamilyTrack will only ask your device for permission after
                       you tap the button below.
                     </p>
 
@@ -9273,15 +9302,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
                     {notificationConfig.setupRequired ? (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold leading-6 text-amber-800">
-                        Push is ready in the app, but the backend still needs
-                        VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY environment values.
+                        {hasNativePush() ? "iPhone notifications are awaiting Apple account setup." : "The reminder service needs setup before notifications can be enabled."}
                       </div>
                     ) : null}
 
                     <div className="mt-3 grid gap-2 sm:grid-cols-2">
                       <div className="rounded-xl border border-white bg-white/85 px-3 py-2 shadow-sm">
                         <p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-500">
-                          Browser status
+                          Device permission
                         </p>
                         <p className="mt-1 text-sm font-bold text-slate-800">
                           {notificationPermission === "granted"
@@ -9304,8 +9332,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         </p>
                         {!notificationConfig.schedulerEnabled ? (
                           <p className="mt-1 text-xs font-semibold text-slate-500">
-                            Add ENABLE_NOTIFICATION_SCHEDULER=true on the backend
-                            for timed medication reminders.
+                            The reminder service needs to be enabled before timed reminders can be sent.
                           </p>
                         ) : null}
                       </div>
@@ -9318,7 +9345,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     ) : null}
 
                     <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-                      {notificationSettings.pushEnabled ? (
+                      {pushDeviceEnabled ? (
                         <>
                           <button
                             type="button"
@@ -9334,7 +9361,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             disabled={isNotificationBusy}
                             className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-black text-slate-700 shadow-sm disabled:opacity-60"
                           >
-                            {isNotificationBusy ? "Updating..." : "Turn push off"}
+                            {isNotificationBusy ? "Updating..." : "Turn push off on this device"}
                           </button>
                         </>
                       ) : (
@@ -9372,7 +9399,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           ["medication", "Medication reminders"],
                           ["appointments", "Appointment reminders"],
                           ["hydration", "Hydration reminders"],
-                          ["noLogsToday", "No logs today nudge"],
+                          ["noLogsToday", "No logs today nudge (8pm)"],
                         ].map(([typeKey, label]) => (
                           <label
                             key={typeKey}
@@ -9415,7 +9442,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         />
                       </label>
                       <p className="mt-3 text-xs font-semibold leading-5 text-slate-500">
-                        Current browser permission: {notificationPermission}.
+                        Current device permission: {notificationPermission}.
                         {notificationRuntimeStatus?.push?.activeSubscriptions
                           ? ` Active devices: ${notificationRuntimeStatus.push.activeSubscriptions}.`
                           : " No active push device is registered yet."}
@@ -15143,6 +15170,10 @@ export default function SaasApp() {
   }, []);
 
   const logout = async () => {
+    if (hasNativePush()) {
+      try { await disableNativePush(api); }
+      catch { window.alert("Could not disconnect this iPhone from reminders. Check your connection and try signing out again."); return; }
+    }
     await api.logout().catch(() => null);
     setSession(null);
   };

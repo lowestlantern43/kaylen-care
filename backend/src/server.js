@@ -21,6 +21,7 @@ if (config.notificationSchedulerEnabled) {
         result.medication ||
         result.appointments ||
         result.hydration ||
+        result.noLogsToday ||
         result.trialEmails
       ) {
         console.log("FamilyTrack reminders sent", result);

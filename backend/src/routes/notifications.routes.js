@@ -230,13 +230,14 @@ notificationsRouter.post(
   "/test",
   asyncHandler(async (req, res) => {
     await ensureNotificationSchema();
+    const endpoint = typeof req.body?.endpoint === "string" ? req.body.endpoint : null;
     const result = await sendPushToUser(req.user.id, {
       title: "FamilyTrack reminders are on",
       body: "You can now receive medication and appointment reminders on this device.",
       url: "/",
       tag: "familytrack-test",
       type: "test",
-    });
+    }, endpoint);
 
     if (result.skipped) {
       throw badRequest(result.reason || "Push notifications are not configured.");

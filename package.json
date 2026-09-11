@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "test:ios": "node scripts/test-ios-companion.mjs",
+    "test:notifications": "node scripts/test-native-push.mjs && node --experimental-test-module-mocks --test backend/test/*.test.js",
     "dev": "vite",
     "dev:lan": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/create-static-seo-pages.mjs",
@@ -16,6 +17,7 @@
   "dependencies": {
     "@capacitor/core": "^7.6.9",
     "@capacitor/ios": "^7.6.9",
+    "@capacitor/push-notifications": "^7.0.7",
     "@supabase/supabase-js": "^2.101.0",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",

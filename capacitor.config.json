@@ -9,6 +9,7 @@
     "scheme": "FamilyTrack"
   },
   "plugins": {
+    "PushNotifications": { "presentationOptions": ["sound", "alert"] },
     "CapacitorCookies": {
       "enabled": true
     },

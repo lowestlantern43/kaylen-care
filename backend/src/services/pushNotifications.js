@@ -1,4 +1,6 @@
 import webPush from "web-push";
+import { hasResolvedDose } from "./medicationReminderMatching.js";
+import { applePushReady, sendApplePush } from "./applePush.js";
 import { config } from "../config.js";
 import { query } from "../db/pool.js";
 import { sendAppEmail, trialEndingReminderEmail } from "./email.js";
@@ -18,6 +20,7 @@ export function getPushConfig() {
     enabled: hasPushConfig,
     publicKey: config.vapidPublicKey || "",
     setupRequired: !hasPushConfig,
+    ios: { enabled: applePushReady(), setupRequired: !applePushReady() },
   };
 }
 
@@ -77,9 +80,20 @@ export async function savePushSubscription({
 }) {
   await ensureNotificationSchema();
 
-  const endpoint = subscription?.endpoint;
-  if (!endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
+  const isApple = subscription?.platform === "ios";
+  if (isApple && !/^[a-f0-9]{64,200}$/i.test(subscription.token || "")) {
+    throw new Error("Invalid Apple device token.");
+  }
+  const endpoint = isApple ? `apns:${subscription.token.toLowerCase()}` : subscription?.endpoint;
+  if (!endpoint || (!isApple && (!subscription?.keys?.p256dh || !subscription?.keys?.auth))) {
     throw new Error("Push subscription is incomplete.");
+  }
+
+  if (isApple) {
+    subscription = { platform: "ios", token: subscription.token.toLowerCase() };
+    // A shared phone must not continue receiving the previous account's reminders.
+    await query(`UPDATE push_subscriptions SET enabled = false, updated_at = now()
+      WHERE endpoint = $1 AND user_id <> $2`, [endpoint, userId]);
   }
 
   const { rows } = await query(
@@ -130,10 +144,10 @@ export async function disablePushSubscription({ userId, endpoint }) {
   );
 }
 
-export async function sendPushToUser(userId, payload) {
+export async function sendPushToUser(userId, payload, endpoint = null) {
   await ensureNotificationSchema();
 
-  if (!hasPushConfig) {
+  if (!hasPushConfig && !applePushReady()) {
     return { sent: 0, failed: 0, skipped: true, reason: "Push is not configured." };
   }
 
@@ -143,9 +157,10 @@ export async function sendPushToUser(userId, payload) {
       FROM push_subscriptions
       WHERE user_id = $1
         AND enabled = true
+        AND ($2::text IS NULL OR endpoint = $2)
       ORDER BY updated_at DESC
     `,
-    [userId],
+    [userId, endpoint],
   );
 
   let sent = 0;
@@ -154,7 +169,12 @@ export async function sendPushToUser(userId, payload) {
   await Promise.all(
     rows.map(async (row) => {
       try {
-        await webPush.sendNotification(row.subscription, JSON.stringify(payload));
+        if (row.subscription.platform === "ios") {
+          await sendApplePush(row.subscription, payload);
+        } else {
+          if (!hasPushConfig) throw new Error("Browser push is not configured.");
+          await webPush.sendNotification(row.subscription, JSON.stringify(payload));
+        }
         sent += 1;
         await query(
           `
@@ -167,7 +187,7 @@ export async function sendPushToUser(userId, payload) {
         );
       } catch (error) {
         failed += 1;
-        const shouldDisable = [404, 410].includes(Number(error.statusCode));
+        const shouldDisable = error.disableSubscription || [404, 410].includes(Number(error.statusCode));
         await query(
           `
             UPDATE push_subscriptions
@@ -469,7 +489,7 @@ async function familyReminderUsers(familyId, type) {
     const settings = row.settings || {};
     return (
       (settings.pushEnabled === true || settings.emailEnabled === true) &&
-      settings.types?.[type] !== false
+      (["hydration", "noLogsToday"].includes(type) ? settings.types?.[type] === true : settings.types?.[type] !== false)
     );
   });
 }
@@ -493,6 +513,7 @@ async function sendReminderOnce({
       WHERE user_id = $1
         AND notification_type = $2
         AND metadata->>'reminderKey' = $3
+        AND delivery_status = 'sent'
         AND created_at > now() - interval '30 hours'
       LIMIT 1
     `,
@@ -501,7 +522,7 @@ async function sendReminderOnce({
 
   if (rows[0]) return { skippedDuplicate: true };
 
-  const delivery = await sendPushToUser(userId, {
+  const delivery = settings.pushEnabled === false ? { sent: 0, failed: 0, skipped: true } : await sendPushToUser(userId, {
     title,
     body,
     url,
@@ -561,6 +582,7 @@ export async function runDueReminderScan(now = new Date()) {
     medication: 0,
     appointments: 0,
     hydration: 0,
+    noLogsToday: 0,
     trialEmails: 0,
     duplicates: 0,
   };
@@ -590,6 +612,16 @@ export async function runDueReminderScan(now = new Date()) {
           const dueMinutes = minutesFromTime(time);
           const minutesSinceDue = userCurrentMinutes - dueMinutes;
           if (minutesSinceDue < 0 || minutesSinceDue > 20) continue;
+
+          // Read immediately before sending, scoped to this child and user's local day.
+          // Logs from any carer count; deleted logs do not.
+          const doseLogs = await query(`
+            SELECT log_time::text AS log_time, data FROM care_logs
+            WHERE family_id = $1 AND child_id = $2
+              AND category = 'medication' AND deleted_at IS NULL
+              AND log_date::text = $3
+          `, [row.family_id, row.child_id, userCurrent.date]);
+          if (hasResolvedDose(medicine, time, doseLogs.rows)) continue;
 
           notificationDebug("Medication reminder due", {
             familyId: row.family_id,
@@ -626,32 +658,32 @@ export async function runDueReminderScan(now = new Date()) {
         cl.family_id,
         cl.child_id,
         c.first_name,
-        cl.log_date,
+        cl.log_date::text AS log_date,
         cl.log_time,
         cl.data
       FROM care_logs cl
       JOIN children c ON c.id = cl.child_id
       WHERE cl.category = 'appointment'
         AND cl.deleted_at IS NULL
-        AND cl.log_date BETWEEN CURRENT_DATE AND CURRENT_DATE + interval '1 day'
+        AND cl.log_date BETWEEN ($1::date - 1) AND ($1::date + 1)
         AND cl.log_time IS NOT NULL
-    `,
+    `, [current.date],
   );
 
   for (const row of appointmentRows) {
     const appointmentDate = String(row.log_date).slice(0, 10);
-    if (appointmentDate !== current.date) continue;
-    const minutesUntil = minutesFromTime(String(row.log_time).slice(0, 5)) - currentMinutes;
-    if (minutesUntil < 0 || minutesUntil > 60) continue;
-
     const users = await familyReminderUsers(row.family_id, "appointments");
     for (const user of users) {
+      const local = localParts(now, userReminderTimeZone(user));
+      const minutesUntil = (Date.parse(`${appointmentDate}T00:00:00Z`) - Date.parse(`${local.date}T00:00:00Z`)) / 60000
+        + minutesFromTime(String(row.log_time).slice(0, 5)) - minutesFromTime(local.time);
+      if (minutesUntil < 0 || minutesUntil > 60) continue;
       const result = await sendReminderOnce({
         user,
         familyId: row.family_id,
         childId: row.child_id,
         type: "appointments",
-        reminderKey: `appointment:${row.id}:${current.date}`,
+        reminderKey: `appointment:${row.id}:${appointmentDate}`,
         title: "Appointment reminder",
         body: `${row.first_name}: ${row.data?.title || row.data?.category || "Appointment"} at ${String(row.log_time).slice(0, 5)}.`,
         url: "/",
@@ -680,10 +712,16 @@ export async function runDueReminderScan(now = new Date()) {
   );
 
   for (const row of hydrationRows) {
-    if (isInQuietHours(row.quiet_hours, current.time)) continue;
+    const users = await familyReminderUsers(row.family_id, "hydration");
+    for (const user of users) {
+    const local = localParts(now, userReminderTimeZone(user));
+    if (isInQuietHours(row.quiet_hours, local.time)) continue;
 
     const checkpoint = normaliseHydrationCheckpoints(row.hydration_checkpoints).find(
-      (item) => Math.abs(currentMinutes - minutesFromTime(item.time)) <= 5,
+      (item) => {
+        const elapsed = minutesFromTime(local.time) - minutesFromTime(item.time);
+        return elapsed >= 0 && elapsed <= 10;
+      },
     );
     if (!checkpoint) continue;
 
@@ -697,7 +735,7 @@ export async function runDueReminderScan(now = new Date()) {
           AND deleted_at IS NULL
           AND log_date::text = $3
       `,
-      [row.family_id, row.child_id, current.date],
+      [row.family_id, row.child_id, local.date],
     );
 
     const loggedMl = drinkRows.reduce(
@@ -707,15 +745,13 @@ export async function runDueReminderScan(now = new Date()) {
     const expectedMl = (Number(row.daily_fluid_target_ml || 0) * checkpoint.percent) / 100;
     if (!expectedMl || loggedMl >= expectedMl) continue;
 
-    const users = await familyReminderUsers(row.family_id, "hydration");
-    for (const user of users) {
       const directTone = row.hydration_notification_tone === "direct";
       const result = await sendReminderOnce({
         user,
         familyId: row.family_id,
         childId: row.child_id,
         type: "hydration",
-        reminderKey: `hydration:${row.child_id}:${current.date}:${checkpoint.time}:${checkpoint.percent}`,
+        reminderKey: `hydration:${row.child_id}:${local.date}:${checkpoint.time}:${checkpoint.percent}`,
         title: directTone ? "Hydration reminder" : "Hydration check-in",
         body: directTone
           ? `${row.first_name}: ${Math.round(loggedMl)}ml logged so far. Today's ${checkpoint.percent}% checkpoint is about ${Math.round(expectedMl)}ml.`
@@ -724,6 +760,30 @@ export async function runDueReminderScan(now = new Date()) {
       });
       if (result.skippedDuplicate) results.duplicates += 1;
       else results.hydration += result.sent || 0;
+    }
+  }
+
+  const { rows: nudgeChildren } = await query(`
+    SELECT cp.family_id, cp.child_id, cp.quiet_hours, c.first_name
+    FROM child_profiles cp JOIN children c ON c.id = cp.child_id
+    WHERE c.deleted_at IS NULL
+  `);
+  for (const row of nudgeChildren) {
+    const users = await familyReminderUsers(row.family_id, "noLogsToday");
+    for (const user of users) {
+      const local = localParts(now, userReminderTimeZone(user));
+      const minute = minutesFromTime(local.time);
+      if (minute < 1200 || minute > 1220 || isInQuietHours(row.quiet_hours, local.time)) continue;
+      const logs = await query(`SELECT id FROM care_logs
+        WHERE family_id = $1 AND child_id = $2 AND log_date::text = $3
+          AND category <> 'appointment' AND deleted_at IS NULL LIMIT 1`,
+        [row.family_id, row.child_id, local.date]);
+      if (logs.rows.length) continue;
+      const result = await sendReminderOnce({ user, familyId: row.family_id, childId: row.child_id,
+        type: "noLogsToday", reminderKey: `noLogsToday:${row.child_id}:${local.date}`,
+        title: "Diary check-in", body: `No care logs have been added for ${row.first_name} today.`, url: "/" });
+      if (result.skippedDuplicate) results.duplicates += 1;
+      else results.noLogsToday += result.sent || 0;
     }
   }
 
