@@ -1,0 +1,40 @@
+/* Let nested settings grids shrink below the intrinsic width of iOS controls.
+   Keep wide tab navigation scrollable rather than clipping form content. */
+.familytrack-settings,
+.familytrack-settings .grid,
+.familytrack-settings .flex {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.familytrack-settings .grid {
+  grid-auto-columns: minmax(0, 1fr);
+}
+
+.familytrack-settings .grid > *,
+.familytrack-settings .flex > * {
+  min-width: 0;
+}
+
+.familytrack-settings input:not([type="checkbox"]):not([type="radio"]),
+.familytrack-settings select,
+.familytrack-settings textarea {
+  box-sizing: border-box;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.familytrack-settings input[type="date"],
+.familytrack-settings input[type="time"] {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.familytrack-settings p,
+.familytrack-settings h2,
+.familytrack-settings h4 {
+  overflow-wrap: anywhere;
+}

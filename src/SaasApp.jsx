@@ -1,6 +1,7 @@
 ﻿import html2canvas from "html2canvas";
 import { IS_NATIVE_APP } from "./platform";
 import CompanionAccessScreen from "./CompanionAccessScreen";
+import "./settings-layout.css";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -3770,7 +3771,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   }, []);
 
   useEffect(() => {
-    if (isLoading || !selectedFamily || !selectedChild || isStandaloneDisplay()) {
+    if (IS_NATIVE_APP || isLoading || !selectedFamily || !selectedChild || isStandaloneDisplay()) {
       return undefined;
     }
 
@@ -3798,6 +3799,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   };
 
   const reopenInstallOnboarding = () => {
+    if (IS_NATIVE_APP) return;
     setShowInstallOnboarding(true);
   };
 
@@ -7627,7 +7629,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       ) : null}
 
       {showAdmin ? (
-        <div className="min-h-screen bg-slate-50 px-4 py-5">
+        <div className="familytrack-settings min-h-screen min-w-0 bg-slate-50 px-4 py-5">
           <div className="mx-auto max-w-6xl">
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -9452,6 +9454,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       Dates shown in account settings use {activeTimeZone}. Diary
                       entries keep their saved date and time values.
                     </p>
+                    {!IS_NATIVE_APP && (
                     <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 p-4">
                       <h4 className="font-bold text-slate-900">
                         Add FamilyTrack to this device
@@ -9467,6 +9470,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         Show install help
                       </button>
                     </div>
+                    )}
 
                     <div className="mt-4 rounded-2xl border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -14910,7 +14914,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           </div>
         </div>
       ) : null}
-      {showInstallOnboarding && !isStandaloneDisplay() ? (
+      {!IS_NATIVE_APP && showInstallOnboarding && !isStandaloneDisplay() ? (
         <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/40 p-3 sm:items-center sm:justify-center">
           <div className="w-full max-w-md rounded-[1.75rem] border border-sky-100 bg-white p-5 shadow-2xl">
             <div className="flex items-start justify-between gap-3">
