@@ -8512,26 +8512,16 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   This is included near the top of shareable reports for
                   hospital, school, EHCP and carer handovers.
                 </p>
-                <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
-                  {[
-                    ["general", "General"],
-                    ["medication", "Medication"],
-                    ["fluids", "Fluid intake"],
-                    ["support", "Support notes"],
-                  ].map(([tabKey, label]) => (
-                    <button
-                      key={tabKey}
-                      type="button"
-                      onClick={() => setCareProfileTab(tabKey)}
-                      className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-black shadow-sm transition ${
-                        careProfileTab === tabKey
-                          ? "bg-slate-900 text-white"
-                          : "border border-slate-200 bg-slate-50 text-slate-700"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+                <div className="mt-4 min-w-0">
+                  <label htmlFor="care-profile-section" className="block text-sm font-semibold text-slate-700">Care profile section</label>
+                  <select id="care-profile-section" value={careProfileTab}
+                    onChange={(event) => setCareProfileTab(event.target.value)}
+                    className="mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-base text-slate-900">
+                    <option value="general">General</option>
+                    <option value="medication">Medication</option>
+                    <option value="fluids">Fluid intake</option>
+                    <option value="support">Support notes</option>
+                  </select>
                 </div>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
