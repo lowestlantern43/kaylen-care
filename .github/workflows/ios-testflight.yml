@@ -1,0 +1,94 @@
+name: iOS TestFlight
+
+on:
+  push:
+    branches: [codex/ios-companion]
+    paths: [.github/workflows/ios-testflight.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build and check companion app
+        run: |
+          npm ci
+          npm run ios:sync
+          npm run test:ios
+          npm ci --prefix backend
+          npm run test:notifications
+      - name: Install signing credentials
+        env:
+          P12: ${{ secrets.IOS_DISTRIBUTION_P12 }}
+          P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          API_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          PASSWORD=$(openssl rand -hex 32)
+          echo "::add-mask::$PASSWORD"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security create-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/signing.p12" -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles" "$HOME/.appstoreconnect/private_keys"
+          printf '%s' "$PROFILE" | base64 --decode > "$HOME/Library/MobileDevice/Provisioning Profiles/024539d4-5ca6-49e2-81e2-6689c528cbd3.mobileprovision"
+          printf '%s' "$API_KEY" > "$HOME/.appstoreconnect/private_keys/AuthKey_${KEY_ID}.p8"
+      - name: Archive signed app
+        run: |
+          set -euo pipefail
+          # Apply manual signing only to App, leaving CocoaPods frameworks unaffected.
+          ruby -rxcodeproj -e 'p = Xcodeproj::Project.open("ios/App/App.xcodeproj"); p.targets.select { |t| t.name == "App" }.each { |t| t.build_configurations.each { |c| c.build_settings.merge!({"CODE_SIGN_STYLE" => "Manual", "DEVELOPMENT_TEAM" => "68ZTBX45Q7", "CODE_SIGN_IDENTITY" => "Apple Distribution", "PROVISIONING_PROFILE_SPECIFIER" => "FamilyTrack App Store", "CURRENT_PROJECT_VERSION" => ENV.fetch("GITHUB_RUN_NUMBER")}) } }; p.save'
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/FamilyTrack.xcarchive" archive
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>68ZTBX45Q7</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Distribution</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>provisioningProfiles</key><dict>
+              <key>care.familytrack.app</key><string>FamilyTrack App Store</string>
+            </dict>
+          </dict></plist>
+          PLIST
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/FamilyTrack.xcarchive" -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export"
+      - name: Upload to TestFlight
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/export/App.ipa" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+      - name: Save signed build
+        uses: actions/upload-artifact@v4
+        with:
+          name: FamilyTrack-TestFlight
+          path: ${{ runner.temp }}/export/*.ipa
+          if-no-files-found: error
+          retention-days: 7
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/signing.p12"
+          rm -f "$HOME/Library/MobileDevice/Provisioning Profiles/024539d4-5ca6-49e2-81e2-6689c528cbd3.mobileprovision"
+          rm -f "$HOME/.appstoreconnect/private_keys/"AuthKey_*.p8
