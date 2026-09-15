@@ -7367,6 +7367,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <h1 className="truncate text-xl font-extrabold text-slate-950">
                     FamilyTrack
                   </h1>
+                  {session.user?.isPlatformAdmin && (
+                    <button type="button" onClick={openPlatformAdmin}
+                      className="my-2 inline-flex min-h-[44px] items-center rounded-xl bg-indigo-700 px-4 py-2 text-sm font-bold text-white shadow-sm">
+                      Owner/Admin Platform
+                    </button>
+                  )}
+
                   <p className="truncate text-sm font-semibold text-slate-600">
                     {selectedChild ? childDisplayName(selectedChild) : "Choose child"}
                   </p>
@@ -7611,6 +7618,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               </button>
             </div>
 
+
+                  {session.user?.isPlatformAdmin && (
+                    <button type="button" onClick={openPlatformAdmin}
+                      className="my-2 inline-flex min-h-[44px] items-center rounded-xl bg-indigo-700 px-4 py-2 text-sm font-bold text-white shadow-sm">
+                      Owner/Admin Platform
+                    </button>
+                  )}
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
@@ -7890,12 +7904,6 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         ? ` · ${publicPricing.promoLabel}`
                         : ""}
                     </p>
-                    {session.user?.isPlatformAdmin && (
-                      <button type="button" onClick={openPlatformAdmin}
-                        className="mt-2 inline-flex min-h-[44px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">
-                        Owner/Admin Platform
-                      </button>
-                    )}
                     <div className="mt-2">
                       <PlanBadge
                         record={{
