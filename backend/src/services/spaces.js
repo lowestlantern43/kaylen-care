@@ -345,7 +345,8 @@ export function createSignedGetUrl({ objectKey, expiresInSeconds = 300 }) {
   return getUrl.toString();
 }
 
-export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {
+export function createSignedAclUrl({ objectKey, expiresInSeconds = 300, acl = "private" }) {
+  if (acl !== "private") throw badRequest("Profile photos must remain private.");
   requireSpacesConfig();
 
   const aclUrl = buildBucketObjectUrl(objectKey);
@@ -366,7 +367,7 @@ export function createSignedAclUrl({ objectKey, expiresInSeconds = 300 }) {
 
   const canonicalQueryString = buildCanonicalQueryString(queryParams);
 
-  const canonicalHeaders = `host:${host}\nx-amz-acl:public-read\n`;
+  const canonicalHeaders = `host:${host}\nx-amz-acl:${acl}\n`;
   const canonicalRequest = [
     "PUT",
     aclUrl.pathname,

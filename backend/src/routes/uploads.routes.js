@@ -10,7 +10,8 @@ import {
   buildProfilePhotoObjectKey,
   buildPublicSpacesUrl,
   createSignedAclUrl,
-  createSignedPutUrl,
+  createSignedPrivatePutUrl,
+  createSignedGetUrl,
   deleteSpacesObject,
   getProfilePhotoObjectKeyFromPublicUrl,
 } from "../services/spaces.js";
@@ -69,18 +70,18 @@ async function assertWritableChild({ familyId, childId, userId }) {
   return child.rows[0];
 }
 
-async function applyPublicReadAcl(objectKey) {
+async function applyPrivateAcl(objectKey) {
   const aclResponse = await fetch(createSignedAclUrl({ objectKey }), {
     method: "PUT",
     headers: {
-      "x-amz-acl": "public-read",
+      "x-amz-acl": "private",
     },
   });
 
   if (!aclResponse.ok) {
     const details = await aclResponse.text().catch(() => "");
     throw badRequest(
-      `DigitalOcean Spaces uploaded the photo but could not make it public (${aclResponse.status}). ${
+      `DigitalOcean Spaces uploaded the photo but could not make it private (${aclResponse.status}). ${
         details ||
         "Check the Spaces access key has permission to update object ACLs."
       }`,
@@ -88,37 +89,9 @@ async function applyPublicReadAcl(objectKey) {
   }
 }
 
-uploadsRouter.post(
-  "/profile-photo/sign",
-  asyncHandler(async (req, res) => {
-    const familyId = requireUuid(req.body.familyId, "Family ID");
-    const childId = requireUuid(req.body.childId, "Child ID");
-    requireString(req.body, "fileName", "File name");
-    const fileType = requireEnum(
-      req.body,
-      "fileType",
-      allowedImageTypes,
-      "File type",
-    );
-
-    await assertWritableChild({ familyId, childId, userId: req.user.id });
-
-    const objectKey = buildProfilePhotoObjectKey({
-      familyId,
-      childId,
-      fileType,
-    });
-
-    res.json({
-      data: {
-        signedUploadUrl: createSignedPutUrl({ objectKey, fileType }),
-        publicUrl: buildPublicSpacesUrl(objectKey),
-        objectKey,
-      },
-      error: null,
-    });
-  }),
-);
+uploadsRouter.post("/profile-photo/sign", (_req, _res, next) => {
+  next(badRequest("Please update the app and use the profile photo upload control."));
+});
 
 uploadsRouter.post(
   "/profile-photo",
@@ -155,12 +128,11 @@ uploadsRouter.post(
     });
     const publicUrl = buildPublicSpacesUrl(objectKey);
     const uploadResponse = await fetch(
-      createSignedPutUrl({ objectKey, fileType }),
+      createSignedPrivatePutUrl({ objectKey, fileType }),
       {
         method: "PUT",
         headers: {
           "Content-Type": fileType,
-          "x-amz-acl": "public-read",
         },
         body: req.body,
       },
@@ -175,7 +147,7 @@ uploadsRouter.post(
       );
     }
 
-    await applyPublicReadAcl(objectKey);
+    await applyPrivateAcl(objectKey);
 
     const { rows } = await query(
       `
@@ -213,9 +185,9 @@ uploadsRouter.post(
 
     res.json({
       data: {
-        publicUrl,
+        publicUrl: createSignedGetUrl({ objectKey, expiresInSeconds: 3600 }),
         objectKey,
-        child: rows[0],
+        child: { ...rows[0], avatarUrl: createSignedGetUrl({ objectKey, expiresInSeconds: 3600 }) },
       },
       error: null,
     });
