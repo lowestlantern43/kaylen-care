@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { exportPdf } from "./exportPdf";
+import { createTableReport } from "./reportTablePdf";
 import "./report-layout.css";
 import { supabase } from "./Supabase";
 import { api } from "./api/client";
@@ -1038,7 +1039,8 @@ export default function KaylenCareMonitorDashboard({
       location: "",
     };
   });
-  const [reportBuilderLayout, setReportBuilderLayout] = useState("summary");
+  const [reportBuilderLayout, setReportBuilderLayout] = useState("table");
+  const [reportPdfGrouping, setReportPdfGrouping] = useState("category");
   const [reportBuilderGroupBy, setReportBuilderGroupBy] = useState("day");
   const [reportBuilderColumns, setReportBuilderColumns] = useState(
     REPORT_BUILDER_DEFAULT_COLUMNS,
@@ -3886,27 +3888,18 @@ export default function KaylenCareMonitorDashboard({
     if (!reportBuilderPreviewRef.current) return;
     setIsExportingPdf(true);
     try {
-      const canvas = await html2canvas(reportBuilderPreviewRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
+      const pdf = createTableReport({
+        childName,
+        dateRange: reportBuilderFilters.startDate + " to " + reportBuilderFilters.endDate,
+        grouped: reportPdfGrouping === "category",
+        rows: reportBuilderFilteredEntries.map(entry => ({
+          date: entry.date,
+          time: entry.time,
+          category: getReportBuilderCategory(entry),
+          details: getReportBuilderFieldValue(entry, "summary", childName),
+          notes: getReportBuilderDetailsText(entry),
+        })),
       });
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imageWidth = pageWidth;
-      const imageHeight = (canvas.height * imageWidth) / canvas.width;
-      let heightLeft = imageHeight;
-      let position = 0;
-      const imageData = canvas.toDataURL("image/png");
-      pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        position = heightLeft - imageHeight;
-        pdf.addPage();
-        pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
-        heightLeft -= pageHeight;
-      }
       await exportPdf(pdf, `familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.pdf`);
     } catch (error) {
       console.error("Report builder PDF export failed", error);
@@ -14346,7 +14339,7 @@ export default function KaylenCareMonitorDashboard({
                     const id = child.id || child.child_id || child.childId;
                     return (
                       <option key={id} value={id}>
-                        {child.name || child.child_name || child.childName || "Child"}
+                        {child.firstName || child.first_name || child.name || child.child_name || child.childName || "Child"}
                       </option>
                     );
                   })}
@@ -14358,6 +14351,13 @@ export default function KaylenCareMonitorDashboard({
               )}
             </div>
 
+            <div>
+              <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500" htmlFor="pdf-report-layout">PDF layout (landscape A4)</label>
+              <select id="pdf-report-layout" className={reportInputClassName} value={reportPdfGrouping} onChange={event => setReportPdfGrouping(event.target.value)}>
+                <option value="category">Grouped category tables</option>
+                <option value="timeline">Chronological timeline</option>
+              </select>
+            </div>
             <div className="report-date-grid grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -14632,7 +14632,7 @@ export default function KaylenCareMonitorDashboard({
             >
               <div className="border-b border-slate-200 pb-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-700">
-                  Kaylen's Diary
+                  FamilyTrack
                 </p>
                 <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
