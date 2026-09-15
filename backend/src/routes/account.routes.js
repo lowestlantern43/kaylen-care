@@ -5,10 +5,43 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, unauthorized } from "../utils/httpError.js";
 import { hashPassword, verifyPassword } from "../utils/passwords.js";
 import { requirePassword, requireString } from "../validators/simple.js";
+import { ensureAccountDeletionSchema, automaticallyDeleteUnlinkedAccount } from "../services/accountDeletion.js";
+import { clearSessionCookie } from "../utils/sessions.js";
 
 export const accountRouter = Router();
 
 accountRouter.use(requireAuth);
+
+accountRouter.post("/deletion-request", asyncHandler(async (req, res) => {
+  if (requireString(req.body, "confirmText", "Confirmation") !== "DELETE") {
+    throw badRequest("Type DELETE to request account deletion.");
+  }
+  const currentPassword = requireString(req.body, "currentPassword", "Current password");
+  const { rows: users } = await query(
+    "SELECT password_hash FROM users WHERE id = $1 AND deleted_at IS NULL",
+    [req.user.id],
+  );
+  if (!users[0] || !(await verifyPassword(currentPassword, users[0].password_hash))) {
+    throw unauthorized("Current password is incorrect.");
+  }
+  await ensureAccountDeletionSchema();
+  const { rows } = await query(`
+    INSERT INTO account_deletion_requests (user_id) VALUES ($1)
+    ON CONFLICT (user_id) DO UPDATE SET user_id = EXCLUDED.user_id
+    RETURNING requested_at AS "requestedAt", completed_at AS "completedAt"
+  `, [req.user.id]);
+  let deleted = false;
+  if (!req.user.is_platform_admin) {
+    try { deleted = await automaticallyDeleteUnlinkedAccount(req.user.id); }
+    catch (error) {
+      // The durable request survives a failed transaction; never report deletion
+      // when a new foreign-key reference appeared or the database rejected it.
+      console.error("Automatic account deletion deferred", { code: error.code || "unknown" });
+    }
+  }
+  if (deleted) clearSessionCookie(res);
+  res.json({ data: { ...rows[0], status: deleted ? "deleted" : "pending" }, error: null });
+}));
 
 async function ensureUserPreferencesSchema() {
   await query(`

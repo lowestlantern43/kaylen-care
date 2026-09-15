@@ -32,6 +32,7 @@ import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.j
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, notFound } from "../utils/httpError.js";
 import { hashPassword } from "../utils/passwords.js";
+import { pendingAccountDeletions } from "../services/accountDeletion.js";
 import {
   optionalString,
   requireEmail,
@@ -1141,6 +1142,7 @@ adminRouter.get(
         newAccountsThisWeek: newAccountsThisWeek.rows[0].count,
         needsAttention,
         recentActivity: recentActivity.rows,
+        accountDeletionRequests: await pendingAccountDeletions(),
         storageUsage,
         publicPricing,
         marketingSettings,

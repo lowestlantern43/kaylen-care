@@ -1,3 +1,4 @@
+import { privatePhotoChild, retainedAvatar } from "../services/profilePhotos.js";
 import { Router } from "express";
 import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -177,7 +178,7 @@ childrenRouter.get(
       [req.familyMember.family_id],
     );
 
-    res.json({ data: rows, error: null });
+    res.json({ data: rows.map(privatePhotoChild), error: null });
   }),
 );
 
@@ -190,7 +191,7 @@ childrenRouter.post(
     const lastName = optionalString(req.body, "lastName");
     const dateOfBirth = optionalDate(req.body, "dateOfBirth");
     const nhsNumber = optionalString(req.body, "nhsNumber");
-    const avatarUrl = optionalString(req.body, "avatarUrl");
+    const avatarUrl = null; // Photos are uploaded separately after the child exists.
     const notes = optionalString(req.body, "notes");
 
     const duplicate = await query(
@@ -259,7 +260,9 @@ childrenRouter.patch(
     const lastName = optionalString(req.body, "lastName");
     const dateOfBirth = optionalDate(req.body, "dateOfBirth");
     const nhsNumber = optionalString(req.body, "nhsNumber");
-    const avatarUrl = optionalString(req.body, "avatarUrl");
+    const existing = await query("SELECT avatar_url FROM children WHERE id = $1 AND family_id = $2 AND deleted_at IS NULL", [childId, req.familyMember.family_id]);
+    if (!existing.rows[0]) throw notFound("Child not found.");
+    const avatarUrl = req.body.avatarUrl === undefined ? existing.rows[0].avatar_url : retainedAvatar(optionalString(req.body, "avatarUrl"), existing.rows[0].avatar_url, childId);
     const notes = optionalString(req.body, "notes");
 
     const { rows } = await query(
@@ -300,7 +303,7 @@ childrenRouter.patch(
       throw notFound("Child not found.");
     }
 
-    res.json({ data: rows[0], error: null });
+    res.json({ data: privatePhotoChild(rows[0]), error: null });
   }),
 );
 
