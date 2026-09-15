@@ -3,7 +3,7 @@ name: iOS TestFlight
 on:
   push:
     branches: [codex/ios-companion]
-    paths: [.github/workflows/ios-testflight.yml]
+    paths: [.github/workflows/ios-testflight.yml, src/**, ios/**, package.json, package-lock.json]
   workflow_dispatch:
 
 permissions:

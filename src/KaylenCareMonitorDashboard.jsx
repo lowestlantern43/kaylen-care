@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { exportPdf } from "./exportPdf";
+import "./report-layout.css";
 import { supabase } from "./Supabase";
 import { api } from "./api/client";
 import { IS_NATIVE_APP } from "./platform";
@@ -3905,7 +3907,7 @@ export default function KaylenCareMonitorDashboard({
         pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
         heightLeft -= pageHeight;
       }
-      pdf.save(`familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.pdf`);
+      await exportPdf(pdf, `familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.pdf`);
     } catch (error) {
       console.error("Report builder PDF export failed", error);
       showToast?.({
@@ -8007,7 +8009,7 @@ export default function KaylenCareMonitorDashboard({
       setIsExportingPdf(true);
       await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant });
-      pdf.save(filename || defaultReportPdfFilename(variant));
+      await exportPdf(pdf, filename || defaultReportPdfFilename(variant));
       showToast?.({
         message:
           variant === "trends"
@@ -8180,7 +8182,7 @@ export default function KaylenCareMonitorDashboard({
 
       finishHalfRow();
 
-      pdf.save(
+      await exportPdf(pdf, 
         `familytrack-care-snapshot-${childName
           .toLowerCase()
           .replace(/\s+/g, "-")}.pdf`,
@@ -11954,7 +11956,7 @@ export default function KaylenCareMonitorDashboard({
       </div>
 
       {reportDays === "custom" ? (
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="report-date-grid mt-3 grid min-w-0 gap-3 md:grid-cols-2">
           <div className={cardClassName}>
             <label className="text-sm font-semibold text-slate-700">
               Start date
@@ -13312,7 +13314,7 @@ export default function KaylenCareMonitorDashboard({
         className="rounded-[1.75rem] border border-blue-100 bg-blue-50/70 p-4 shadow-sm"
       >
         <h4 className="font-black text-slate-950">Upload document</h4>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="report-date-grid mt-3 grid min-w-0 gap-3 md:grid-cols-2">
           <label className="text-sm font-bold text-slate-700">
             Title
             <input
@@ -13560,7 +13562,7 @@ export default function KaylenCareMonitorDashboard({
         : reportCategoryFilter;
 
     const reportInputClassName =
-      "mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+      "report-input mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
 
     const invalidCustomRange =
       reportDays === "custom" &&
@@ -14356,7 +14358,7 @@ export default function KaylenCareMonitorDashboard({
               )}
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <div className="report-date-grid grid min-w-0 gap-3 sm:grid-cols-2 xl:grid-cols-1">
               <div>
                 <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
                   Start date
@@ -14695,7 +14697,7 @@ export default function KaylenCareMonitorDashboard({
 
   const renderShareableReportsForm = () => {
     const reportInputClassName =
-      "mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
+      "report-input mt-2 block min-h-[44px] w-full min-w-0 max-w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium text-slate-700 outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-200";
     const invalidCustomRange =
       reportDays === "custom" &&
       reportRangeStart &&
@@ -15378,7 +15380,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
 
             {reportDays === "custom" ? (
-              <div className="grid gap-3 border-t border-slate-100 p-4 sm:grid-cols-2">
+              <div className="report-date-grid grid min-w-0 gap-3 border-t border-slate-100 p-4 sm:grid-cols-2">
                 <div>
                   <label className="text-sm font-bold text-slate-700">
                     Start date

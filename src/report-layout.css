@@ -1,0 +1,22 @@
+
+.report-date-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+.report-date-grid > * {
+  min-width: 0;
+}
+input.report-input[type="date"] {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+input.report-input[type="date"]::-webkit-date-and-time-value {
+  min-width: 0;
+  text-align: left;
+}
+@media (min-width: 640px) and (max-width: 1279px) {
+  .report-date-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
