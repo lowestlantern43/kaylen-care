@@ -3190,6 +3190,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [childPhotoPreviewError, setChildPhotoPreviewError] = useState("");
   const [pendingEmail, setPendingEmail] = useState("");
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deleteRequestBusy, setDeleteRequestBusy] = useState(false);
+  const [deleteRequestSent, setDeleteRequestSent] = useState(false);
   const [timeZonePreference, setTimeZonePreference] = useState(() => {
     try {
       return localStorage.getItem("familytrack:timezone") || "auto";
@@ -9643,14 +9646,25 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </section>
 
                 <section className="rounded-2xl border border-rose-200 bg-rose-50 p-4 shadow-sm lg:col-span-3">
-                  <h3 className="font-bold text-rose-900">Delete account</h3>
+                  <h3 className="font-bold text-rose-900">Request account deletion</h3>
                   <p className="mt-1 text-sm leading-6 text-rose-800">
-                    Account deletion is not enabled from user settings yet. It
-                    needs backend deletion rules first so family members, child
-                    profiles, logs, reports, photos and audit records are handled
-                    safely without orphaned data or accidental permanent loss.
+                    Submit a request to delete your account and associated personal
+                    data. Eligible accounts and their sole-user family records are
+                    permanently deleted automatically. Export anything you want to keep first.
+                    Shared families, uploaded files or billing may need further processing. We will
+                    contact your account email about completion and any shared family
+                    records that need to remain for other carers. Your access stays
+                    available while the request is pending.
                   </p>
+                  {deleteRequestSent ? <p role="status" className="mt-3 font-bold">
+                    Your deletion request has been recorded. It is awaiting processing.
+                  </p> : null}
                   <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_auto]">
+                    <input type="password" autoComplete="current-password"
+                      aria-label="Current password for account deletion"
+                      className={`${inputClass} mt-0 border-rose-200`}
+                      value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)}
+                      placeholder="Current password" />
                     <input
                       className={`${inputClass} mt-0 border-rose-200`}
                       value={deleteConfirmText}
@@ -9659,15 +9673,22 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     />
                     <button
                       type="button"
-                      disabled={deleteConfirmText !== "DELETE"}
-                      onClick={() =>
-                        setAccountMessage(
-                          "Account deletion needs backend deletion rules before it can be enabled safely. This protects family data from accidental loss.",
-                        )
-                      }
+                      disabled={deleteConfirmText !== "DELETE" || !deletePassword || deleteRequestBusy || deleteRequestSent}
+                      onClick={async () => {
+                        setDeleteRequestBusy(true);
+                        try {
+                          const result = await api.requestAccountDeletion({ confirmText: deleteConfirmText, currentPassword: deletePassword });
+                          if (result.status === "deleted") { await onLogout(); return; }
+                          setDeleteRequestSent(true);
+                          setDeletePassword("");
+                          setAccountMessage("Deletion request recorded. Your account has not yet been deleted.");
+                        } catch (error) {
+                          setAccountMessage(error.message || "Could not submit your deletion request. Please try again.");
+                        } finally { setDeleteRequestBusy(false); }
+                      }}
                       className="rounded-xl bg-rose-700 px-4 py-3 text-sm font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Delete account
+                      {deleteRequestBusy ? "Submitting…" : "Request deletion"}
                     </button>
                   </div>
                 </section>
@@ -10292,6 +10313,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         </span>
                       </div>
                       <div className="mt-3 grid gap-2 md:grid-cols-2">
+                        {(platformData.overview?.accountDeletionRequests || []).map((request) => (
+                          <div key={`deletion-${request.userId}`} className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                            <p className="font-bold">Pending account deletion</p>
+                            <p>{request.fullName} · {request.email}</p>
+                            <p>Requested {new Date(request.requestedAt).toLocaleDateString("en-GB")}</p>
+                            <p className="text-sm">Requires processing of personal data, shared records and billing. Suspending access alone does not complete this request.</p>
+                          </div>
+                        ))}
                         {(platformData.overview?.recentActivity || []).length ? (
                           platformData.overview.recentActivity.map((activity) => (
                             <div

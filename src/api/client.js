@@ -379,6 +379,9 @@ export const api = {
     request(`/families/${familyId}/subscription/portal`, {
       method: "POST",
     }),
+  requestAccountDeletion: (payload) => request("/account/deletion-request", {
+    method: "POST", body: JSON.stringify(payload),
+  }),
   adminOverview: () => request("/admin/overview"),
   adminFamilies: () => request("/admin/families"),
   adminArchivedFamilies: async () => {
