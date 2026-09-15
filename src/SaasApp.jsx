@@ -7890,6 +7890,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         ? ` · ${publicPricing.promoLabel}`
                         : ""}
                     </p>
+                    {session.user?.isPlatformAdmin && (
+                      <button type="button" onClick={openPlatformAdmin}
+                        className="mt-2 inline-flex min-h-[44px] items-center rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-800">
+                        Owner/Admin Platform
+                      </button>
+                    )}
                     <div className="mt-2">
                       <PlanBadge
                         record={{
