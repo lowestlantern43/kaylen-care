@@ -145,6 +145,8 @@ export async function disablePushSubscription({ userId, endpoint }) {
 }
 
 export async function sendPushToUser(userId, payload, endpoint = null) {
+  const { careAccessAllowed } = await import("./privacyConsent.js");
+  if (!(await careAccessAllowed(userId))) return { sent: 0, failed: 0, skipped: true };
   await ensureNotificationSchema();
 
   if (!hasPushConfig && !applePushReady()) {
@@ -505,6 +507,8 @@ async function sendReminderOnce({
   url = "/",
 }) {
   const userId = typeof user === "string" ? user : user.id;
+  const { careAccessAllowed } = await import("./privacyConsent.js");
+  if (!(await careAccessAllowed(userId))) return { skippedConsent: true };
   const settings = typeof user === "object" ? user.settings || {} : {};
   const { rows } = await query(
     `

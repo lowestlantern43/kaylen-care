@@ -50,7 +50,7 @@ export async function automaticallyDeleteUnlinkedAccount(userId) {
       WHERE c.contype = 'f' AND c.confrelid = 'users'::regclass
         AND array_length(c.conkey, 1) = 1
     `);
-    const disposable = new Set(["account_deletion_requests", "user_preferences", "push_subscriptions", "notification_events"]);
+    const disposable = new Set(["privacy_consent_events", "account_deletion_requests", "user_preferences", "push_subscriptions", "notification_events"]);
     const quote = (identifier) => `"${identifier.replaceAll('"', '""')}"`;
     for (const reference of references) {
       if (reference.schema === "public" && disposable.has(reference.table) && reference.column === "user_id") {
