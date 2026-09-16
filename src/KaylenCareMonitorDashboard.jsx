@@ -14271,6 +14271,16 @@ export default function KaylenCareMonitorDashboard({
     return (
       <section className="rounded-[2rem] border border-slate-200 bg-slate-50/80 p-3 shadow-sm sm:p-4">
         <style>{`
+          /* Keep the report document available to PDF/print, outside the screen UI. */
+          @media screen {
+            [data-report-builder-preview] {
+              position: fixed;
+              left: -100000px;
+              top: 0;
+              width: 1120px;
+              pointer-events: none;
+            }
+          }
           @media print {
             body * { visibility: hidden; }
             [data-report-builder-preview], [data-report-builder-preview] * { visibility: visible; }
@@ -14628,6 +14638,7 @@ export default function KaylenCareMonitorDashboard({
             <div
               ref={reportBuilderPreviewRef}
               data-report-builder-preview
+              aria-hidden="true"
               className="min-h-[38rem] rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm"
             >
               <div className="border-b border-slate-200 pb-4">
