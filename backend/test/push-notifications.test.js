@@ -30,8 +30,11 @@ let appleError;
 let appleSends = 0;
 let webSends = 0;
 let queryHandler;
+let consentAccepted = true;
+process.env.PRIVACY_CONSENT_REQUIRED = "true";
 mock.module("../src/db/pool.js", { namedExports: { query: async (sql, params) => {
   queries.push({ sql, params });
+  if (sql.includes("FROM privacy_consent_events")) return { rows: [{ accepted: consentAccepted, version: "2026-09-15" }] };
   if (queryHandler) return { rows: queryHandler(sql, params) };
   if (sql.includes("SELECT id, endpoint, subscription")) return { rows: subscriptions };
   return { rows: [{ endpoint: params?.[1] }] };
@@ -44,6 +47,15 @@ mock.module("../src/services/applePush.js", { namedExports: {
   sendApplePush: async () => { appleSends++; if (appleError) throw appleError; },
 } });
 const { savePushSubscription, sendPushToUser, runDueReminderScan } = await import("../src/services/pushNotifications.js");
+
+test("withdrawn consent prevents push delivery even if an endpoint remains enabled", async () => {
+  consentAccepted = false; appleSends = 0; webSends = 0;
+  try {
+    const result = await sendPushToUser("user", { title: "Private reminder" });
+    assert.equal(result.skipped, true);
+    assert.equal(appleSends + webSends, 0);
+  } finally { consentAccepted = true; }
+});
 
 test("invalid Apple tokens never reach the database insert", async () => {
   queries.length = 0;

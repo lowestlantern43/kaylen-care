@@ -7,10 +7,28 @@ import { hashPassword, verifyPassword } from "../utils/passwords.js";
 import { requirePassword, requireString } from "../validators/simple.js";
 import { ensureAccountDeletionSchema, automaticallyDeleteUnlinkedAccount } from "../services/accountDeletion.js";
 import { clearSessionCookie } from "../utils/sessions.js";
+import { PRIVACY_VERSION, CONSENT_TEXT, ensurePrivacySchema, privacyStatus } from "../services/privacyConsent.js";
 
 export const accountRouter = Router();
 
 accountRouter.use(requireAuth);
+
+accountRouter.get("/privacy", asyncHandler(async (req, res) => {
+  res.json({ data: await privacyStatus(req.user.id), error: null });
+}));
+accountRouter.post("/privacy", asyncHandler(async (req, res) => {
+  if (typeof req.body?.accepted !== "boolean" || req.body.version !== PRIVACY_VERSION) {
+    throw badRequest("Review the current privacy notice and explicitly choose whether to continue.");
+  }
+  await ensurePrivacySchema();
+  await query(`INSERT INTO privacy_consent_events (user_id, version, accepted, statement)
+    VALUES ($1, $2, $3, $4)`, [req.user.id, PRIVACY_VERSION, req.body.accepted, CONSENT_TEXT]);
+  if (!req.body.accepted) {
+    // Revoke this user's delivery endpoints without affecting other carers.
+    await query("UPDATE push_subscriptions SET enabled = false WHERE user_id = $1", [req.user.id]);
+  }
+  res.json({ data: await privacyStatus(req.user.id), error: null });
+}));
 
 accountRouter.post("/deletion-request", asyncHandler(async (req, res) => {
   if (requireString(req.body, "confirmText", "Confirmation") !== "DELETE") {

@@ -1,3 +1,4 @@
+import PrivacyGate from "./PrivacyGate";
 ﻿import html2canvas from "html2canvas";
 import { IS_NATIVE_APP } from "./platform";
 import { hasNativePush, nativePermission, registerNativePush, disableNativePush, currentPushEndpoint, savedNativePush, listenForPushTap } from "./nativePush";
@@ -79,23 +80,8 @@ function installMarketingMetadata(settings = {}) {
     }
   }
 
-  if (!gaMeasurementId || window.__familytrackGaLoaded === gaMeasurementId) return;
-  window.__familytrackGaLoaded = true;
-  window.dataLayer = window.dataLayer || [];
-  window.gtag = function gtag() {
-    window.dataLayer.push(arguments);
-  };
-  window.gtag("js", new Date());
-  window.gtag("config", gaMeasurementId, { anonymize_ip: true });
+  // Google Analytics remains disabled until an optional consent flow exists.
 
-  const script = document.createElement("script");
-  script.async = true;
-  script.src = `https://www.googletagmanager.com/gtag/js?id=${encodeURIComponent(
-    gaMeasurementId,
-  )}`;
-  script.dataset.familytrackGaId = gaMeasurementId;
-  document.head.appendChild(script);
-  window.__familytrackGaLoaded = gaMeasurementId;
 }
 const MODULE_VISIBILITY_OPTIONS = [
   {
@@ -1693,6 +1679,7 @@ function PublicNav({ onStartFree, onLogin }) {
 function PublicFooter() {
   return (
     <footer className="border-t border-slate-200 bg-white px-5 py-8">
+      <a href="https://familytrack.care/privacy.html" className="block mb-4 text-center underline">Privacy notice</a>
       <div className="mx-auto flex max-w-6xl flex-col gap-5 text-sm font-semibold text-slate-600 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="font-black text-slate-900">FamilyTrack</p>
@@ -9668,6 +9655,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 <>
                 <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
                   <h3 className="font-bold text-slate-900">Security / Privacy</h3>
+                  <button type="button" className="mt-3 underline" onClick={() => window.dispatchEvent(new Event("familytrack:privacy"))}>Open privacy controls and consent choices</button>
                   <div className="mt-3 grid gap-3 md:grid-cols-3">
                     {[
                       [
@@ -15068,71 +15056,11 @@ export default function SaasApp() {
   const [publicPricing, setPublicPricing] = useState(DEFAULT_PUBLIC_PRICING);
 
   useEffect(() => {
-    const visitorKey = "familytrack:first-party-visitor";
-    const lastTrackKey = "familytrack:last-page-view";
-
-    const visitorId = (() => {
-      try {
-        const existing = localStorage.getItem(visitorKey);
-        if (existing) return existing;
-        const next =
-          typeof crypto !== "undefined" && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-        localStorage.setItem(visitorKey, next);
-        return next;
-      } catch {
-        return "";
-      }
-    })();
-
-    const trackCurrentPage = () => {
-      const path = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const now = Date.now();
-
-      try {
-        const previous = JSON.parse(localStorage.getItem(lastTrackKey) || "{}");
-        if (previous.path === path && now - Number(previous.at || 0) < 30000) {
-          return;
-        }
-        localStorage.setItem(lastTrackKey, JSON.stringify({ path, at: now }));
-      } catch {
-        // Tracking is best-effort and should never affect app use.
-      }
-
-      api
-        .trackPageView({
-          path,
-          title: document.title,
-          visitorId,
-          referrer: document.referrer,
-        })
-        .catch(() => null);
-    };
-
-    const originalPushState = window.history.pushState;
-    const originalReplaceState = window.history.replaceState;
-    window.history.pushState = function pushStateWithTracking(...args) {
-      const result = originalPushState.apply(this, args);
-      setTimeout(trackCurrentPage, 0);
-      return result;
-    };
-    window.history.replaceState = function replaceStateWithTracking(...args) {
-      const result = originalReplaceState.apply(this, args);
-      setTimeout(trackCurrentPage, 0);
-      return result;
-    };
-
-    trackCurrentPage();
-    window.addEventListener("popstate", trackCurrentPage);
-    window.addEventListener("hashchange", trackCurrentPage);
-
-    return () => {
-      window.history.pushState = originalPushState;
-      window.history.replaceState = originalReplaceState;
-      window.removeEventListener("popstate", trackCurrentPage);
-      window.removeEventListener("hashchange", trackCurrentPage);
-    };
+    // Optional analytics are disabled for the initial privacy-reviewed release.
+    try {
+      localStorage.removeItem("familytrack:first-party-visitor");
+      localStorage.removeItem("familytrack:last-page-view");
+    } catch { /* Storage may be unavailable. */ }
   }, []);
 
   useEffect(() => {
@@ -15252,11 +15180,9 @@ export default function SaasApp() {
   }
 
   return (
-    <WorkspaceGate
-      session={session}
-      onLogout={logout}
-      publicPricing={publicPricing}
-    />
+    <PrivacyGate key={session.user.id} onLogout={logout}>
+      <WorkspaceGate session={session} onLogout={logout} publicPricing={publicPricing} />
+    </PrivacyGate>
   );
 }
 
