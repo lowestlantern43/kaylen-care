@@ -147,6 +147,8 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  getPrivacy: () => request("/account/privacy"),
+  setPrivacy: (payload) => request("/account/privacy", { method: "POST", body: JSON.stringify(payload) }),
   me: () => request("/auth/me"),
   login: ({ email, password }) =>
     request("/auth/login", {
