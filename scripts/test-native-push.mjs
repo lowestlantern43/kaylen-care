@@ -46,6 +46,24 @@ await push.disableNativePush(api);
 assert.equal(unregistered, true);
 assert.equal(push.savedNativePush(), null);
 assert.ok(calls.at(-1).disabled.startsWith("apns:"));
+// Notification Center cleanup must not prevent logout after disconnection.
+await push.registerNativePush(api, "user");
+globalThis.__push.removeAllDeliveredNotifications = async () => { throw new Error("registration callback not called"); };
+await push.disableNativePush(api);
+assert.equal(push.savedNativePush(), null);
+// An offline server can be bypassed only when iOS stops remote delivery.
+await push.registerNativePush(api, "user");
+const offlineApi = { disablePushSubscription: async () => { throw new Error("offline"); } };
+await push.disableNativePush(offlineApi);
+assert.equal(push.savedNativePush(), null);
+// If neither side disconnects, retain the endpoint and report the failure.
+await push.registerNativePush(api, "user");
+globalThis.__push.unregister = async () => { throw new Error("native failure"); };
+await assert.rejects(push.disableNativePush(offlineApi), /offline/);
+assert.ok(push.savedNativePush()?.endpoint);
+// Server disconnection remains sufficient if native cleanup is unavailable.
+await push.disableNativePush(api);
+assert.equal(push.savedNativePush(), null);
 const navigations = [];
 globalThis.window = { location: { origin: "capacitor://localhost", assign: (path) => navigations.push(path) } };
 await push.listenForPushTap();

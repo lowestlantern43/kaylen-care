@@ -48,11 +48,24 @@ export async function registerNativePush(api, userId, ask = false) {
 export async function disableNativePush(api) {
   if (registration) await registration.catch(() => null);
   const saved = savedNativePush();
-  if (saved?.endpoint) await api.disablePushSubscription(saved.endpoint);
-  if (Capacitor.isPluginAvailable("PushNotifications")) {
-    await PushNotifications.unregister();
-    await PushNotifications.removeAllDeliveredNotifications();
+  let disconnected = !saved?.endpoint;
+  let disconnectError;
+  if (saved?.endpoint) {
+    try {
+      await api.disablePushSubscription(saved.endpoint);
+      disconnected = true;
+    } catch (error) { disconnectError = error; }
   }
+  if (Capacitor.isPluginAvailable("PushNotifications")) {
+    try {
+      await PushNotifications.unregister();
+      disconnected = true;
+    } catch (error) { disconnectError ||= error; }
+    // Clearing Notification Center is cosmetic. iOS can reject this before
+    // its registration callback, even when reminder delivery is disconnected.
+    await PushNotifications.removeAllDeliveredNotifications().catch(() => null);
+  }
+  if (!disconnected) throw disconnectError || new Error("Could not disconnect reminders.");
   localStorage.removeItem(storageKey);
 }
 
