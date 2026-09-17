@@ -15121,7 +15121,8 @@ export default function SaasApp() {
       try { await disableNativePush(api); }
       catch { window.alert("Could not disconnect this iPhone from reminders. Check your connection and try signing out again."); return; }
     }
-    await api.logout().catch(() => null);
+    try { await api.logout(); }
+    catch { window.alert("Sign-out did not complete. Check your connection and try again."); return; }
     setSession(null);
   };
 

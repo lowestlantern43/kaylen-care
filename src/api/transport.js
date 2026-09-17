@@ -1,4 +1,10 @@
-import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { Capacitor, CapacitorHttp, CapacitorCookies } from "@capacitor/core";
+
+export async function clearNativeSessionCookie(url) {
+  if (Capacitor.isNativePlatform()) {
+    await CapacitorCookies.deleteCookie({ url, key: "kaylens_diary_session" });
+  }
+}
 
 // JSON API calls use iOS's HTTP stack and cookie store directly. The website
 // continues using browser fetch. File uploads retain the patched fetch path.

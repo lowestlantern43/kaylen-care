@@ -15,7 +15,8 @@ async function load(entry, mode, native) {
       b.onLoad({ filter: /.*/, namespace: "test" }, args => ({ contents: args.path === "react"
         ? "export default globalThis.__React;"
         : `export const Capacitor = { isNativePlatform: () => globalThis.__native };
-           export const CapacitorHttp = { request: (...args) => globalThis.__http(...args) };` }));
+           export const CapacitorHttp = { request: (...args) => globalThis.__http(...args) };
+           export const CapacitorCookies = { deleteCookie: (...args) => globalThis.__deleteCookie(...args) };` }));
     } }],
   });
   return import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text + `\n// ${moduleId++}`).toString("base64")}`);
@@ -25,6 +26,8 @@ const originalFetch = globalThis.fetch;
 try {
   for (const [mode, native] of [["ios", true], ["ios", false], ["production", true], ["production", false]]) {
     const calls = [];
+    const deletedCookies = [];
+    globalThis.__deleteCookie = async options => deletedCookies.push(options);
     globalThis.fetch = async (url, options) => {
       calls.push({ url, options });
       return { ok: true, status: 200, json: async () => ({ data: { user: { id: "test-user" } } }) };
@@ -45,6 +48,12 @@ try {
     await api.login({ email: "test@example.test", password: "test-only" });
     assert.equal((await api.me()).user.id, "test-user");
     await api.logout();
+    assert.deepEqual(deletedCookies, native ? [{ url: "https://example.test/api", key: "kaylens_diary_session" }] : []);
+    if (native) {
+      globalThis.__deleteCookie = async () => { throw new Error("Cookie removal failed"); };
+      await assert.rejects(api.logout(), /Cookie removal failed/);
+      calls.pop();
+    }
     assert.deepEqual(calls.map(c => c.url.split("/api")[1]), ["/auth/login", "/auth/me", "/auth/logout"]);
     if (native) assert.deepEqual(calls[0].options.data, { email: "test@example.test", password: "test-only" });
     else assert.equal(calls[0].options.credentials, "include");
@@ -53,6 +62,7 @@ try {
     globalThis.__http = async () => { throw new Error("offline"); };
     globalThis.fetch = globalThis.__http;
     await assert.rejects(api.me(), /could not connect/);
+    await assert.rejects(api.logout(), /could not connect/);
     console.log(`PASS: ${mode}, native=${native}: billing, login/session/logout transport and errors`);
   }
   const { default: AccessScreen } = await load("src/CompanionAccessScreen.jsx", "ios", false);
@@ -68,4 +78,5 @@ try {
   delete globalThis.__native;
   delete globalThis.__http;
   delete globalThis.__React;
+  delete globalThis.__deleteCookie;
 }

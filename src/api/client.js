@@ -1,5 +1,5 @@
 import { requireWebBilling } from "../platform";
-import { fetchJson } from "./transport";
+import { fetchJson, clearNativeSessionCookie } from "./transport";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 
@@ -174,10 +174,13 @@ export const api = {
         childFirstName,
       }),
     }),
-  logout: () =>
-    request("/auth/logout", {
+  logout: async () => {
+    const result = await request("/auth/logout", {
       method: "POST",
-    }),
+    });
+    await clearNativeSessionCookie(API_BASE_URL);
+    return result;
+  },
   publicPricing: () => requestOptional("/public/pricing"),
   trackPageView: (payload) =>
     requestOptional("/public/analytics/page-view", {
