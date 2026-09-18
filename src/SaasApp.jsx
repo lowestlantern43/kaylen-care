@@ -8,6 +8,7 @@ import foodScreenshot from "./assets/screenshots/logging-food.png";
 import medicationScreenshot from "./assets/screenshots/medication-log.png";
 import reportsScreenshot from "./assets/screenshots/reports-page.png";
 import sleepScreenshot from "./assets/screenshots/sleep-log.png";
+import { APP_AVAILABILITY } from "./appAvailability";
 
 const SUPPORT_EMAIL = "hello@familytrack.care";
 const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}`;
@@ -1671,6 +1672,65 @@ function PublicNav({ onStartFree, onLogin }) {
   );
 }
 
+function AppAvailabilityBanner() {
+  const platforms = Object.entries(APP_AVAILABILITY);
+  const availableCount = platforms.filter(
+    ([, platform]) => platform.status === "available" && platform.url,
+  ).length;
+
+  return (
+    <aside
+      aria-label="FamilyTrack mobile app availability"
+      className="mx-auto mt-5 flex max-w-6xl flex-col gap-3 rounded-2xl border border-indigo-100 bg-white/80 px-4 py-3 shadow-sm backdrop-blur sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex items-center gap-3">
+        <span
+          aria-hidden="true"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-sm"
+        >
+          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="7" y="2.5" width="10" height="19" rx="2.5" />
+            <path d="M10 5h4M11 18.5h2" />
+          </svg>
+        </span>
+        <div>
+          <p className="text-sm font-black text-slate-950">
+            {availableCount
+              ? "Take FamilyTrack with you"
+              : "FamilyTrack mobile apps are coming soon"}
+          </p>
+          <p className="text-xs font-semibold leading-5 text-slate-600">
+            {availableCount
+              ? "Download the app for quicker access to your family care diary."
+              : "Dedicated iPhone and Android apps are on the way. FamilyTrack is available on the web today."}
+          </p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 sm:justify-end">
+        {platforms.map(([key, platform]) => {
+          const isAvailable = platform.status === "available" && platform.url;
+          const className =
+            "inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-black " +
+            (isAvailable
+              ? "border-indigo-200 bg-indigo-50 text-indigo-800 hover:bg-indigo-100"
+              : "border-slate-200 bg-slate-50 text-slate-600");
+          const content = `${platform.label} · ${isAvailable ? "Get the app" : "Coming soon"}`;
+
+          return isAvailable ? (
+            <a key={key} href={platform.url} className={className}>
+              {content}
+            </a>
+          ) : (
+            <span key={key} className={className}>
+              {content}
+            </span>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
 function PublicFooter() {
   return (
     <footer className="border-t border-slate-200 bg-white px-5 py-8">
@@ -1746,8 +1806,9 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
       <SeoHead page={page} jsonLd={jsonLd} />
       <section className="overflow-hidden bg-gradient-to-br from-indigo-50 via-white to-sky-50 px-5 py-5">
         <PublicNav onStartFree={onStartFree} onLogin={onLogin} />
+        <AppAvailabilityBanner />
 
-        <div className="mx-auto grid max-w-6xl gap-8 py-12 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
+        <div className="mx-auto grid max-w-6xl gap-8 pb-12 pt-8 lg:grid-cols-[1.05fr_0.95fr] lg:items-center">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.18em] text-indigo-600">
               Parent-led care diary
