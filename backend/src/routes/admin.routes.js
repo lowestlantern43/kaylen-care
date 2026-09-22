@@ -1926,6 +1926,7 @@ adminRouter.get(
 
     res.json({
       data: {
+        schemaVersion: "billing-evidence-v1",
         account: family.rows[0],
         events: events.rows,
         consents: consents.rows,
