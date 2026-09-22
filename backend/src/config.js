@@ -18,6 +18,8 @@ export const config = {
     .filter(Boolean),
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
   stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "",
+  stripeEvidenceWebhookSecret:
+    process.env.STRIPE_EVIDENCE_WEBHOOK_SECRET || "",
   stripePriceId:
     process.env.STRIPE_MAIN_PRICE_ID ||
     process.env.STRIPE_PRO_MONTHLY_PRICE_ID ||

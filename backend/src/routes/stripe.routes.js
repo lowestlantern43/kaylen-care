@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { config } from "../config.js";
 import {
   retrieveStripeCheckoutSession,
   retrieveStripeSubscription,
@@ -8,11 +9,33 @@ import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
-import { recordStripeBillingAuditEventsSafely } from "../services/stripeBillingAudit.js";
+import {
+  recordStripeBillingAuditEvents,
+  recordStripeBillingAuditEventsSafely,
+} from "../services/stripeBillingAudit.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, forbidden } from "../utils/httpError.js";
 
 export const stripeRouter = Router();
+
+const stripeEvidenceEventTypes = new Set([
+  "checkout.session.completed",
+  "customer.subscription.created",
+  "customer.subscription.updated",
+  "customer.subscription.deleted",
+  "invoice.payment_succeeded",
+  "invoice.paid",
+  "invoice.payment_failed",
+  "refund.created",
+  "refund.updated",
+  "refund.failed",
+  "charge.refunded",
+  "radar.early_fraud_warning.created",
+  "radar.early_fraud_warning.updated",
+  "charge.dispute.created",
+  "charge.dispute.updated",
+  "charge.dispute.closed",
+]);
 
 async function ensureStripeWebhookEventsSchema() {
   await query(`
@@ -96,6 +119,71 @@ async function failStripeWebhookEvent(event, error) {
       WHERE stripe_event_id = $1
     `,
     [event.id, error?.message || "Webhook processing failed."],
+  );
+}
+
+async function beginStripeEvidenceWebhookEvent(event) {
+  const { rows } = await query(
+    `
+      INSERT INTO stripe_evidence_webhook_events (
+        stripe_event_id,
+        event_type,
+        status,
+        attempts,
+        updated_at
+      )
+      VALUES ($1, $2, 'processing', 1, now())
+      ON CONFLICT (stripe_event_id)
+      DO UPDATE SET
+        attempts = stripe_evidence_webhook_events.attempts + 1,
+        status = 'processing',
+        last_error = null,
+        updated_at = now()
+      WHERE stripe_evidence_webhook_events.status = 'failed'
+      RETURNING stripe_event_id, event_type, status, attempts
+    `,
+    [event.id, event.type],
+  );
+
+  if (rows[0]) return { shouldProcess: true, eventRecord: rows[0] };
+
+  const existing = await query(
+    `
+      SELECT status, attempts
+      FROM stripe_evidence_webhook_events
+      WHERE stripe_event_id = $1
+      LIMIT 1
+    `,
+    [event.id],
+  );
+
+  return { shouldProcess: false, eventRecord: existing.rows[0] || null };
+}
+
+async function completeStripeEvidenceWebhookEvent(event) {
+  await query(
+    `
+      UPDATE stripe_evidence_webhook_events
+      SET status = 'processed',
+          processed_at = now(),
+          last_error = null,
+          updated_at = now()
+      WHERE stripe_event_id = $1
+    `,
+    [event.id],
+  );
+}
+
+async function failStripeEvidenceWebhookEvent(event, error) {
+  await query(
+    `
+      UPDATE stripe_evidence_webhook_events
+      SET status = 'failed',
+          last_error = $2,
+          updated_at = now()
+      WHERE stripe_event_id = $1
+    `,
+    [event.id, error?.message || "Evidence webhook processing failed."],
   );
 }
 
@@ -321,6 +409,88 @@ stripeRouter.get("/webhook", (req, res) => {
     error: null,
   });
 });
+
+stripeRouter.get("/evidence-webhook", (req, res) => {
+  res.json({
+    data: {
+      ok: true,
+      method: "POST",
+      endpoint: "/api/stripe/evidence-webhook",
+      configured: Boolean(config.stripeEvidenceWebhookSecret),
+      behavior: "evidence_only",
+    },
+    error: null,
+  });
+});
+
+stripeRouter.post(
+  "/evidence-webhook",
+  asyncHandler(async (req, res) => {
+    const rawBody = req.body;
+    if (!Buffer.isBuffer(rawBody)) {
+      throw badRequest("Stripe evidence webhook requires the raw request body.");
+    }
+
+    verifyStripeWebhookSignature(
+      rawBody,
+      req.headers["stripe-signature"],
+      config.stripeEvidenceWebhookSecret,
+    );
+
+    let event;
+    try {
+      event = JSON.parse(rawBody.toString("utf8"));
+    } catch {
+      throw badRequest("Stripe evidence webhook body is not valid JSON.");
+    }
+
+    if (!stripeEvidenceEventTypes.has(event.type)) {
+      res.json({ received: true, ignored: true });
+      return;
+    }
+
+    const { shouldProcess, eventRecord } =
+      await beginStripeEvidenceWebhookEvent(event);
+    if (!shouldProcess) {
+      res.json({
+        received: true,
+        duplicate: true,
+        status: eventRecord?.status || "unknown",
+      });
+      return;
+    }
+
+    try {
+      const result = await recordStripeBillingAuditEvents(event, {
+        familyId:
+          event.data?.object?.metadata?.family_id ||
+          event.data?.object?.metadata?.account_id ||
+          null,
+        userId:
+          event.data?.object?.metadata?.user_id ||
+          event.data?.object?.metadata?.userId ||
+          null,
+      });
+      await completeStripeEvidenceWebhookEvent(event);
+      console.info("Stripe evidence webhook processed.", {
+        type: event.type,
+        id: event.id,
+        mappedCount: result.mappedCount,
+        recordedCount: result.recordedCount,
+      });
+    } catch (error) {
+      await failStripeEvidenceWebhookEvent(event, error).catch(() => null);
+      console.error("Stripe evidence webhook failed.", {
+        type: event.type,
+        id: event.id,
+        message: error.message,
+      });
+      throw error;
+    }
+
+    res.json({ received: true });
+  }),
+);
 
 stripeRouter.post(
   "/webhook",

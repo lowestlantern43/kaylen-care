@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 
 process.env.DATABASE_URL ||= "postgresql://test:test@localhost:5432/familytrack_test";
 
@@ -10,6 +11,7 @@ const {
 const { mapStripeEventToBillingAuditEvents } = await import(
   "../src/services/stripeBillingAudit.js"
 );
+const { verifyStripeWebhookSignature } = await import("../src/services/stripe.js");
 
 function stripeEvent(type, object, previousAttributes = undefined) {
   return {
@@ -130,4 +132,25 @@ test("billing evidence persistence is fail-open", async () => {
   } finally {
     console.error = originalConsoleError;
   }
+});
+
+test("webhook signature verification accepts an isolated evidence secret", () => {
+  const rawBody = Buffer.from('{"id":"evt_evidence"}');
+  const timestamp = "1700000000";
+  const secret = "whsec_evidence_test";
+  const signature = crypto
+    .createHmac("sha256", secret)
+    .update(`${timestamp}.${rawBody.toString("utf8")}`)
+    .digest("hex");
+
+  assert.doesNotThrow(() =>
+    verifyStripeWebhookSignature(rawBody, `t=${timestamp},v1=${signature}`, secret),
+  );
+  assert.throws(() =>
+    verifyStripeWebhookSignature(
+      rawBody,
+      `t=${timestamp},v1=${signature}`,
+      "whsec_wrong",
+    ),
+  );
 });

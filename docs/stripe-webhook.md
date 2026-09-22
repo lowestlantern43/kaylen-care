@@ -15,6 +15,7 @@ Required backend environment variables:
 ```text
 STRIPE_SECRET_KEY=sk_...
 STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_EVIDENCE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_ID=price_...
 ```
 
@@ -58,3 +59,17 @@ Subscription and invoice events continue to drive the existing subscription sync
 Refund, dispute, and Early Fraud Warning events are evidence-only: they are written
 to the append-only billing audit and do not refund, cancel, suspend, or otherwise
 change a customer account.
+
+## Evidence-only destination
+
+For audit collection that is isolated from subscription control, create a second
+Stripe event destination at:
+
+```text
+https://familytrack.care/api/stripe/evidence-webhook
+```
+
+Store that destination's separate signing secret in
+`STRIPE_EVIDENCE_WEBHOOK_SECRET`. This endpoint uses its own delivery ledger and
+only writes append-only billing evidence. It does not call the subscription sync,
+change access, issue refunds, cancel subscriptions, or suspend accounts.

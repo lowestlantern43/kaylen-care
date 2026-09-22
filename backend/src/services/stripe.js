@@ -213,8 +213,12 @@ export async function retrieveStripeSubscription(subscriptionId) {
   return stripeRequest(`/subscriptions/${subscriptionId}`, { method: "GET" });
 }
 
-export function verifyStripeWebhookSignature(rawBody, signatureHeader) {
-  if (!config.stripeWebhookSecret) {
+export function verifyStripeWebhookSignature(
+  rawBody,
+  signatureHeader,
+  webhookSecret = config.stripeWebhookSecret,
+) {
+  if (!webhookSecret) {
     throw badRequest("Stripe webhook secret is not configured.");
   }
 
@@ -231,7 +235,7 @@ export function verifyStripeWebhookSignature(rawBody, signatureHeader) {
   }
 
   const expected = crypto
-    .createHmac("sha256", config.stripeWebhookSecret)
+    .createHmac("sha256", webhookSecret)
     .update(`${timestamp}.${rawBody.toString("utf8")}`)
     .digest("hex");
 

@@ -1,5 +1,8 @@
 import { query } from "../db/pool.js";
-import { recordBillingAuditEventSafely } from "./billingAudit.js";
+import {
+  appendBillingAuditEvent,
+  recordBillingAuditEventSafely,
+} from "./billingAudit.js";
 
 function stripeId(value) {
   return typeof value === "string" ? value : value?.id || null;
@@ -211,4 +214,30 @@ export async function recordStripeBillingAuditEventsSafely(
       });
     }
   }
+}
+
+export async function recordStripeBillingAuditEvents(
+  event,
+  { familyId = null, userId = null } = {},
+) {
+  const object = event?.data?.object || {};
+  const auditEvents = mapStripeEventToBillingAuditEvents(event);
+  const recordedIds = [];
+
+  for (const auditEvent of auditEvents) {
+    const resolvedFamilyId = await resolveFamilyId(auditEvent, object, familyId);
+    const recordedId = await appendBillingAuditEvent({
+      ...auditEvent,
+      familyId: resolvedFamilyId,
+      userId:
+        userId || object?.metadata?.user_id || object?.metadata?.userId || null,
+    });
+    if (recordedId) recordedIds.push(recordedId);
+  }
+
+  return {
+    mappedCount: auditEvents.length,
+    recordedCount: recordedIds.length,
+    recordedIds,
+  };
 }
