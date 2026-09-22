@@ -8,6 +8,7 @@ import { query } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
 import { buildPlanAccess, ensurePlanAccessSchema } from "../services/planAccess.js";
 import { syncSubscriptionFromStripe } from "../services/stripeSubscriptionSync.js";
+import { recordStripeBillingAuditEventsSafely } from "../services/stripeBillingAudit.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { badRequest, forbidden } from "../utils/httpError.js";
 
@@ -395,6 +396,20 @@ stripeRouter.post(
       if (event.type === "invoice.payment_failed") {
         synced = await updateSubscriptionFromInvoice(event.data.object, "past_due");
       }
+
+      await recordStripeBillingAuditEventsSafely(event, {
+        familyId: synced?.familyId || null,
+        userId:
+          event.data?.object?.metadata?.user_id ||
+          event.data?.object?.metadata?.userId ||
+          null,
+      }).catch((error) => {
+        console.error("Stripe webhook billing audit failed after payment processing.", {
+          type: event.type,
+          id: event.id,
+          message: error.message,
+        });
+      });
 
       await completeStripeWebhookEvent(event);
 

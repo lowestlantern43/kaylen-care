@@ -1842,6 +1842,100 @@ adminRouter.get(
 );
 
 adminRouter.get(
+  "/families/:familyId/billing-audit",
+  asyncHandler(async (req, res) => {
+    const familyId = requireUuid(req.params.familyId, "Family ID");
+
+    const family = await query(
+      `
+        SELECT
+          f.id,
+          f.name,
+          s.stripe_customer_id AS "stripeCustomerId",
+          s.stripe_subscription_id AS "stripeSubscriptionId",
+          s.status AS "subscriptionStatus",
+          s.plan,
+          s.trial_started_at AS "trialStartedAt",
+          s.trial_ends_at AS "trialEndsAt",
+          s.current_period_end AS "currentPeriodEnd",
+          s.cancel_at_period_end AS "cancelAtPeriodEnd"
+        FROM families f
+        LEFT JOIN subscriptions s ON s.family_id = f.id
+        WHERE f.id = $1
+        LIMIT 1
+      `,
+      [familyId],
+    );
+
+    if (!family.rows[0]) {
+      throw notFound("Family not found.");
+    }
+
+    const [events, consents] = await Promise.all([
+      query(
+        `
+          SELECT
+            id,
+            user_id AS "userId",
+            event_type AS "eventType",
+            event_source AS "eventSource",
+            occurred_at AS "occurredAt",
+            stripe_customer_id AS "stripeCustomerId",
+            stripe_subscription_id AS "stripeSubscriptionId",
+            stripe_checkout_session_id AS "stripeCheckoutSessionId",
+            stripe_payment_intent_id AS "stripePaymentIntentId",
+            stripe_invoice_id AS "stripeInvoiceId",
+            stripe_charge_id AS "stripeChargeId",
+            stripe_refund_id AS "stripeRefundId",
+            stripe_dispute_id AS "stripeDisputeId",
+            stripe_event_id AS "stripeEventId",
+            amount_minor AS "amountMinor",
+            currency,
+            metadata,
+            created_at AS "createdAt"
+          FROM billing_audit_events
+          WHERE family_id = $1
+          ORDER BY occurred_at ASC, created_at ASC
+        `,
+        [familyId],
+      ),
+      query(
+        `
+          SELECT
+            id,
+            user_id AS "userId",
+            terms_version AS "termsVersion",
+            privacy_policy_version AS "privacyPolicyVersion",
+            refund_policy_version AS "refundPolicyVersion",
+            price_presented_minor AS "pricePresentedMinor",
+            currency,
+            billing_interval AS "billingInterval",
+            trial_days_presented AS "trialDaysPresented",
+            calculated_first_payment_at AS "calculatedFirstPaymentAt",
+            accepted_at AS "acceptedAt",
+            evidence_source AS "evidenceSource",
+            metadata,
+            created_at AS "createdAt"
+          FROM billing_consent_evidence
+          WHERE family_id = $1
+          ORDER BY accepted_at ASC, created_at ASC
+        `,
+        [familyId],
+      ),
+    ]);
+
+    res.json({
+      data: {
+        account: family.rows[0],
+        events: events.rows,
+        consents: consents.rows,
+      },
+      error: null,
+    });
+  }),
+);
+
+adminRouter.get(
   "/families/:familyId",
   asyncHandler(async (req, res) => {
     const { familyId } = req.params;
