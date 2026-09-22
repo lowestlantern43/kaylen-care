@@ -3283,6 +3283,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [selectedPlatformUser, setSelectedPlatformUser] = useState(null);
   const [isPlatformLoading, setIsPlatformLoading] = useState(false);
   const [isFamilyDetailLoading, setIsFamilyDetailLoading] = useState(false);
+  const [isBillingAuditLoading, setIsBillingAuditLoading] = useState(false);
   const [isUserDetailLoading, setIsUserDetailLoading] = useState(false);
   const [isPlatformSnapshotLoading, setIsPlatformSnapshotLoading] =
     useState(false);
@@ -5672,9 +5673,23 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     setPlatformActionMessage("");
 
     try {
-      const detail = normalisePlatformFamilyDetail(
-        await api.adminFamilyDetail(familyId),
-      );
+      const [familyResult, billingAuditResult] = await Promise.allSettled([
+        api.adminFamilyDetail(familyId),
+        api.adminFamilyBillingAudit(familyId),
+      ]);
+      if (familyResult.status === "rejected") throw familyResult.reason;
+
+      const detail = normalisePlatformFamilyDetail(familyResult.value);
+      detail.billingAudit =
+        billingAuditResult.status === "fulfilled"
+          ? billingAuditResult.value
+          : {
+              events: [],
+              consents: [],
+              error:
+                billingAuditResult.reason?.message ||
+                "Billing evidence could not be loaded.",
+            };
       setSelectedPlatformFamily(detail);
       setPlatformFamilyDetailTab((current) => current || "overview");
       setPlatformPlanForm({
@@ -5708,6 +5723,33 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       setError(caughtError.message);
     } finally {
       setIsFamilyDetailLoading(false);
+    }
+  };
+
+  const refreshPlatformBillingAudit = async () => {
+    const familyId = selectedPlatformFamily?.family?.id;
+    if (!familyId) return;
+
+    setIsBillingAuditLoading(true);
+    try {
+      const billingAudit = await api.adminFamilyBillingAudit(familyId);
+      setSelectedPlatformFamily((current) =>
+        current ? { ...current, billingAudit } : current,
+      );
+    } catch (caughtError) {
+      setSelectedPlatformFamily((current) =>
+        current
+          ? {
+              ...current,
+              billingAudit: {
+                ...(current.billingAudit || {}),
+                error: caughtError.message,
+              },
+            }
+          : current,
+      );
+    } finally {
+      setIsBillingAuditLoading(false);
     }
   };
 
@@ -13589,6 +13631,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   ["overview", "Overview"],
                   ["children", "Children"],
                   ["subscription", "Subscription"],
+                  ["billing-evidence", "Billing evidence"],
                   ["activity", "Activity"],
                   ["issues", "Issues"],
                   ["notes", "Notes"],
@@ -14092,6 +14135,248 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       Save Document Vault override
                     </button>
                   </div>
+                </div>
+              ) : null}
+
+              {platformFamilyDetailTab === "billing-evidence" ? (
+                <div className="space-y-4">
+                  <div className="flex flex-col gap-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-[0.14em] text-indigo-700">
+                        Billing and dispute protection
+                      </p>
+                      <h4 className="mt-1 text-lg font-black text-slate-950">
+                        Subscription evidence timeline
+                      </h4>
+                      <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
+                        Payment and subscription evidence only. Family care records
+                        and child information are never included here.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={refreshPlatformBillingAudit}
+                      disabled={isBillingAuditLoading}
+                      className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-xs font-black text-white shadow-sm disabled:opacity-60"
+                    >
+                      {isBillingAuditLoading ? "Refreshing..." : "Refresh evidence"}
+                    </button>
+                  </div>
+
+                  {selectedPlatformFamily.billingAudit?.error ? (
+                    <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                      {selectedPlatformFamily.billingAudit.error}
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    {[
+                      [
+                        "Status",
+                        selectedPlatformFamily.billingAudit?.account
+                          ?.subscriptionStatus ||
+                          selectedPlatformFamily.family?.subscriptionStatus ||
+                          "Not recorded",
+                      ],
+                      [
+                        "Trial started",
+                        selectedPlatformFamily.billingAudit?.account?.trialStartedAt
+                          ? formatPlatformDateTime(
+                              selectedPlatformFamily.billingAudit.account
+                                .trialStartedAt,
+                            )
+                          : "Not recorded",
+                      ],
+                      [
+                        "Trial ends",
+                        selectedPlatformFamily.billingAudit?.account?.trialEndsAt
+                          ? formatPlatformDateTime(
+                              selectedPlatformFamily.billingAudit.account.trialEndsAt,
+                            )
+                          : "Not recorded",
+                      ],
+                      [
+                        "Evidence events",
+                        selectedPlatformFamily.billingAudit?.events?.length || 0,
+                      ],
+                    ].map(([label, value]) => (
+                      <div
+                        key={label}
+                        className="rounded-2xl border border-slate-200 bg-white p-4"
+                      >
+                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-500">
+                          {label}
+                        </p>
+                        <p className="mt-1 break-words text-sm font-black capitalize text-slate-900">
+                          {value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h4 className="font-black text-slate-950">Timeline</h4>
+                        <p className="text-sm font-semibold text-slate-500">
+                          Oldest event first, with Stripe references retained for
+                          dispute evidence.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-black text-slate-600">
+                        {selectedPlatformFamily.billingAudit?.events?.length || 0}{" "}
+                        events
+                      </span>
+                    </div>
+
+                    {selectedPlatformFamily.billingAudit?.events?.length ? (
+                      <div className="mt-4 space-y-3">
+                        {selectedPlatformFamily.billingAudit.events.map(
+                          (billingEvent, eventIndex) => {
+                            const amountMinor = Number(billingEvent.amountMinor);
+                            const hasAmount =
+                              billingEvent.amountMinor !== null &&
+                              typeof billingEvent.amountMinor !== "undefined" &&
+                              Number.isFinite(amountMinor);
+                            const references = [
+                              ["Customer", billingEvent.stripeCustomerId],
+                              ["Subscription", billingEvent.stripeSubscriptionId],
+                              ["Invoice", billingEvent.stripeInvoiceId],
+                              ["Payment", billingEvent.stripePaymentIntentId],
+                              ["Charge", billingEvent.stripeChargeId],
+                              ["Refund", billingEvent.stripeRefundId],
+                              ["Dispute", billingEvent.stripeDisputeId],
+                              ["Stripe event", billingEvent.stripeEventId],
+                            ].filter(([, value]) => value);
+                            const isProblem = [
+                              "payment_failed",
+                              "refund_failed",
+                              "early_fraud_warning",
+                              "dispute_created",
+                              "dispute_lost",
+                            ].includes(billingEvent.eventType);
+                            const isPositive = [
+                              "payment_succeeded",
+                              "refund_succeeded",
+                              "subscription_activated",
+                              "dispute_won",
+                            ].includes(billingEvent.eventType);
+
+                            return (
+                              <div
+                                key={billingEvent.id}
+                                className="grid gap-3 sm:grid-cols-[32px_1fr]"
+                              >
+                                <div className="flex flex-col items-center">
+                                  <span
+                                    className={`mt-1 h-3 w-3 rounded-full ring-4 ${
+                                      isProblem
+                                        ? "bg-rose-500 ring-rose-100"
+                                        : isPositive
+                                          ? "bg-emerald-500 ring-emerald-100"
+                                          : "bg-indigo-500 ring-indigo-100"
+                                    }`}
+                                  />
+                                  {eventIndex <
+                                  selectedPlatformFamily.billingAudit.events.length -
+                                    1 ? (
+                                    <span className="mt-1 h-full min-h-10 w-px bg-slate-200" />
+                                  ) : null}
+                                </div>
+                                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                                  <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                                    <div>
+                                      <p className="font-black capitalize text-slate-950">
+                                        {String(billingEvent.eventType || "event").replaceAll(
+                                          "_",
+                                          " ",
+                                        )}
+                                      </p>
+                                      <p className="text-xs font-semibold text-slate-500">
+                                        {billingEvent.eventSource || "system"}
+                                      </p>
+                                    </div>
+                                    <div className="text-left sm:text-right">
+                                      <p className="text-xs font-bold text-slate-700">
+                                        {formatPlatformDateTime(
+                                          billingEvent.occurredAt,
+                                        )}
+                                      </p>
+                                      {hasAmount ? (
+                                        <p className="text-sm font-black text-slate-950">
+                                          {formatMoney(
+                                            amountMinor / 100,
+                                            String(
+                                              billingEvent.currency || "GBP",
+                                            ).toUpperCase(),
+                                          )}
+                                        </p>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  {references.length ? (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      {references.map(([label, value]) => (
+                                        <span
+                                          key={`${billingEvent.id}-${label}`}
+                                          className="max-w-full rounded-lg border border-slate-200 bg-white px-2 py-1 font-mono text-[10px] font-bold text-slate-600"
+                                        >
+                                          {label}: {value}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                            );
+                          },
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-4">
+                        <AdminEmptyState
+                          title="No billing evidence recorded yet"
+                          message="Events will appear here after the Stripe webhook is connected to the FamilyTrack API. Existing customer billing remains unchanged."
+                          tone="slate"
+                        />
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                    <h4 className="font-black text-slate-950">Consent evidence</h4>
+                    <p className="text-sm font-semibold text-slate-500">
+                      Versioned terms and billing information will appear here once
+                      the future consent capture is enabled.
+                    </p>
+                    {selectedPlatformFamily.billingAudit?.consents?.length ? (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        {selectedPlatformFamily.billingAudit.consents.map(
+                          (consent) => (
+                            <div
+                              key={consent.id}
+                              className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm"
+                            >
+                              <p className="font-black text-slate-900">
+                                Accepted {formatPlatformDateTime(consent.acceptedAt)}
+                              </p>
+                              <p className="mt-1 text-slate-600">
+                                Terms {consent.termsVersion || "not recorded"} ·
+                                Privacy {consent.privacyPolicyVersion || "not recorded"}
+                              </p>
+                              <p className="text-slate-600">
+                                Refund policy {consent.refundPolicyVersion || "not recorded"}
+                              </p>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    ) : (
+                      <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-500">
+                        No consent evidence has been captured yet.
+                      </p>
+                    )}
+                  </section>
                 </div>
               ) : null}
 

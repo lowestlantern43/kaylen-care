@@ -399,6 +399,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
   adminFamilyDetail: (familyId) => request(`/admin/families/${familyId}`),
+  adminFamilyBillingAudit: (familyId) =>
+    request(`/admin/families/${familyId}/billing-audit`),
   adminUpdateFamily: (familyId, payload) =>
     request(`/admin/families/${familyId}`, {
       method: "PATCH",
