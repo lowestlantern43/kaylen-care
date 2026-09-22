@@ -1,10 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import {
+
+process.env.DATABASE_URL ||= "postgresql://test:test@localhost:5432/familytrack_test";
+
+const {
   recordBillingAuditEventSafely,
   sanitiseBillingMetadata,
-} from "../src/services/billingAudit.js";
-import { mapStripeEventToBillingAuditEvents } from "../src/services/stripeBillingAudit.js";
+} = await import("../src/services/billingAudit.js");
+const { mapStripeEventToBillingAuditEvents } = await import(
+  "../src/services/stripeBillingAudit.js"
+);
 
 function stripeEvent(type, object, previousAttributes = undefined) {
   return {
