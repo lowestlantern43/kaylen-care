@@ -37,9 +37,24 @@ customer.subscription.created
 customer.subscription.updated
 customer.subscription.deleted
 invoice.payment_succeeded
+invoice.paid
 invoice.payment_failed
+refund.created
+refund.updated
+refund.failed
+charge.refunded
+radar.early_fraud_warning.created
+radar.early_fraud_warning.updated
+charge.dispute.created
+charge.dispute.updated
+charge.dispute.closed
 ```
 
 The webhook route uses Stripe's raw request body and verifies the
 `Stripe-Signature` header with `STRIPE_WEBHOOK_SECRET`. Successful events are
 tracked by Stripe event ID so retries are safe and idempotent.
+
+Subscription and invoice events continue to drive the existing subscription sync.
+Refund, dispute, and Early Fraud Warning events are evidence-only: they are written
+to the append-only billing audit and do not refund, cancel, suspend, or otherwise
+change a customer account.
