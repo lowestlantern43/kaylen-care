@@ -1,5 +1,5 @@
 const sections = [
-  { label: "Overview", description: "Account health, attention items and recent activity.", tabs: [["overview", "Summary"], ["stats", "Statistics"]] },
+  { label: "Overview", description: "Account health, attention items and recent activity.", tabs: [["overview", "Summary"], ["stats", "Statistics"], ["service-health", "Service health"]] },
   { label: "Families", description: "Find a family, manage members or create an account.", tabs: [["families", "Families"], ["accounts", "User accounts"], ["create", "Create family"]] },
   { label: "Billing", description: "Revenue and subscriptions. Open a family to see its email and billing history.", tabs: [["revenue", "Revenue & subscriptions"]] },
   { label: "Support", description: "Review reported issues and track their progress.", tabs: [["issues", "Reported issues"]] },

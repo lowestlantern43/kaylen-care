@@ -385,6 +385,7 @@ export const api = {
     method: "POST", body: JSON.stringify(payload),
   }),
   adminOverview: () => request("/admin/overview"),
+  adminServiceHealth: () => request("/admin/service-health"),
   adminFamilies: () => request("/admin/families"),
   adminArchivedFamilies: async () => {
     const archivedFamilies = await requestOptional("/admin/archived-families");

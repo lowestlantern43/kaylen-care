@@ -1,5 +1,6 @@
 import PrivacyGate from "./PrivacyGate";
 import AdminNavigation from "./components/AdminNavigation";
+import AdminServiceHealth from "./components/AdminServiceHealth";
 import AdminFamilyList from "./components/AdminFamilyList";
 import AdminUpcomingWeek from "./components/AdminUpcomingWeek";
 import { activityLabel, matchesHistory } from "./components/adminPresentation";
@@ -10019,6 +10020,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             ) : platformViewAsUser ? null : (
               <>
                 <AdminNavigation activeTab={platformAdminTab} onSelect={setPlatformAdminTab} />
+                {platformAdminTab === "service-health" ? <AdminServiceHealth /> : null}
                 <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                     Quick search and jump
