@@ -14332,7 +14332,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                     <div className="mt-3 text-sm text-slate-700">
                                       <p className="font-bold">Email summary</p>
                                       <p>{emailSummary}</p>
-                                      <p className="mt-1 text-xs text-slate-500">Summary of the email type, not a stored copy of the message. {emailMeta.deliveryStatus === "sent" ? "Accepted by the email provider; inbox delivery is not confirmed." : emailMeta.deliveryStatus === "failed" ? "The send attempt failed." : emailMeta.deliveryStatus === "skipped" ? "Sending was skipped." : ""}</p>
+                                      <p className="mt-1 text-xs text-slate-500">Summary of the email type, not a stored copy of the message. {emailMeta.deliveryStatus === "sent" ? "Accepted by the email provider." : emailMeta.deliveryStatus === "failed" ? "The send attempt failed." : emailMeta.deliveryStatus === "skipped" ? "Sending was skipped." : ""}</p>
                                     </div>
                                   ) : null}
                                   {references.length ? (
