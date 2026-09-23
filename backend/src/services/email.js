@@ -327,6 +327,7 @@ export async function sendAppEmail(message) {
       idempotencyKey: `email-attempt:${attemptId}`,
       metadata: {
         deliveryStatus: status,
+        ...(isTrial && [1, 3].includes(meta.daysLeft) ? { daysLeft: meta.daysLeft } : {}),
         provider: config.emailProvider === "resend" ? "resend" : "webhook",
         evidenceMeaning: status === "sent" ? "provider_accepted_not_inbox_confirmed" : status,
         emailType: ["welcome", "password_reset", "issue_resolved", "issue_report", "owner_created_family_account", "archive_delete_warning"].includes(meta.type) ? meta.type : isTrial ? "trial_reminder" : "other",

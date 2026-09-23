@@ -856,6 +856,7 @@ export async function runDueReminderScan(now = new Date()) {
         metadata: {
           notificationType: "trial",
           userId: row.user_id,
+          daysLeft,
           reminderKey,
           familyId: row.family_id,
         },
