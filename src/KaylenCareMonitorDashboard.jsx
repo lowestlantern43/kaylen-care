@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { createTableReport } from "./reportTablePdf";
 import { supabase } from "./Supabase";
 import { api } from "./api/client";
 
@@ -658,11 +659,8 @@ const sectionTheme = {
 };
 
 const REPORT_BUILDER_LAYOUTS = [
-  { value: "summary", label: "Summary report" },
-  { value: "daily", label: "Daily log report" },
-  { value: "timeline", label: "Timeline report" },
-  { value: "table", label: "Table/export report" },
-  { value: "charts", label: "Charts/visual report" },
+  { value: "table", label: "Grouped tables" },
+  { value: "timeline", label: "Timeline table" },
 ];
 
 const REPORT_BUILDER_GROUP_OPTIONS = [
@@ -975,6 +973,11 @@ export default function KaylenCareMonitorDashboard({
   const [reportTab, setReportTab] = useState("recent");
   const [reportLayout, setReportLayout] = useState("daily");
   const [reportView, setReportView] = useState("trends");
+  const [reportsMode, setReportsMode] = useState("choose");
+  const [builderStep, setBuilderStep] = useState(1);
+  const [fullExportCategories, setFullExportCategories] = useState([...REPORT_BUILDER_CATEGORY_OPTIONS]);
+  const [fullExportProfile, setFullExportProfile] = useState(true);
+  const [fullExportLayout, setFullExportLayout] = useState("category");
   const [reportCategoryFilter, setReportCategoryFilter] = useState("All");
   const [reportFiltersOpen, setReportFiltersOpen] = useState(false);
   const [reportNotes, setReportNotes] = useState("");
@@ -1035,8 +1038,8 @@ export default function KaylenCareMonitorDashboard({
       location: "",
     };
   });
-  const [reportBuilderLayout, setReportBuilderLayout] = useState("summary");
-  const [reportBuilderGroupBy, setReportBuilderGroupBy] = useState("day");
+  const [reportBuilderLayout, setReportBuilderLayout] = useState("table");
+  const [reportBuilderGroupBy, setReportBuilderGroupBy] = useState("category");
   const [reportBuilderColumns, setReportBuilderColumns] = useState(
     REPORT_BUILDER_DEFAULT_COLUMNS,
   );
@@ -3695,7 +3698,7 @@ export default function KaylenCareMonitorDashboard({
         if (end && parsed > end) return false;
 
         const category = getReportBuilderCategory(entry);
-        if (selectedCategories.size && !selectedCategories.has(category)) {
+        if (!selectedCategories.has(category)) {
           return false;
         }
 
@@ -3817,7 +3820,7 @@ export default function KaylenCareMonitorDashboard({
 
   const applyReportBuilderTemplate = (template) => {
     if (!template) return;
-    setReportBuilderLayout(template.layout || "summary");
+    setReportBuilderLayout(template.layout === "timeline" ? "timeline" : "table");
     setReportBuilderGroupBy(template.groupBy || "day");
     setReportBuilderColumns(template.columns?.length ? template.columns : REPORT_BUILDER_DEFAULT_COLUMNS);
     setReportBuilderFilters((current) => ({
@@ -3876,44 +3879,29 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const printReportBuilder = () => {
-    window.print();
+    try {
+      const pdf = makeBuilderPdf();
+      pdf.autoPrint();
+      const url = URL.createObjectURL(pdf.output("blob"));
+      const opened = window.open(url, "_blank");
+      if (!opened) { URL.revokeObjectURL(url); showToast?.({message:"Allow the print window, or use Export PDF to print the downloaded report.",type:"info"}); }
+      else setTimeout(()=>URL.revokeObjectURL(url),60000);
+    } catch(error) { showToast?.({message:error.message,type:"error"}); }
   };
 
+  const makeBuilderPdf = () => {
+    if (!reportBuilderFilters.startDate || !reportBuilderFilters.endDate || reportBuilderFilters.startDate > reportBuilderFilters.endDate || !reportBuilderFilteredEntries.length) throw new Error("Choose a valid date range and at least one matching entry.");
+    const keys = reportBuilderColumns.length ? reportBuilderColumns : REPORT_BUILDER_DEFAULT_COLUMNS;
+    const columns = keys.map(key => ({label: REPORT_BUILDER_COLUMN_DEFINITIONS.find(c => c.key === key)?.label || key, weight: ["notes", "summary"].includes(key) ? 3 : 1}));
+    const groups = reportBuilderLayout === "timeline" ? [{label:"Timeline", entries:reportBuilderFilteredEntries}] : reportBuilderGroups;
+    return createTableReport({childName, title:"Care report", range:reportBuilderFilters.startDate + " to " + reportBuilderFilters.endDate,
+      sections: groups.map(group=>({title:group.label,columns,rows:group.entries.map(entry=>keys.map(key=>getReportBuilderFieldValue(entry,key,childName)))}))});
+  };
   const exportReportBuilderPdf = async () => {
-    if (!reportBuilderPreviewRef.current) return;
     setIsExportingPdf(true);
-    try {
-      const canvas = await html2canvas(reportBuilderPreviewRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-      });
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const imageWidth = pageWidth;
-      const imageHeight = (canvas.height * imageWidth) / canvas.width;
-      let heightLeft = imageHeight;
-      let position = 0;
-      const imageData = canvas.toDataURL("image/png");
-      pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
-      heightLeft -= pageHeight;
-      while (heightLeft > 0) {
-        position = heightLeft - imageHeight;
-        pdf.addPage();
-        pdf.addImage(imageData, "PNG", 0, position, imageWidth, imageHeight);
-        heightLeft -= pageHeight;
-      }
-      pdf.save(`familytrack-report-builder-${childName.replace(/\s+/g, "-").toLowerCase()}-${todayIsoValue()}.pdf`);
-    } catch (error) {
-      console.error("Report builder PDF export failed", error);
-      showToast?.({
-        message: "PDF export could not be created. Please try print or CSV.",
-        type: "error",
-      });
-    } finally {
-      setIsExportingPdf(false);
-    }
+    try { makeBuilderPdf().save('familytrack-report-' + todayIsoValue() + '.pdf'); }
+    catch(error){ showToast?.({message:error.message || "Could not export report",type:"error"}); }
+    finally { setIsExportingPdf(false); }
   };
 
   const childDob = childDetails?.dateOfBirth || childDetails?.date_of_birth || "";
@@ -7162,6 +7150,19 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const createReportPdf = async ({ variant = "full" } = {}) => {
+    if (variant === "full") {
+      if (reportDays === "custom" && (!reportStartDate || !reportEndDate || reportStartDate > reportEndDate)) throw new Error("Choose a valid date range.");
+      const entries = recentEntries.filter(entry=>fullExportCategories.includes(getReportBuilderCategory(entry))).sort((a,b)=>(getEntryDateTime(a)?.getTime() || 0)-(getEntryDateTime(b)?.getTime() || 0));
+      const columns = [{label:"Date",weight:1},{label:"Time",weight:0.7},{label:"Category",weight:1},{label:"Entry",weight:2},{label:"Details",weight:4}];
+      const groups = fullExportLayout === "timeline" ? [{label:"Timeline",entries}] : createReportBuilderGroups(entries,"category");
+      const sections = [
+        {title:"Period summary",columns:[{label:"Measure"},{label:"Recorded value",weight:3}],rows:reportTrendModel.summaryStats.map(item=>[item.label,item.value])},
+        ...(fullExportProfile && profileItems.length ? [{title:"Care profile",columns:[{label:"Field"},{label:"Details",weight:3}],rows:profileItems}] : []),
+        ...(reportNotes.trim() ? [{title:"Parent / carer notes",columns:[{label:"Notes"}],rows:[[reportNotes.trim()]]}] : []),
+        ...groups.map(group=>({title:group.label,columns,rows:group.entries.map(entry=>["date","time","category","summary","notes"].map(key=>getReportBuilderFieldValue(entry,key,childName)))})),
+      ];
+      return createTableReport({childName,title:"Full care report",range:reportRangeLabel + (includeHealthHistory24Months ? " · Health history: last 24 months" : ""),sections});
+    }
     const isTrendsPdf = variant === "trends";
     const pdfOrientation = isTrendsPdf ? "p" : "l";
     const pdfWidth = isTrendsPdf ? 210 : 297;
@@ -14295,17 +14296,16 @@ export default function KaylenCareMonitorDashboard({
         <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
-              Desktop Reports
+              Guided report
             </p>
             <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-950">
               Report Builder
             </h3>
             <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-              Build professional reports from one shared care-log data layer, then print,
-              export PDF, or download CSV.
+              Choose a person, dates and details, then export a clear landscape report.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className={builderStep === 4 ? "flex flex-wrap gap-2" : "hidden"}>
             <button
               type="button"
               onClick={printReportBuilder}
@@ -14324,7 +14324,7 @@ export default function KaylenCareMonitorDashboard({
             <button
               type="button"
               onClick={exportReportBuilderPdf}
-              disabled={isExportingPdf || !reportBuilderFilteredEntries.length}
+              disabled={isExportingPdf || reportBuilderInvalidRange || !reportBuilderFilteredEntries.length}
               className="rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-sm transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isExportingPdf ? "Exporting..." : "Export PDF"}
@@ -14332,8 +14332,12 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[20rem_minmax(0,1fr)]">
-          <aside className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm xl:sticky xl:top-4 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
+        <nav className="mt-4 flex flex-wrap gap-2" aria-label="Report builder steps">{["Person & dates","Choose details","Layout","Review & export"].map((label,index)=><button type="button" key={label} onClick={()=>setBuilderStep(index+1)} className={builderStep===index+1 ? "rounded-xl bg-indigo-600 px-3 py-2 text-sm font-bold text-white" : "rounded-xl bg-white px-3 py-2 text-sm text-slate-600"}>{index+1}. {label}</button>)}</nav>
+        {reportBuilderInvalidRange ? <p role="alert" className="mt-3 text-sm text-rose-700">End date must be on or after the start date.</p> : null}
+        {builderStep === 4 ? <div className="mt-4 rounded-2xl border bg-white p-4"><h4 className="font-bold">Ready to export</h4><p>{childName} · {rangeLabel}</p><p>{reportBuilderFilteredEntries.length} matching entries · {reportBuilderFilters.categories.join(", ") || "No categories selected"}</p><p className="mt-2 text-sm text-slate-600">Landscape A4 with compact tables. Use Back to adjust your choices.</p></div> : null}
+        <div className="mt-4 space-y-4">
+          <aside hidden={builderStep > 2} className="space-y-4 rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div hidden={builderStep !== 1}>
             <div>
               <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
                 Person / child
@@ -14348,7 +14352,7 @@ export default function KaylenCareMonitorDashboard({
                     const id = child.id || child.child_id || child.childId;
                     return (
                       <option key={id} value={id}>
-                        {child.name || child.child_name || child.childName || "Child"}
+                        {child.name || child.child_name || child.childName || child.firstName || child.first_name || "Child"}
                       </option>
                     );
                   })}
@@ -14401,6 +14405,8 @@ export default function KaylenCareMonitorDashboard({
               ))}
             </div>
 
+            </div>
+            <div hidden={builderStep !== 2} className="space-y-4">
             <div>
               <div className="flex items-center justify-between gap-3">
                 <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
@@ -14508,14 +14514,15 @@ export default function KaylenCareMonitorDashboard({
                 ))}
               </div>
             </div>
+            </div>
           </aside>
 
           <main className="min-w-0 space-y-4">
-            <div className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
+            <div hidden={builderStep !== 3} className="rounded-[1.5rem] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="min-w-0">
                   <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                    Preview controls
+                    Export layout
                   </p>
                   <h4 className="mt-1 text-lg font-black text-slate-950">
                     {REPORT_BUILDER_LAYOUTS.find(
@@ -14635,7 +14642,7 @@ export default function KaylenCareMonitorDashboard({
             >
               <div className="border-b border-slate-200 pb-4">
                 <p className="text-[11px] font-black uppercase tracking-[0.2em] text-indigo-700">
-                  Kaylen's Diary
+                  FamilyTrack
                 </p>
                 <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
@@ -14694,6 +14701,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </main>
         </div>
+        <div className="mt-4 flex items-center justify-between gap-3"><button type="button" disabled={builderStep === 1} onClick={()=>setBuilderStep(step=>step-1)} className="rounded-xl border bg-white px-4 py-3 font-bold disabled:opacity-40">Back</button><span className="text-sm text-slate-500">Step {builderStep} of 4</span>{builderStep < 4 ? <button type="button" disabled={reportBuilderInvalidRange || !reportBuilderFilters.startDate || !reportBuilderFilters.endDate || !reportBuilderFilters.categories.length} onClick={()=>setBuilderStep(step=>step+1)} className="rounded-xl bg-indigo-600 px-4 py-3 font-bold text-white disabled:opacity-40">Continue</button> : null}</div>
       </section>
     );
   };
@@ -15265,7 +15273,13 @@ export default function KaylenCareMonitorDashboard({
     return (
       <>
         <div className="mt-6 space-y-6">
-          {renderDesktopReportBuilder(reportInputClassName)}
+          <div className="flex flex-wrap gap-2" aria-label="Report options">
+            <button type="button" onClick={()=>setReportsMode("builder")} className={reportsMode === "builder" ? "rounded-xl bg-indigo-600 p-3 font-bold text-white" : "rounded-xl border bg-white p-3 font-bold"}>Report Builder</button>
+            <button type="button" onClick={()=>setReportsMode("full")} className={reportsMode === "full" ? "rounded-xl bg-indigo-600 p-3 font-bold text-white" : "rounded-xl border bg-white p-3 font-bold"}>Full Care Report</button>
+          </div>
+          {reportsMode === "choose" ? <div className="rounded-2xl border bg-white p-5"><h3 className="text-xl font-bold">What would you like to create?</h3><p className="mt-3"><strong>Report Builder</strong> — a guided report with selected dates, categories and columns.</p><p className="mt-3"><strong>Full Care Report</strong> — a period summary with care statistics and your choice of details for export.</p></div> : null}
+          {reportsMode === "builder" ? renderDesktopReportBuilder(reportInputClassName) : null}
+          {reportsMode === "full" ? <>
 
           <section className="overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm">
             <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-900 p-4 text-white sm:p-5">
@@ -15278,9 +15292,7 @@ export default function KaylenCareMonitorDashboard({
                     Full Care Report
                   </h3>
                   <div className="mt-3 rounded-2xl border border-sky-200 bg-sky-50/15 px-4 py-3 text-sm font-bold leading-6 text-sky-50">
-                    New desktop Report Builder is now at the top of this Reports
-                    screen, with filters, layouts, columns, saved templates,
-                    print, PDF and CSV export.
+                    Review your care summary here. Detailed entries are included only in the exported report.
                   </div>
                   <p className="mt-2 max-w-3xl text-sm leading-6 text-sky-50/90">
                     A clear summary of care logs, trends, and detailed records
@@ -15569,7 +15581,7 @@ export default function KaylenCareMonitorDashboard({
                 title: "Health notes pattern",
                 value: healthEntries.length ? `${healthEntries.length} logged` : "No health notes",
                 description: healthEntries.length
-                  ? "Health entries are included in the detailed report below."
+                  ? "Select Health in the export options to include detailed health entries."
                   : "No health concerns were logged in this report range.",
                 tone: "border-amber-100 bg-amber-50/70",
               })}
@@ -15584,27 +15596,8 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </section>
 
-          <section className="rounded-[1.75rem] border border-slate-100 bg-gradient-to-br from-white via-slate-50 to-sky-50/60 p-4 shadow-sm">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-600">
-                Detailed Report
-              </p>
-              <h3 className="mt-1 text-xl font-black text-slate-950">
-                Entries by category
-              </h3>
-              <p className="mt-1 text-sm leading-6 text-slate-600">
-                Detailed logs grouped by date for the selected range, using the
-                same entries shown in the summary above.
-              </p>
-            </div>
-            <div className="mt-4 space-y-3">
-              {detailedReportSections.map((section) => (
-                <div key={section.title}>
-                  {renderDetailedReportSection(section)}
-                </div>
-              ))}
-            </div>
-          </section>
+          <section className="rounded-2xl border bg-white p-4"><h3 className="text-lg font-bold">Details to include in export</h3><p className="mt-1 text-sm text-slate-600">The summary above covers the selected period and category filter. These choices control detailed rows in the PDF and emailed PDF.</p><div className="mt-3 grid gap-2 sm:grid-cols-3">{REPORT_BUILDER_CATEGORY_OPTIONS.map(category=><label key={category} className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><input type="checkbox" checked={fullExportCategories.includes(category)} onChange={()=>setFullExportCategories(current=>current.includes(category)?current.filter(item=>item!==category):[...current,category])}/>{category}</label>)}</div><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={fullExportProfile} onChange={event=>setFullExportProfile(event.target.checked)}/>Include care profile</label><label className="mt-3 block text-sm font-bold">PDF layout<select className={reportInputClassName} value={fullExportLayout} onChange={event=>setFullExportLayout(event.target.value)}><option value="category">Grouped category tables</option><option value="timeline">Chronological timeline table</option></select></label></section>
+          </> : null}
 
         </div>
         {renderPdfExportArea()}
@@ -16331,7 +16324,7 @@ export default function KaylenCareMonitorDashboard({
                     Build school, medical and EHCP reports
                   </h2>
                   <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-slate-600">
-                    Open the desktop Report Builder for filters, saved templates,
+                    Open Reports for filters, saved templates,
                     custom columns, PDF, print and CSV export.
                   </p>
                 </div>
@@ -16700,7 +16693,7 @@ export default function KaylenCareMonitorDashboard({
             className={mobileNavButtonClass(isLogSectionOpen && !quickAddOpen)}
           >
             {renderMobileNavIcon("Logs")}
-            <span>Logs</span>
+            <span>Timeline</span>
           </button>
           <button
             type="button"
