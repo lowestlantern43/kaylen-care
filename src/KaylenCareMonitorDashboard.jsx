@@ -12792,20 +12792,15 @@ export default function KaylenCareMonitorDashboard({
   const renderUnifiedTimelineForm = () => (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
+        <details>
+          <summary className="cursor-pointer rounded-xl py-2 text-sm font-bold text-slate-800">
+            Search &amp; filters
+            <span className="ml-2 text-xs font-normal text-slate-500">
+              {timelineFilters.range === "all" ? "All history" : timelineFilters.range === "24h" ? "Last 24 hours" : `Last ${timelineFilters.range} days`}
+              {[timelineFilters.search, timelineFilters.childId !== "all", timelineFilters.category !== "All", timelineFilters.severity !== "All"].filter(Boolean).length > 0 ? " · Filters applied" : ""}
+            </span>
+          </summary>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[11px] font-black uppercase tracking-[0.18em] text-indigo-700">
-              Unified Timeline
-            </p>
-            <h3 className="mt-1 text-lg font-extrabold text-slate-950">
-              Search everything for this family
-            </h3>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
-              One chronological view for logs, appointments, documents and
-              report shortcuts. Results stay family-specific and use the same
-              secure app data as the rest of FamilyTrack.
-            </p>
-          </div>
           <button
             type="button"
             onClick={loadUnifiedTimelineData}
@@ -12932,6 +12927,7 @@ export default function KaylenCareMonitorDashboard({
             </select>
           </label>
         </div>
+        </details>
       </section>
 
       <section className="rounded-[1.75rem] border border-slate-200 bg-white p-4 shadow-sm">
