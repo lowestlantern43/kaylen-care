@@ -52,3 +52,16 @@ The report must never query or include child profiles or care-log tables. PDF
 generation, customer consent capture, authentication-event capture, and billing
 email instrumentation remain separate follow-up changes so they can be reviewed
 without changing the current iOS-facing behavior.
+
+## Email delivery observations
+All app email attempts now append outcome-only evidence asynchronously. Logging
+failure does not change email delivery results. No subject, body, recipient,
+attachment, reset link or arbitrary metadata is copied. Only explicit account
+references and allowlisted email types are retained. A sent outcome means provider
+acceptance, not inbox delivery. Stripe-generated emails are not covered.
+Family-linked events appear in the existing family timeline. Events without a
+family reference remain stored without assigning them to an unrelated family.
+Migration 027 imports historical trial delivery results idempotently, without
+resending. Apply it once before deploying this instrumentation. Do not repeatedly
+backfill post-deployment sends, which already have their own attempt evidence.
+Rollback: revert the email instrumentation commit; retain append-only history.

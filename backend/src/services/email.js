@@ -1,4 +1,6 @@
 import { config } from "../config.js";
+import { recordBillingAuditEventSafely } from "./billingAudit.js";
+import { randomUUID } from "node:crypto";
 
 function plainTextFromLines(lines) {
   return lines.filter(Boolean).join("\n");
@@ -165,7 +167,7 @@ async function sendViaWebhook({ to, subject, text, html, metadata, attachments =
   return { sent: true, skipped: false };
 }
 
-export async function sendAppEmail({
+async function deliverAppEmail({
   to,
   subject,
   text,
@@ -309,4 +311,34 @@ export function archivedFamilyDeletionWarningEmail({
       "FamilyTrack",
     ]),
   };
+}
+
+// Log only delivery facts; preserve the provider result and error contract.
+export async function sendAppEmail(message) {
+  const attemptId = randomUUID();
+  const record = (status) => {
+    const meta = message.metadata || {};
+    const isTrial = meta.notificationType === "trial";
+    void recordBillingAuditEventSafely({
+      familyId: meta.familyId || null,
+      userId: meta.userId || null,
+      eventType: `${isTrial ? "trial_reminder_email" : "email"}_${status}`,
+      eventSource: "app_email",
+      idempotencyKey: `email-attempt:${attemptId}`,
+      metadata: {
+        deliveryStatus: status,
+        provider: config.emailProvider === "resend" ? "resend" : "webhook",
+        evidenceMeaning: status === "sent" ? "provider_accepted_not_inbox_confirmed" : status,
+        emailType: ["welcome", "password_reset", "issue_resolved", "issue_report", "owner_created_family_account", "archive_delete_warning"].includes(meta.type) ? meta.type : isTrial ? "trial_reminder" : "other",
+      },
+    });
+  };
+  try {
+    const result = await deliverAppEmail(message);
+    record(result.sent ? "sent" : result.skipped ? "skipped" : "failed");
+    return result;
+  } catch (error) {
+    record("failed");
+    throw error;
+  }
 }

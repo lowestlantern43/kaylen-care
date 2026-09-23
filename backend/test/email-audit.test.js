@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+process.env.DATABASE_URL='postgresql://test:test@localhost:5432/test';
+const {pool}=await import('../src/db/pool.js');
+const {config}=await import('../src/config.js');
+const {sendAppEmail}=await import('../src/services/email.js');
+test('delivery auditing preserves results and excludes message content',async()=>{
+ const rows=[];pool.query=async(sql,p)=>{rows.push(p);return {rows:[{id:'record'}]};};
+ config.emailProvider='resend';config.resendApiKey='test';
+ const msg={to:'private@example.com',subject:'Sensitive child',text:'password secret medical',metadata:{notificationType:'trial',token:'private'}};
+ globalThis.fetch=async()=>({ok:true});
+ assert.deepEqual(await sendAppEmail(msg),{sent:true,skipped:false});
+ assert.equal(rows[0][2],'trial_reminder_email_sent');
+ assert.doesNotMatch(JSON.stringify(rows),/Sensitive|medical|password|private|token/);
+ globalThis.fetch=async()=>({ok:false,status:503,text:async()=>''});
+ assert.deepEqual(await sendAppEmail(msg),{sent:false,skipped:false});
+ assert.equal(rows[1][2],'trial_reminder_email_failed');
+ const err=new Error('network');globalThis.fetch=async()=>{throw err;};
+ await assert.rejects(sendAppEmail(msg),e=>e===err);
+ assert.equal(rows[2][2],'trial_reminder_email_failed');
+ pool.query=async()=>{throw new Error('audit unavailable');};
+ globalThis.fetch=async()=>({ok:true});
+ assert.deepEqual(await sendAppEmail(msg),{sent:true,skipped:false});
+ config.resendApiKey='';
+ assert.deepEqual(await sendAppEmail(msg),{sent:false,skipped:true});
+});
