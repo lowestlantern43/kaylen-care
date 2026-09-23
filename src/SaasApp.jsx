@@ -14261,6 +14261,19 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                               "subscription_activated",
                               "dispute_won",
                             ].includes(billingEvent.eventType);
+                            const emailMeta = billingEvent.metadata || {};
+                            const isTrialEmail = String(billingEvent.eventType || "").startsWith("trial_reminder_email_");
+                            const trialDays = [1, 3].includes(Number(emailMeta.daysLeft)) ? Number(emailMeta.daysLeft) : null;
+                            const emailSummary = isTrialEmail
+                              ? `Reminder that the free trial ${trialDays ? `has ${trialDays} day${trialDays === 1 ? "" : "s"} remaining` : "is ending soon"}. Explains monthly billing after the trial unless cancelled, how to manage or cancel the subscription, and how to contact support.`
+                              : ({
+                                  welcome: "Welcome email with information about getting started with FamilyTrack.",
+                                  password_reset: "Password reset instructions. The private reset link is not included in this log.",
+                                  owner_created_family_account: "Account setup email for a family created by an administrator.",
+                                  archive_delete_warning: "Warning that an archived account may become eligible for deletion, with support contact information.",
+                                  issue_report: "Issue report sent to support. Report content is not included in this log.",
+                                  issue_resolved: "Confirmation that a reported issue has been resolved.",
+                                })[emailMeta.emailType];
 
                             return (
                               <div
@@ -14287,6 +14300,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                   <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                                     <div>
                                       <p className="font-black capitalize text-slate-950">
+                                        {isTrialEmail && trialDays ? `${trialDays}-day warning · ` : ""}
                                         {String(billingEvent.eventType || "event").replaceAll(
                                           "_",
                                           " ",
@@ -14314,6 +14328,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                       ) : null}
                                     </div>
                                   </div>
+                                  {emailSummary ? (
+                                    <div className="mt-3 text-sm text-slate-700">
+                                      <p className="font-bold">Email summary</p>
+                                      <p>{emailSummary}</p>
+                                      <p className="mt-1 text-xs text-slate-500">Summary of the email type, not a stored copy of the message. {emailMeta.deliveryStatus === "sent" ? "Accepted by the email provider; inbox delivery is not confirmed." : emailMeta.deliveryStatus === "failed" ? "The send attempt failed." : emailMeta.deliveryStatus === "skipped" ? "Sending was skipped." : ""}</p>
+                                    </div>
+                                  ) : null}
                                   {references.length ? (
                                     <div className="mt-3 flex flex-wrap gap-2">
                                       {references.map(([label, value]) => (
