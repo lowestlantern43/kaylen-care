@@ -1,4 +1,5 @@
 import PrivacyGate from "./PrivacyGate";
+import AdminNavigation from "./components/AdminNavigation";
 ﻿import html2canvas from "html2canvas";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
@@ -3369,6 +3370,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [showInstallOnboarding, setShowInstallOnboarding] = useState(false);
   const [childAvatarStatuses, setChildAvatarStatuses] = useState({});
   const [adminIssueFilter, setAdminIssueFilter] = useState("active");
+  const [platformFamilyListFilter, setPlatformFamilyListFilter] = useState("all");
   const [platformFamilyDetailTab, setPlatformFamilyDetailTab] =
     useState("overview");
   const [platformUserDetailTab, setPlatformUserDetailTab] =
@@ -6908,7 +6910,11 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         attentionData.trialsEndingSoon?.[0]?.familyName ||
         "Trial accounts ending within 7 days",
       tone: "border-orange-200 bg-orange-50 text-orange-800",
-      onClick: () => openFirstAttentionFamily(attentionData.trialsEndingSoon),
+      onClick: () => {
+        setPlatformSearch("");
+        setPlatformFamilyListFilter("trials-ending");
+        setPlatformAdminTab("families");
+      },
     },
     {
       id: "never-logged-in",
@@ -7117,6 +7123,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   );
 
   const filteredPlatformFamilies = platformData.families.filter((family) => {
+    if (platformFamilyListFilter === "trials-ending" &&
+        !(attentionData.trialsEndingSoon || []).some(row => (row.familyId || row.id) === family.id)) return false;
     const haystack = [
       family.name,
       family.ownerName,
@@ -10002,6 +10010,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               </div>
             ) : platformViewAsUser ? null : (
               <>
+                <AdminNavigation activeTab={platformAdminTab} onSelect={setPlatformAdminTab} />
                 <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                     Quick search and jump
@@ -10090,6 +10099,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   ) : null}
                 </div>
 
+                {platformAdminTab === "overview" ? (<>
                 <section className="mt-3 rounded-2xl border border-indigo-100 bg-white p-3 shadow-sm sm:p-4">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -10150,15 +10160,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </h3>
                     </div>
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                     {[
                       ["Create family", "create", "bg-indigo-50 text-indigo-800"],
-                      ["Stats", "stats", "bg-slate-50 text-slate-800"],
-                      ["Invite user", "families", "bg-sky-50 text-sky-800"],
-                      ["View issues", "issues", "bg-purple-50 text-purple-800"],
+                      ["Find family", "families", "bg-sky-50 text-sky-800"],
+                      ["Open support", "issues", "bg-purple-50 text-purple-800"],
                       ["Revenue", "revenue", "bg-emerald-50 text-emerald-800"],
-                      ["Storage", "storage", "bg-cyan-50 text-cyan-800"],
-                      ["Subscriptions", "billing", "bg-amber-50 text-amber-800"],
                     ].map(([label, tabId, className]) => (
                       <button
                         type="button"
@@ -10172,44 +10179,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </div>
                 </section>
 
-                <div className="mt-3 overflow-x-auto rounded-2xl border border-indigo-100 bg-white p-1.5 shadow-sm">
-                  <div className="flex min-w-max gap-1.5">
-                  {[
-                    ["overview", "Overview"],
-                    ["stats", "Stats"],
-                    ["create", "Create"],
-                    ["revenue", "Revenue"],
-                    ["accounts", "Accounts"],
-                    ["families", "Families"],
-                    ["issues", "Issues"],
-                    ["storage", "Storage"],
-                    ["billing", "Billing"],
-                  ].map(([tabId, label]) => (
-                    <button
-                      type="button"
-                      key={tabId}
-                      onClick={() => {
-                        setPlatformAdminTab(tabId);
-                        if (tabId === "stats") {
-                          window.history.pushState({}, "", "/admin/stats");
-                        } else if (
-                          window.location.pathname.replace(/\/$/, "") ===
-                          "/admin/stats"
-                        ) {
-                          window.history.pushState({}, "", "/");
-                        }
-                      }}
-                      className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition sm:px-4 sm:text-sm ${
-                        platformAdminTab === tabId
-                          ? "bg-indigo-600 text-white shadow-sm"
-                          : "bg-slate-50 text-slate-700 hover:bg-indigo-50"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                  </div>
-                </div>
+                </>) : null}
 
                 {platformAdminTab === "stats" ? (
                   <section className="mt-3 space-y-3">
@@ -11436,7 +11406,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       <div>
                         <h3 className="font-bold text-slate-900">Families</h3>
                         <p className="text-sm text-slate-600">
-                          Select families for safe bulk archive actions.
+                          Open a family to view its subscription, email history and support issues.
                         </p>
                       </div>
                       <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-700">
@@ -11451,6 +11421,14 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         />
                         Select visible
                       </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2" aria-label="Filter families">
+                      {[["all", "All families"], ["trials-ending", "Trials ending soon"]].map(([id, label]) => (
+                        <button key={id} type="button" onClick={() => setPlatformFamilyListFilter(id)} aria-pressed={platformFamilyListFilter === id}
+                          className={`rounded-lg px-3 py-2 text-xs font-bold ${platformFamilyListFilter === id ? "bg-indigo-600 text-white" : "bg-slate-100 text-slate-700"}`}>
+                          {label}
+                        </button>
+                      ))}
                     </div>
                     {selectedVisiblePlatformFamilyIds.length ? (
                       <div className="mt-3 flex flex-col gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
@@ -13603,20 +13581,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   >
                     Edit
                   </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setDeleteFamilyConfirm({
-                        isOpen: true,
-                        family: selectedPlatformFamily.family,
-                        confirmText: "",
-                      })
-                    }
-                    disabled={isPlatformSaving}
-                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 disabled:opacity-50"
-                  >
-                    Archive
-                  </button>
+
                   <button
                     type="button"
                     onClick={() => setSelectedPlatformFamily(null)}
@@ -13626,15 +13591,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </button>
                 </div>
               </div>
-              <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              <div className="mt-3 flex flex-wrap gap-2 pb-1">
                 {[
                   ["overview", "Overview"],
                   ["children", "Children"],
                   ["subscription", "Subscription"],
-                  ["billing-evidence", "Billing evidence"],
+                  ["billing-evidence", "Email & billing history"],
                   ["activity", "Activity"],
-                  ["issues", "Issues"],
-                  ["notes", "Notes"],
+                  ["issues", "Support"],
+                  ["notes", "Admin notes"],
                 ].map(([tabId, label]) => (
                   <button
                     key={tabId}
@@ -13751,6 +13716,24 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </button>
                     </div>
                   </div>
+                  <details className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+                    <summary className="cursor-pointer font-bold text-rose-900">Account management</summary>
+                    <p className="my-3 text-sm text-rose-800">Archive this family account. You will be asked to confirm before any action is taken.</p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setDeleteFamilyConfirm({
+                        isOpen: true,
+                        family: selectedPlatformFamily.family,
+                        confirmText: "",
+                      })
+                    }
+                    disabled={isPlatformSaving}
+                    className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 disabled:opacity-50"
+                  >
+                    Archive
+                  </button>
+                  </details>
                 </div>
               ) : null}
 
@@ -13885,7 +13868,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       </div>
                     ))}
                   </div>
-                  <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
+                  <details className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                    <summary className="mb-3 cursor-pointer font-bold text-amber-900">Manage plan, trial & access overrides</summary>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
                         Plan
@@ -14002,7 +13986,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         Sync Stripe
                       </button>
                     </div>
-                  </div>
+                  </details>
                   <div className="rounded-2xl border border-cyan-100 bg-cyan-50 p-4">
                     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -14146,7 +14130,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         Billing and dispute protection
                       </p>
                       <h4 className="mt-1 text-lg font-black text-slate-950">
-                        Subscription evidence timeline
+                        Email & billing history
                       </h4>
                       <p className="mt-1 max-w-2xl text-sm font-semibold text-slate-600">
                         Payment and subscription evidence only. Family care records
@@ -14159,7 +14143,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       disabled={isBillingAuditLoading}
                       className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-xs font-black text-white shadow-sm disabled:opacity-60"
                     >
-                      {isBillingAuditLoading ? "Refreshing..." : "Refresh evidence"}
+                      {isBillingAuditLoading ? "Refreshing..." : "Refresh history"}
                     </button>
                   </div>
 
@@ -14336,7 +14320,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                     </div>
                                   ) : null}
                                   {references.length ? (
-                                    <div className="mt-3 flex flex-wrap gap-2">
+                                    <details className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                                      <summary className="cursor-pointer text-xs font-bold text-slate-600">View Stripe references</summary>
+                                      <div className="mt-2 flex flex-wrap gap-2">
                                       {references.map(([label, value]) => (
                                         <span
                                           key={`${billingEvent.id}-${label}`}
@@ -14345,7 +14331,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                                           {label}: {value}
                                         </span>
                                       ))}
-                                    </div>
+                                      </div>
+                                    </details>
                                   ) : null}
                                 </div>
                               </div>
