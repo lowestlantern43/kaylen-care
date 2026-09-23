@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { getAdminServiceHealth } from "../services/adminServiceHealth.js";
 import crypto from "node:crypto";
 import { config } from "../config.js";
 import { query, withTransaction } from "../db/pool.js";
@@ -45,6 +46,10 @@ import {
 export const adminRouter = Router();
 
 adminRouter.use(requireAuth, requirePlatformAdmin);
+adminRouter.get("/service-health", asyncHandler(async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ data: await getAdminServiceHealth({ query, config }), error: null });
+}));
 adminRouter.use(
   asyncHandler(async (req, res, next) => {
     await ensurePlanAccessSchema();
