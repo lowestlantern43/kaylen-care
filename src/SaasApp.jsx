@@ -1,4 +1,5 @@
 import PrivacyGate from "./PrivacyGate";
+import "./adminTheme.css";
 import AdminNavigation from "./components/AdminNavigation";
 import AdminServiceHealth from "./components/AdminServiceHealth";
 import AdminFamilyList from "./components/AdminFamilyList";
@@ -7420,7 +7421,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className={`min-h-screen bg-slate-50${showPlatformAdmin ? " admin-calm-theme" : ""}`}>
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
