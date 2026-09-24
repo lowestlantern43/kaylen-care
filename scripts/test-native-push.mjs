@@ -28,6 +28,23 @@ const api = {
   savePushSubscription: async (payload) => { calls.push(payload); return { endpoint: `apns:${payload.subscription.token}` }; },
   disablePushSubscription: async (endpoint) => calls.push({ disabled: endpoint }),
 };
+// First sign-in asks once and preserves the existing reminder choices.
+let updatedSettings;
+const firstRunApi = { ...api, updateNotificationSettings: async value => { updatedSettings = value; } };
+globalThis.__push.requestPermissions = async () => { askCount++; permission = "granted"; return { receive: permission }; };
+permission = "prompt";
+assert.equal(await push.promptNativePushAfterSignIn(firstRunApi, "user", { medication: false }), true);
+assert.deepEqual(updatedSettings, { medication: false, pushEnabled: true });
+assert.equal(await push.promptNativePushAfterSignIn(firstRunApi, "user", {}), false);
+assert.equal(askCount, 1);
+permission = "denied";
+assert.equal(await push.promptNativePushAfterSignIn(firstRunApi, "user", {}), false);
+assert.equal(askCount, 1);
+permission = "prompt";
+globalThis.__push.requestPermissions = async () => { askCount++; permission = "denied"; return { receive: permission }; };
+assert.equal(await push.promptNativePushAfterSignIn(firstRunApi, "user", {}), false);
+assert.equal(askCount, 2);
+calls.length = 0; storage.clear(); askCount = 0;
 permission = "denied";
 assert.equal(await push.registerNativePush(api, "user"), null);
 await assert.rejects(push.registerNativePush(api, "user", true), /iPhone Settings/);

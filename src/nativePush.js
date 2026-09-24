@@ -13,6 +13,20 @@ export async function nativePermission() {
   return (await PushNotifications.checkPermissions()).receive;
 }
 
+// Ask only while iOS has no recorded decision. Never override an existing opt-out.
+export async function promptNativePushAfterSignIn(api, userId, settings) {
+  if (await nativePermission() !== "prompt") return false;
+  try {
+    const endpoint = await registerNativePush(api, userId, true);
+    if (!endpoint) return false;
+    await api.updateNotificationSettings({ ...settings, pushEnabled: true });
+    return true;
+  } catch (error) {
+    if (await nativePermission() === "denied") return false;
+    throw error;
+  }
+}
+
 // Register on every authenticated launch: Apple can rotate a device token.
 export async function registerNativePush(api, userId, ask = false) {
   if (registration) return registration;

@@ -1,43 +1,45 @@
 import { jsPDF } from "jspdf";
-import { autoTable } from "jspdf-autotable";
 
-export function createTableReport({ childName, dateRange, rows, grouped = true }) {
-  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-  pdf.setProperties({ title: `FamilyTrack - ${childName} care report`, author: "FamilyTrack" });
-  const groups = new Map();
-  for (const row of rows) {
-    const key = grouped ? row.category : "Timeline";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(row);
+// Text tables rather than screenshots: repeat headings and split long rows safely.
+export function createTableReport({ childName, range, title = "Care report", sections }) {
+  const pdf = new jsPDF("l", "mm", "a4");
+  const margin = 10, bottom = 197, width = 277;
+  let y = 10;
+  const pageHeader = () => {
+    pdf.setFont("helvetica", "bold"); pdf.setFontSize(13); pdf.setTextColor(25, 55, 65);
+    pdf.text("FAMILYTRACK", margin, 15);
+    pdf.setFontSize(9); pdf.text(`${title} - ${childName || "Care record"}`, margin, 21);
+    pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
+    pdf.text(String(range || "").slice(0, 160), margin, 26); y = 31;
+  };
+  pageHeader();
+  for (const section of sections) {
+    if (!section.rows.length) continue;
+    const weights = section.columns.map(c => c.weight || 1);
+    const total = weights.reduce((a,b) => a+b,0);
+    const widths = weights.map(w => width*w/total);
+    const heading = () => {
+      pdf.setFont("helvetica", "bold"); pdf.setFontSize(9); pdf.setTextColor(25,55,65);
+      pdf.text(section.title, margin, y+4); y+=7;
+      pdf.setFontSize(7); let x=margin;
+      section.columns.forEach((c,i)=>{pdf.setFillColor(230,238,237);pdf.rect(x,y,widths[i],8,'F');pdf.text(c.label,x+2,y+5);x+=widths[i];}); y+=8;
+    };
+    if(y > bottom-25){pdf.addPage();pageHeader();} heading();
+    for(const row of section.rows){
+      pdf.setFont('helvetica','normal');pdf.setFontSize(7);pdf.setTextColor(40,45,50);
+      const lines=section.columns.map((c,i)=>pdf.splitTextToSize(String(row[i] ?? ''),Math.max(5,widths[i]-4)));
+      let offset=0;const length=Math.max(1,...lines.map(l=>l.length));
+      while(offset<length){
+        if(y+8>bottom){pdf.addPage();pageHeader();heading();pdf.setFont('helvetica','normal');pdf.setFontSize(7);pdf.setTextColor(40,45,50);}
+        const count=Math.min(length-offset,Math.max(1,Math.floor((bottom-y-4)/3.2)));
+        const height=count*3.2+4;let x=margin;
+        section.columns.forEach((c,i)=>{pdf.setDrawColor(215,222,225);pdf.rect(x,y,widths[i],height);pdf.text(lines[i].slice(offset,offset+count),x+2,y+3.5,{lineHeightFactor:1.29});x+=widths[i];});
+        y+=height;offset+=count;
+      }
+    }
+    y+=6;
   }
-  const body = [];
-  for (const [category, entries] of groups) {
-    if (grouped) body.push([{ content: `${category} (${entries.length})`, colSpan: 5,
-      styles: { fillColor: [225, 238, 245], textColor: [25, 55, 75], fontStyle: "bold" } }]);
-    for (const row of entries) body.push([row.date, row.time || "-", row.category, row.details || "-", row.notes || "-"]);
-  }
-  autoTable(pdf, {
-    head: [["Date", "Time", "Category", "Details", "Notes"]],
-    body: body.length ? body : [[{ content: "No entries in the selected date range.", colSpan: 5 }]],
-    startY: 30, margin: { top: 30, bottom: 14, left: 10, right: 10 },
-    theme: "grid", showHead: "everyPage", rowPageBreak: "avoid",
-    styles: { fontSize: 8, cellPadding: 2, overflow: "linebreak", valign: "top", lineColor: [220, 227, 233], lineWidth: 0.15 },
-    headStyles: { fillColor: [28, 65, 86], fontSize: 8, fontStyle: "bold" },
-    alternateRowStyles: { fillColor: [247, 250, 252] },
-    columnStyles: { 0: { cellWidth: 25 }, 1: { cellWidth: 17 }, 2: { cellWidth: 30 }, 3: { cellWidth: 95 }, 4: { cellWidth: 110 } },
-    didDrawPage: () => {
-      pdf.setFont("helvetica", "bold"); pdf.setFontSize(15); pdf.setTextColor(28, 65, 86);
-      pdf.text("FamilyTrack | Care report", 10, 12);
-      pdf.setFontSize(10); pdf.text(childName || "Child", 10, 19);
-      pdf.setFont("helvetica", "normal"); pdf.setFontSize(8);
-      pdf.text(`${dateRange} | ${grouped ? "Grouped by category" : "Chronological timeline"} | ${rows.length} entries`, 10, 25);
-    },
-  });
-  const pages = pdf.getNumberOfPages();
-  for (let page = 1; page <= pages; page++) {
-    pdf.setPage(page); pdf.setFontSize(7); pdf.setTextColor(90);
-    pdf.text("FamilyTrack - confidential care record", 10, 203);
-    pdf.text(`Page ${page} of ${pages}`, 287, 203, { align: "right" });
-  }
+  const pages=pdf.getNumberOfPages();
+  for(let p=1;p<=pages;p++){pdf.setPage(p);pdf.setFont('helvetica','normal');pdf.setFontSize(7);pdf.setTextColor(95,105,110);pdf.text(`Generated ${new Date().toLocaleDateString('en-GB')} · Page ${p} of ${pages}`,10,204);}
   return pdf;
 }

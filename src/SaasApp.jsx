@@ -1,7 +1,8 @@
+import ChildSetupWizard from "./ChildSetupWizard";
 import PrivacyGate from "./PrivacyGate";
 ﻿import html2canvas from "html2canvas";
 import { IS_NATIVE_APP } from "./platform";
-import { hasNativePush, nativePermission, registerNativePush, disableNativePush, currentPushEndpoint, savedNativePush, listenForPushTap } from "./nativePush";
+import { hasNativePush, nativePermission, registerNativePush, disableNativePush, currentPushEndpoint, savedNativePush, listenForPushTap, promptNativePushAfterSignIn } from "./nativePush";
 import CompanionAccessScreen from "./CompanionAccessScreen";
 import "./settings-layout.css";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
@@ -3547,6 +3548,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           (!hasNativePush() || savedNativePush()?.userId === session.user.id)));
         setNotificationPermission(hasNativePush() ? await nativePermission() :
           typeof Notification === "undefined" ? "unsupported" : Notification.permission);
+        if (hasNativePush() && config?.ios?.enabled) {
+          const enabled = await promptNativePushAfterSignIn(api, session.user.id, settings);
+          if (ignore) return;
+          setNotificationPermission(await nativePermission());
+          if (enabled) {
+            setNotificationSettings(normaliseNotificationSettings({ ...settings, pushEnabled: true }));
+            setPushDeviceEnabled(true);
+          }
+        }
         if (hasNativePush() && settings.pushEnabled && config?.ios?.enabled && savedNativePush()?.userId === session.user.id) {
           await registerNativePush(api, session.user.id);
         }
@@ -4417,6 +4427,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       );
     };
   }, [children, selectedFamilyId]);
+
+  const completeChildSetup = (child, profile) => {
+    setChildren(current => dedupeChildren([...current, child]));
+    setSelectedChildId(child.id);
+    localStorage.setItem(selectedChildStorageKey(selectedFamilyId), child.id);
+    setChildProfile(normaliseChildProfile(profile));
+    setCareMedicationRows(careMedicationRowsFromProfile(profile?.currentMedications));
+    setChildName("");
+  };
 
   const addChild = async (event) => {
     event.preventDefault();
@@ -7329,37 +7348,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               {isPlatformLoading ? "Opening..." : "Owner Platform"}
             </button>
           ) : (
-          <form className="mt-6 space-y-4" onSubmit={addChild}>
-            <div>
-              <label className="text-sm font-semibold text-slate-700">
-                Child name
-              </label>
-              <input
-                className={inputClass}
-                value={childName}
-                onChange={(event) => setChildName(event.target.value)}
-                placeholder="Child name"
-              />
-            </div>
-
-            {error ? (
-              <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
-                {error}
-              </p>
-            ) : null}
-
-            <button
-              className={buttonClass}
-              disabled={isSavingChild || !selectedFamilyAccess.canAddChild}
-            >
-              {isSavingChild ? "Adding..." : "Add child"}
-            </button>
-            {!selectedFamilyAccess.canAddChild ? (
-              <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
-                This account is view-only or has reached its child limit.
-              </p>
-            ) : null}
-          </form>
+          <ChildSetupWizard key={selectedFamilyId} api={api} familyId={selectedFamilyId}
+            allowed={selectedFamilyAccess.canAddChild} initialProfile={emptyChildProfile}
+            serializeMedications={serializeCareMedicationRows} onComplete={completeChildSetup} first />
           )}
         </div>
       </div>
@@ -8469,27 +8460,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     </form>
                   </div>
 
-                  <form className="rounded-2xl border border-slate-200 bg-slate-50 p-4" onSubmit={addAdminChild}>
-                    <h4 className="font-bold text-slate-900">Add another child</h4>
-                    <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-                      <input
-                        className={`${inputClass} mt-0`}
-                        value={childName}
-                        onChange={(event) => setChildName(event.target.value)}
-                        placeholder="Child name"
-                      />
-                      <button
-                        className="rounded-xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
-                        disabled={
-                          isSavingChild ||
-                          !childName.trim() ||
-                          !selectedFamilyAccess.canAddChild
-                        }
-                      >
-                        {isSavingChild ? "Adding..." : "Add child"}
-                      </button>
-                    </div>
-                  </form>
+          <ChildSetupWizard key={selectedFamilyId} api={api} familyId={selectedFamilyId}
+            allowed={selectedFamilyAccess.canAddChild} initialProfile={emptyChildProfile}
+            serializeMedications={serializeCareMedicationRows} onComplete={completeChildSetup} />
                 </div>
               </section>
 
