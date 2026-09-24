@@ -1,3 +1,4 @@
+import { clientActivityRouter } from "./clientActivity.routes.js";
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePrivacyConsent } from "../services/privacyConsent.js";
@@ -21,6 +22,7 @@ import { uploadsRouter } from "./uploads.routes.js";
 export const apiRouter = Router();
 
 apiRouter.use("/health", healthRouter);
+apiRouter.use("/client-activity", clientActivityRouter);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/billing", billingRouter);
 apiRouter.use("/account", accountRouter);
