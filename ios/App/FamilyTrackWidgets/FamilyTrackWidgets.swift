@@ -32,7 +32,7 @@ struct WidgetSnapshot: Codable {
 }
 @available(iOS 17.0, *)
 struct CareChild: AppEntity {
-    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Child"
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Care profile"
     static var defaultQuery = ChildQuery()
     var id: String
     var name: String
@@ -57,9 +57,9 @@ enum CareChoice: String, AppEnum {
 @available(iOS 17.0, *)
 struct CareConfiguration: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "FamilyTrack widget"
-    static var description = IntentDescription("Open each child's diary in FamilyTrack to update their widget data.")
-    @Parameter(title: "Child") var child: CareChild?
-    @Parameter(title: "Show child name", default: false) var showName: Bool
+    static var description = IntentDescription("Open each person's diary in FamilyTrack to update their widget data.")
+    @Parameter(title: "Care profile") var child: CareChild?
+    @Parameter(title: "Show name", default: false) var showName: Bool
     @Parameter(title: "Show medication details", default: false) var showMedicine: Bool
     @Parameter(title: "Care activity", default: .latest) var activity: CareChoice
 }
@@ -102,7 +102,7 @@ struct CareWidgetView: View {
                 Spacer(minLength: 0)
                 Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)").font(.system(size: 10)).foregroundStyle(.secondary)
             } else {
-                Text("Choose a child").font(.headline)
+                Text("Choose a care profile").font(.headline)
                 Text("Open their diary, then edit this widget to select them.").font(.caption).foregroundStyle(.secondary)
             }
         }

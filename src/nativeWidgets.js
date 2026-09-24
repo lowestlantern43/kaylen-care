@@ -12,6 +12,10 @@ export function updateWidgets(scope, snapshot, allowedIds) {
   if (Capacitor.getPlatform() !== 'ios') return;
   if (owner !== scope) { snapshots.clear(); owner = scope; }
   for (const id of snapshots.keys()) if (!allowedIds.includes(id)) snapshots.delete(id);
+  const previous = snapshots.get(snapshot.id);
+  // React rerenders must not spend the widget refresh budget needlessly.
+  if (previous && snapshot.updated - previous.updated < 300 &&
+      JSON.stringify({ ...previous, updated: 0 }) === JSON.stringify({ ...snapshot, updated: 0 })) return writes;
   snapshots.set(snapshot.id, snapshot);
   const json = JSON.stringify({ children: [...snapshots.values()] });
   writes = writes.catch(()=>{}).then(()=>bridge.write({json}));
