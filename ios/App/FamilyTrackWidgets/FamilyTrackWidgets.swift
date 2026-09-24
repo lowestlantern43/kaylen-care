@@ -146,6 +146,8 @@ struct FamilyCareWidget: Widget {
     let kind: String
     let title: String
     let medium: Bool
+    init() { self.init(kind: "all", title: "Today's care", medium: true) }
+    init(kind: String, title: String, medium: Bool) { self.kind = kind; self.title = title; self.medium = medium }
     var body: some WidgetConfiguration {
         AppIntentConfiguration(kind: "FamilyTrack.\(kind)", intent: CareConfiguration.self, provider: CareProvider()) { entry in CareWidgetView(entry: entry, kind: kind) }
             .configurationDisplayName(title)
