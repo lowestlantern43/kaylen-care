@@ -2369,7 +2369,7 @@ function AuthScreen({
                     onChange={(event) =>
                       update("childFirstName", event.target.value)
                     }
-                    placeholder="Child name"
+                    placeholder="Person's name"
                   />
                 </div>
               </>
@@ -3098,7 +3098,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     access: family.access || planAccessFor(family),
   });
   const childDisplayName = (child) =>
-    child?.firstName || child?.first_name || "Child";
+    child?.firstName || child?.first_name || "Person";
   const dedupeChildren = (items = []) => {
     const byId = new Map();
     items.forEach((child) => {
@@ -4713,7 +4713,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
         ),
       );
       setChildPhotoCrop(null);
-      setAccountMessage("Child photo uploaded and saved.");
+      setAccountMessage("Profile photo uploaded and saved.");
     } catch (caughtError) {
       setError(caughtError.message);
     } finally {
@@ -4868,7 +4868,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     event.preventDefault();
     if (isSavingChild) return;
     if (!selectedFamilyAccess.canAddChild) {
-      setError("This plan cannot add another child right now.");
+      setError("This plan cannot add another care profile right now.");
       return;
     }
     if (!selectedFamilyId || !childName.trim()) return;
@@ -7229,7 +7229,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             (Array.isArray(family.childNames) ? family.childNames : []).map(
               (childName) => ({
                 id: `${family.id}-${childName}`,
-                type: "Child",
+                type: "Person",
                 title: childName,
                 subtitle: family.name,
                 onSelect: () => openPlatformFamily(family.id),
@@ -7382,12 +7382,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 px-6 py-10 text-slate-900">
         <div className="mx-auto max-w-md rounded-[2rem] border border-slate-300 bg-white p-8 shadow-xl">
           <h1 className="text-xl font-bold text-slate-900">
-            {session?.user?.isPlatformAdmin ? "Owner platform" : "Add first child"}
+            {session?.user?.isPlatformAdmin ? "Owner platform" : "Add first care profile"}
           </h1>
           <p className="mt-2 text-sm font-medium leading-6 text-slate-600">
             {session?.user?.isPlatformAdmin
-              ? "You can manage FamilyTrack from the owner platform without adding a child to this admin account."
-              : `${selectedFamily.familyName} is ready. Add the first child to start logging care notes.`}
+              ? "You can manage FamilyTrack from the owner platform without adding a care profile to this admin account."
+              : `${selectedFamily.familyName} is ready. Add the first person to start logging care notes.`}
           </p>
 
           {session?.user?.isPlatformAdmin ? (
@@ -7737,7 +7737,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 {[
                   ["account", "Account"],
                   ["family", "Family"],
-                  ["children", "Children"],
+                  ["children", "Care profiles"],
                   ["preferences", "App Preferences"],
                   ["notifications", "Notifications"],
                   ["data", "Data & Export"],
@@ -8377,9 +8377,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
                 <div className="grid gap-4 lg:grid-cols-2">
                   <div>
-                    <h3 className="font-bold text-slate-900">Children</h3>
+                    <h3 className="font-bold text-slate-900">Care profiles</h3>
                     <p className="mt-1 text-sm text-slate-600">
-                      Select a child to edit their basic details.
+                      Select a person to edit their basic details.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {children.map((child) => (
@@ -8413,7 +8413,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           />
                           <div>
                             <p className="text-sm font-bold text-slate-900">
-                              Child photo
+                              Profile photo
                             </p>
                             <p className="text-xs font-medium text-slate-500">
                               Optional profile image for the child selector.
@@ -8507,7 +8507,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           !selectedFamilyAccess.canAddLogs
                         }
                       >
-                        {isSavingChildProfile ? "Saving..." : "Save child"}
+                        {isSavingChildProfile ? "Saving..." : "Save profile"}
                       </button>
                     </form>
                   </div>
@@ -9693,7 +9693,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       ],
                       [
                         "Storage",
-                        "Diary data is stored in the app database. Child photo uploads are prepared for DigitalOcean Spaces using a secure backend signed-upload flow.",
+                        "Diary data is stored in the app database. Profile photo uploads are prepared for DigitalOcean Spaces using a secure backend signed-upload flow.",
                       ],
                       [
                         "Contact",
@@ -9898,7 +9898,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <div className="grid gap-3 lg:grid-cols-[1fr_1.4fr]">
                     <div className="rounded-[1.25rem] border border-slate-200 bg-white p-3 shadow-sm">
                       <h4 className="text-sm font-black text-slate-900">
-                        Children in this family
+                        Care profiles in this family
                       </h4>
                       <div className="mt-2 space-y-2">
                         {(platformViewAsFamily?.children || []).map((child) => (
@@ -9943,7 +9943,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             >
                               <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                                 <p className="font-bold capitalize text-slate-900">
-                                  {log.category} - {log.childFirstName || "Child"}
+                                  {log.category} - {log.childFirstName || "Person"}
                                 </p>
                                 <p className="text-xs font-semibold text-slate-500">
                                   {log.logDate} {log.logTime || ""}
@@ -10491,7 +10491,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         </label>
                         <label className="min-w-0">
                           <span className="text-xs font-black uppercase tracking-[0.12em] text-slate-500">
-                            Child name
+                            Person's name
                           </span>
                           <input
                             className="mt-1 w-full min-w-0 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-800 outline-none transition focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100"
@@ -12437,7 +12437,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         </div>
 
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <h4 className="font-bold text-slate-900">Children</h4>
+                          <h4 className="font-bold text-slate-900">Care profiles</h4>
                           <div className="mt-2 space-y-2">
                             {selectedPlatformFamily.children.map((child) => {
                               const childDraft = platformChildEdits[child.id] || {
@@ -13324,7 +13324,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </div>
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
-                    Children
+                    Care profiles
                   </p>
                   <p className="mt-1 text-sm font-bold text-slate-900">
                     {platformSnapshot.children?.length || 0}
@@ -13343,7 +13343,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               <div className="grid gap-3 lg:grid-cols-2">
                 <section className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3">
                   <h4 className="text-sm font-black text-slate-900">
-                    Children
+                    Care profiles
                   </h4>
                   <div className="mt-2 space-y-2">
                     {(platformSnapshot.children || []).map((child) => (
@@ -13406,7 +13406,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     >
                       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
                         <p className="font-bold capitalize text-slate-900">
-                          {log.category} - {log.childFirstName || "Child"}
+                          {log.category} - {log.childFirstName || "Person"}
                         </p>
                         <p className="text-xs font-semibold text-slate-500">
                           {log.logDate} {log.logTime || ""}
@@ -13607,7 +13607,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
                 {[
                   ["overview", "Overview"],
-                  ["children", "Children"],
+                  ["children", "Care profiles"],
                   ["subscription", "Subscription"],
                   ["activity", "Activity"],
                   ["issues", "Issues"],
@@ -13646,7 +13646,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         selectedPlatformFamily.family?.ownerEmail || "No email",
                       ],
                       [
-                        "Children",
+                        "Care profiles",
                         selectedPlatformFamily.children?.length || 0,
                         "profiles",
                       ],
@@ -13746,7 +13746,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         >
                           <div className="grid gap-3 sm:grid-cols-[1fr_160px_auto] sm:items-end">
                             <label className="min-w-0 text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                              Child name
+                              Person's name
                               <input
                                 className={`${inputClass} mt-2`}
                                 value={childDraft.firstName}
@@ -13795,7 +13795,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   ) : (
                     <AdminEmptyState
                       title="No children linked"
-                      message="Children added by this family will appear here for quick admin checks."
+                      message="Care profiles added by this family will appear here for quick admin checks."
                       tone="slate"
                     />
                   )}
@@ -14534,7 +14534,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             </span>
                           </div>
                           <p className="mt-1 text-slate-600">
-                            {log.childFirstName || "Child"} -{" "}
+                            {log.childFirstName || "Person"} -{" "}
                             {log.familyName || "Family"}
                           </p>
                         </div>

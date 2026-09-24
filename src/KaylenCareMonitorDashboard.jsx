@@ -690,7 +690,7 @@ const REPORT_BUILDER_CATEGORY_OPTIONS = [
 const REPORT_BUILDER_COLUMN_DEFINITIONS = [
   { key: "date", label: "Date" },
   { key: "time", label: "Time" },
-  { key: "child", label: "Child" },
+  { key: "child", label: "Person" },
   { key: "category", label: "Category" },
   { key: "summary", label: "Summary" },
   { key: "amount", label: "Amount" },
@@ -909,7 +909,7 @@ const getDefaultDoseForMedicine = (medicine) => {
 export default function KaylenCareMonitorDashboard({
   familyId,
   childId,
-  childName = "Child",
+  childName = "Person",
   childDetails = {},
   familyDetails = {},
   children = [],
@@ -4198,7 +4198,7 @@ export default function KaylenCareMonitorDashboard({
     "Reports / Snapshot",
   ];
 
-  const getChildNameById = (value, fallback = "Child") => {
+  const getChildNameById = (value, fallback = "Person") => {
     const found = children.find(
       (child) => String(child.id) === String(value || ""),
     );
@@ -4208,7 +4208,7 @@ export default function KaylenCareMonitorDashboard({
       found?.name ||
       fallback ||
       childName ||
-      "Child"
+      "Person"
     );
   };
 
@@ -4383,7 +4383,7 @@ export default function KaylenCareMonitorDashboard({
         childId: document.childId || "",
         childName:
           document.childName ||
-          getChildNameById(document.childId, document.childId ? "Child" : "Family"),
+          getChildNameById(document.childId, document.childId ? "Person" : "Family"),
         dateObject,
         title: document.title || document.fileName || "Document",
         summary: `${document.category || "Document"}${
@@ -7786,7 +7786,7 @@ export default function KaylenCareMonitorDashboard({
     setText(8, tones.sky.accent, "bold");
     pdf.text(isTrendsPdf ? "TRENDS SUMMARY" : "FULL CARE REPORT", margin + 5, cursorY + 7);
     setText(18, [15, 23, 42], "bold");
-    pdf.text(childName || "Child", margin + 5, cursorY + 16);
+    pdf.text(childName || "Person", margin + 5, cursorY + 16);
     setText(8, [51, 65, 85], "normal");
     pdf.text(`Date range: ${reportRangeLabel}`, margin + 5, cursorY + 23);
     pdf.text(
@@ -12179,7 +12179,7 @@ export default function KaylenCareMonitorDashboard({
           </label>
 
           <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-            Child: {childName}. Range: {reportRangeLabel}. Filter:{" "}
+            Person: {childName}. Range: {reportRangeLabel}. Filter:{" "}
             {reportCategoryFilter}.
           </div>
 
@@ -12815,8 +12815,8 @@ export default function KaylenCareMonitorDashboard({
       <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
         <div className="mb-3">
           <p className="mb-2 text-sm font-bold text-slate-700">Show timeline for</p>
-          <div role="group" aria-label="Choose children for timeline" className="flex flex-wrap gap-2">
-            {[{ id: "all", label: "All children" }, ...children.map((child, index) => ({ id: String(child.id), label: child.firstName || child.first_name || child.name || `Child ${index + 1}` }))].map(child => (
+          <div role="group" aria-label="Choose care profiles for timeline" className="flex flex-wrap gap-2">
+            {[{ id: "all", label: "All profiles" }, ...children.map((child, index) => ({ id: String(child.id), label: child.firstName || child.first_name || child.name || `Person ${index + 1}` }))].map(child => (
               <button key={child.id} type="button" aria-pressed={String(timelineFilters.childId) === child.id}
                 onClick={() => setTimelineFilters(current => ({ ...current, childId: child.id }))}
                 className={`max-w-full break-words rounded-xl border px-4 py-3 text-sm font-bold transition ${String(timelineFilters.childId) === child.id ? "border-teal-700 bg-teal-700 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-teal-50"}`}>
@@ -13357,7 +13357,7 @@ export default function KaylenCareMonitorDashboard({
             </select>
           </label>
           <label className="text-sm font-bold text-slate-700">
-            Child
+            Person
             <select
               className={inputClassName}
               value={documentForm.childId}
@@ -13371,7 +13371,7 @@ export default function KaylenCareMonitorDashboard({
               <option value="">Family document</option>
               {children.map((child) => (
                 <option key={child.id} value={child.id}>
-                  {child.firstName || child.first_name || "Child"}
+                  {child.firstName || child.first_name || "Person"}
                 </option>
               ))}
             </select>
@@ -13447,7 +13447,7 @@ export default function KaylenCareMonitorDashboard({
             />
           </label>
           <label className="text-sm font-bold text-slate-700">
-            Child
+            Person
             <select
               className={inputClassName}
               value={documentFilters.childId}
@@ -13461,7 +13461,7 @@ export default function KaylenCareMonitorDashboard({
               <option value="">All children/family</option>
               {children.map((child) => (
                 <option key={child.id} value={child.id}>
-                  {child.firstName || child.first_name || "Child"}
+                  {child.firstName || child.first_name || "Person"}
                 </option>
               ))}
             </select>
@@ -13994,7 +13994,7 @@ export default function KaylenCareMonitorDashboard({
                     </label>
 
                     <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
-                      Child: {childName}. Range:{" "}
+                      Person: {childName}. Range:{" "}
                       {reportRangeLabel}
                       . Filter: {reportCategoryFilter}.
                     </div>
@@ -14354,7 +14354,7 @@ export default function KaylenCareMonitorDashboard({
             <div hidden={builderStep !== 1}>
             <div>
               <label className="text-xs font-black uppercase tracking-[0.14em] text-slate-500">
-                Person / child
+                Person
               </label>
               {children.length > 1 && onSelectChild ? (
                 <select
@@ -14366,7 +14366,7 @@ export default function KaylenCareMonitorDashboard({
                     const id = child.id || child.child_id || child.childId;
                     return (
                       <option key={id} value={id}>
-                        {child.firstName || child.first_name || child.name || child.child_name || child.childName || "Child"}
+                        {child.firstName || child.first_name || child.name || child.child_name || child.childName || "Person"}
                       </option>
                     );
                   })}
@@ -15315,7 +15315,7 @@ export default function KaylenCareMonitorDashboard({
                   </p>
                   <div className="mt-3 flex flex-wrap gap-2 text-xs font-bold text-slate-100">
                     <span className="rounded-full bg-white/15 px-3 py-1.5">
-                      Child: {childName}
+                      Person: {childName}
                     </span>
                     <span className="rounded-full bg-white/15 px-3 py-1.5">
                       {reportRangeLabel}
@@ -15360,7 +15360,7 @@ export default function KaylenCareMonitorDashboard({
             <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label className="text-sm font-bold text-slate-700">
-                  Child
+                  Person
                 </label>
                 <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-700">
                   {childName}
@@ -15783,7 +15783,7 @@ export default function KaylenCareMonitorDashboard({
     { label: "Profile", icon: "profile", action: onOpenSettings },
     { label: IS_NATIVE_APP ? "Account access" : "Subscription", icon: "subscription", action: onOpenSubscription },
     { type: "heading", label: "Family" },
-    { label: "Child Profiles", icon: "profile", action: onOpenChildSetup },
+    { label: "Care Profiles", icon: "profile", action: onOpenChildSetup },
     {
       label: "Notification Centre",
       icon: "notifications",
@@ -16579,7 +16579,7 @@ export default function KaylenCareMonitorDashboard({
               >
                 {children.map((child) => (
                   <option key={child.id} value={child.id}>
-                    {child.firstName || child.first_name || "Child"}
+                    {child.firstName || child.first_name || "Person"}
                   </option>
                 ))}
               </select>
