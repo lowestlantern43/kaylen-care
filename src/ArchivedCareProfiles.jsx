@@ -1,0 +1,8 @@
+import { useEffect, useState } from 'react';
+export default function ArchivedCareProfiles({api}) {
+ const [rows,setRows]=useState([]),[error,setError]=useState(''),[busy,setBusy]=useState('');
+ const load=()=>api.adminArchivedProfiles().then(setRows).catch(e=>setError(e.message));
+ useEffect(()=>{load();},[]);
+ const restore=async row=>{if(!window.confirm(`Restore ${row.firstName}'s care profile and make its records available to the family again?`))return;setBusy(row.id);setError('');try{await api.adminRestoreProfile(row.id);await load();}catch(e){setError(e.message);}finally{setBusy('');}};
+ return <details className="mx-auto my-4 max-w-6xl rounded-2xl border border-slate-200 bg-white p-4"><summary className="cursor-pointer font-bold">Archived care profiles · {rows.length} recoverable</summary><p className="mt-2 text-sm text-slate-600">Admin recovery is available for 30 days after archiving. Restoring makes the existing care history available again.</p>{error && <p role="alert" className="mt-2 text-sm text-rose-700">{error}</p>}{!rows.length && <p className="mt-3 text-sm">No profiles within the recovery window.</p>}{rows.map(row=><div key={row.id} className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"><div><p className="font-bold">{row.firstName} {row.lastName}</p><p className="text-sm">{row.familyName}</p><p className="text-xs text-slate-600">Archived {new Date(row.archivedAt).toLocaleString('en-GB')} · Recover by {new Date(row.recoverUntil).toLocaleString('en-GB')}</p></div><button type="button" disabled={!!busy} onClick={()=>restore(row)} className="rounded-xl border bg-white px-4 py-3 text-sm font-bold disabled:opacity-50">{busy===row.id?'Restoring…':'Restore profile'}</button></div>)}</details>;
+}

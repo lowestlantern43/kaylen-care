@@ -1,3 +1,4 @@
+import ArchivedCareProfiles from "./ArchivedCareProfiles";
 import { Capacitor as ActivityCapacitor } from "@capacitor/core";
 import { clearWidgets, consumeWidgetOpen } from "./nativeWidgets";
 import ChildSetupWizard from "./ChildSetupWizard";
@@ -4480,6 +4481,21 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     return () => clearInterval(timer);
   }, [selectedFamilyId, children]);
 
+  const archiveCareProfile = async () => {
+    if (isSavingChild || !selectedChildId) return;
+    if (!window.confirm(`Archive ${childDisplayName(selectedChild)}? This hides their profile and care history from your account. A FamilyTrack administrator can recover it for 30 days.`)) return;
+    setIsSavingChild(true); setError("");
+    try {
+      await api.archiveCareProfile(selectedFamilyId, selectedChildId);
+      await clearWidgets().catch(() => {});
+      const remaining = children.filter(child => child.id !== selectedChildId);
+      setChildren(remaining);
+      setSelectedChildId(remaining[0]?.id || "");
+      localStorage.setItem(selectedChildStorageKey(selectedFamilyId), remaining[0]?.id || "");
+    } catch (e) { setError(e.message); }
+    finally { setIsSavingChild(false); }
+  };
+
   const completeChildSetup = (child, profile) => {
     setChildren(current => dedupeChildren([...current, child]));
     setSelectedChildId(child.id);
@@ -7411,6 +7427,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {showPlatformAdmin ? <ArchivedCareProfiles api={api} /> : null}
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
@@ -8509,6 +8526,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                       >
                         {isSavingChildProfile ? "Saving..." : "Save profile"}
                       </button>
+                      {["owner", "parent"].includes(selectedFamily.role) && selectedFamilyAccess.canAddLogs ? <div className="mt-4 border-t border-slate-200 pt-4"><p className="mb-2 text-sm text-slate-600">Archive this care profile to hide it and its records. Admin recovery is available for 30 days.</p><button type="button" onClick={archiveCareProfile} disabled={isSavingChild} className="rounded-xl border border-rose-200 bg-white px-4 py-3 text-sm font-bold text-rose-700 disabled:opacity-50">{isSavingChild ? "Archiving..." : "Archive care profile"}</button></div> : null}
+
                     </form>
                   </div>
 
