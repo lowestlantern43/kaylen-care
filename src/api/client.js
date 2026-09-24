@@ -147,6 +147,9 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  archiveCareProfile: (familyId, id) => request(`/families/${familyId}/children/${id}`, { method: 'DELETE' }),
+  adminArchivedProfiles: () => request('/admin/archived-profiles'),
+  adminRestoreProfile: id => request(`/admin/archived-profiles/${id}/restore`, { method: 'POST' }),
   recordClientActivity: (platform) => request('/client-activity', { method: 'POST', body: JSON.stringify({ platform }) }),
   adminClientActivity: () => request('/client-activity'),
   getPrivacy: () => request("/account/privacy"),
