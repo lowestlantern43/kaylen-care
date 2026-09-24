@@ -12788,12 +12788,24 @@ export default function KaylenCareMonitorDashboard({
   const renderUnifiedTimelineForm = () => (
     <div className="mt-6 space-y-4">
       <section className="rounded-[1.75rem] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-indigo-50 p-4 shadow-sm">
+        <div className="mb-3">
+          <p className="mb-2 text-sm font-bold text-slate-700">Show timeline for</p>
+          <div role="group" aria-label="Choose children for timeline" className="flex flex-wrap gap-2">
+            {[{ id: "all", label: "All children" }, ...children.map((child, index) => ({ id: String(child.id), label: child.firstName || child.first_name || child.name || `Child ${index + 1}` }))].map(child => (
+              <button key={child.id} type="button" aria-pressed={String(timelineFilters.childId) === child.id}
+                onClick={() => setTimelineFilters(current => ({ ...current, childId: child.id }))}
+                className={`max-w-full break-words rounded-xl border px-4 py-3 text-sm font-bold transition ${String(timelineFilters.childId) === child.id ? "border-teal-700 bg-teal-700 text-white" : "border-slate-200 bg-white text-slate-700 hover:bg-teal-50"}`}>
+                {child.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <details>
           <summary className="cursor-pointer rounded-xl py-2 text-sm font-bold text-slate-800">
             Search &amp; filters
             <span className="ml-2 text-xs font-normal text-slate-500">
               {timelineFilters.range === "all" ? "All history" : timelineFilters.range === "24h" ? "Last 24 hours" : `Last ${timelineFilters.range} days`}
-              {[timelineFilters.search, timelineFilters.childId !== "all", timelineFilters.category !== "All", timelineFilters.severity !== "All"].filter(Boolean).length > 0 ? " · Filters applied" : ""}
+              {[timelineFilters.search, timelineFilters.category !== "All", timelineFilters.severity !== "All"].filter(Boolean).length > 0 ? " · Filters applied" : ""}
             </span>
           </summary>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
@@ -12813,7 +12825,7 @@ export default function KaylenCareMonitorDashboard({
           </div>
         ) : null}
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_1fr_1fr]">
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1.4fr_1fr]">
           <label className="min-w-0 text-sm font-bold text-slate-700">
             Global search
             <input
@@ -12828,26 +12840,6 @@ export default function KaylenCareMonitorDashboard({
               placeholder="Search notes, triggers, documents, medicines..."
               className={inputClassName}
             />
-          </label>
-          <label className="min-w-0 text-sm font-bold text-slate-700">
-            Child
-            <select
-              value={timelineFilters.childId}
-              onChange={(event) =>
-                setTimelineFilters((current) => ({
-                  ...current,
-                  childId: event.target.value,
-                }))
-              }
-              className={inputClassName}
-            >
-              <option value="all">All children</option>
-              {children.map((child) => (
-                <option key={child.id} value={child.id}>
-                  {child.firstName || child.first_name || "Child"}
-                </option>
-              ))}
-            </select>
           </label>
           <label className="min-w-0 text-sm font-bold text-slate-700">
             Date range
