@@ -3209,6 +3209,38 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const [isSavingCareOption, setIsSavingCareOption] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [showPlatformAdmin, setShowPlatformAdmin] = useState(false);
+  const [clientActivity, setClientActivity] = useState([]);
+  const [clientActivityError, setClientActivityError] = useState(false);
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    let lastSent = 0;
+    const record = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastSent < 300000) return;
+      lastSent = Date.now();
+      api.recordClientActivity("web").catch(() => {});
+    };
+    record();
+    const interval = setInterval(record, 300000);
+    document.addEventListener("visibilitychange", record);
+    return () => { clearInterval(interval); document.removeEventListener("visibilitychange", record); };
+  }, [session?.user?.id]);
+  useEffect(() => {
+    if (!showPlatformAdmin || !session?.user?.isPlatformAdmin) return;
+    let cancelled = false;
+    const load = () => api.adminClientActivity().then(rows => {
+      if (!cancelled) { setClientActivity(rows || []); setClientActivityError(false); }
+    }).catch(() => { if (!cancelled) setClientActivityError(true); });
+    load();
+    const interval = setInterval(load, 60000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [showPlatformAdmin, session?.user?.id]);
+  const renderClientPlatforms = (userId) => {
+    const activity = clientActivity.filter(item => item.userId === userId);
+    return <div className="mt-2 space-y-1 text-xs text-slate-600" aria-label="Platforms used">
+      {clientActivityError ? <p>Platform activity unavailable</p> : activity.length ? activity.map(item => <p key={item.platform}><strong>{{ ios: "iOS app", android: "Android app", web: "Web browser" }[item.platform]}</strong> · Last active {new Date(item.lastSeenAt).toLocaleString('en-GB')}</p>) : <p>Platform usage not recorded yet</p>}
+    </div>;
+  };
+
   const [settingsTab, setSettingsTab] = useState("account");
   const [careProfileTab, setCareProfileTab] = useState("general");
   const [members, setMembers] = useState([]);
@@ -11601,6 +11633,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             </div>
                           </div>
                           <p className="mt-1 text-sm text-slate-600">{user.email}</p>
+                          {renderClientPlatforms(user.id)}
                           <p className="mt-1 text-xs font-semibold text-slate-500">
                             {user.familyCount} families - {user.logCount || 0} logs
                             {" - "}Last seen:{" "}
