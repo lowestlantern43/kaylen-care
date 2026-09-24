@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { build } from 'esbuild';
+const output=await build({entryPoints:['src/nativeWidgets.js'],bundle:true,write:false,format:'esm',plugins:[{name:'mock',setup(b){b.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const Capacitor={getPlatform:()=>"web"}; export const registerPlugin=()=>({});'}));}}]});
+const {makeWidgetSnapshot}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const now=new Date(2026,8,24,10,0);
+const entry={section:'Toileting',summary:'Private detail',notes:'Secret notes',date:new Date(2026,8,24,9)};
+const snapshot=makeWidgetSnapshot({id:'f:c',name:'Demo',entries:[entry],medicines:[{name:'Scheduled',dose:'2 ml',times:['09:00','11:00'],scheduleDays:['every_day']},{name:'PRN',times:['12:00'],scheduleDays:['prn']}],scheduled:()=>true,target:800,fluid:200,now,entryDate:e=>e.date});
+assert.equal(snapshot.medicines[0].name,'Scheduled');
+assert.equal(new Date(snapshot.medicines[0].timestamp*1000).getHours(),11);
+assert.equal(snapshot.medicines.length,3);
+assert.equal(snapshot.care.toileting.label,'Toileting logged');
+assert.equal(snapshot.fluid,200);
+assert.ok(!JSON.stringify(snapshot).includes('Secret'));
+assert.ok(!JSON.stringify(snapshot).includes('Private'));
+console.log('PASS: next scheduled times, PRN excluded, fluid totals, no care notes in shared snapshots');

@@ -17,6 +17,7 @@ embed.add_file_reference(target.product_reference, true)
 target.build_configurations.each do |config|
   base = app.build_configurations.find { |c| c.name == config.name }.build_settings
   config.build_settings.merge!({
+    'PRODUCT_NAME' => 'FamilyTrackWidgets',
     'PRODUCT_BUNDLE_IDENTIFIER' => 'care.familytrack.app.widgets',
     'INFOPLIST_FILE' => 'FamilyTrackWidgets/Info.plist',
     'CODE_SIGN_ENTITLEMENTS' => 'FamilyTrackWidgets/Widgets.entitlements',

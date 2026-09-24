@@ -39,6 +39,9 @@ jobs:
           npm run ios:sync
           ruby scripts/configure-widgets.rb
 
+      - name: Check widget snapshots
+        run: node scripts/test-widgets.mjs
+
       - name: Check companion billing and session behaviour
         run: npm run test:ios
 
