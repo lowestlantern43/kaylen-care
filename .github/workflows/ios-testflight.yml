@@ -67,7 +67,7 @@ jobs:
         run: |
           set -euo pipefail
           ruby scripts/configure-widgets.rb
-          # Apply manual signing only to App, leaving CocoaPods frameworks unaffected.
+          # Apply manual signing to app and widget, leaving CocoaPods frameworks unaffected.
           ruby -rxcodeproj -e 'p = Xcodeproj::Project.open("ios/App/App.xcodeproj"); p.targets.select { |t| ["App", "FamilyTrackWidgets"].include?(t.name) }.each { |t| t.build_configurations.each { |c| c.build_settings.merge!({"CODE_SIGN_STYLE" => "Manual", "DEVELOPMENT_TEAM" => "68ZTBX45Q7", "CODE_SIGN_IDENTITY" => "Apple Distribution", "PROVISIONING_PROFILE_SPECIFIER" => (t.name == "App" ? "FamilyTrack App Store" : "FamilyTrack Widgets App Store"), "CURRENT_PROJECT_VERSION" => ENV.fetch("GITHUB_RUN_NUMBER")}) } }; p.save'
           xcodebuild -workspace ios/App/App.xcworkspace -scheme App -configuration Release -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/FamilyTrack.xcarchive" archive
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<'PLIST'
