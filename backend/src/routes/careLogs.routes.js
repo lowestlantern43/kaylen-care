@@ -89,7 +89,7 @@ careLogsRouter.get(
     }
 
     const params = [familyId];
-    const where = ["cl.family_id = $1", "cl.deleted_at IS NULL"];
+    const where = ["cl.family_id = $1", "cl.deleted_at IS NULL", "c.deleted_at IS NULL"];
 
     if (childId) {
       params.push(childId);

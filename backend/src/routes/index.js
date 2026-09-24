@@ -1,3 +1,4 @@
+import { archivedProfilesRouter } from "./archivedProfiles.routes.js";
 import { clientActivityRouter } from "./clientActivity.routes.js";
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -26,6 +27,7 @@ apiRouter.use("/client-activity", clientActivityRouter);
 apiRouter.use("/auth", authRouter);
 apiRouter.use("/billing", billingRouter);
 apiRouter.use("/account", accountRouter);
+apiRouter.use("/admin/archived-profiles", archivedProfilesRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/feedback", feedbackRouter);
 apiRouter.use("/notifications", requireAuth, requirePrivacyConsent, notificationsRouter);

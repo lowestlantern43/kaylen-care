@@ -301,7 +301,7 @@ documentsRouter.get(
     }
 
     const params = [req.familyMember.family_id];
-    const filters = ["d.family_id = $1", "d.deleted_at IS NULL"];
+    const filters = ["d.family_id = $1", "d.deleted_at IS NULL", "(d.child_id IS NULL OR c.deleted_at IS NULL)"];
 
     if (childId) {
       params.push(childId);
