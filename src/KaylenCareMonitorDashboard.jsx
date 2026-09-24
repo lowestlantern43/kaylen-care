@@ -1,3 +1,4 @@
+import { makeWidgetSnapshot, updateWidgets } from "./nativeWidgets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -1012,6 +1013,7 @@ export default function KaylenCareMonitorDashboard({
   });
   const [reportEndDate, setReportEndDate] = useState(todayIsoValue());
   const [sharedLog, setSharedLog] = useState([]);
+  const [widgetLoadedKey, setWidgetLoadedKey] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isReportEmailOpen, setIsReportEmailOpen] = useState(false);
@@ -3182,6 +3184,7 @@ export default function KaylenCareMonitorDashboard({
         .map(mapSaasCareLogEntry)
         .filter(Boolean),
     );
+    setWidgetLoadedKey(`${familyId}:${childId}`);
     return true;
   };
 
@@ -4716,6 +4719,28 @@ export default function KaylenCareMonitorDashboard({
     profileMedicationOptions,
     sharedLog,
   ]);
+
+  useEffect(() => {
+    if (!currentUser?.id || widgetLoadedKey !== `${familyId}:${childId}`) return;
+    const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
+      entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
+      target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
+    updateWidgets(`${currentUser.id}:${familyId}`, snapshot, children.map(child => `${familyId}:${child.id}`))?.catch(() => {});
+  }, [widgetLoadedKey, sharedLog, childProfile, childId, familyId, childName, currentUser?.id]);
+
+  useEffect(() => {
+    const openWidgetSection = () => {
+      try {
+        const pending = JSON.parse(sessionStorage.getItem("familytrack-widget-open") || "null");
+        if (pending?.child !== childId) return;
+        const section = sections.find(item => item.title === pending.section);
+        if (section) { sessionStorage.removeItem("familytrack-widget-open"); openSection(section); }
+      } catch {}
+    };
+    openWidgetSection();
+    window.addEventListener("familytrack:widget-open", openWidgetSection);
+    return () => window.removeEventListener("familytrack:widget-open", openWidgetSection);
+  }, [childId]);
 
   const latestEntryForSection = (sectionTitle, predicate = null) =>
     sharedLog.find(

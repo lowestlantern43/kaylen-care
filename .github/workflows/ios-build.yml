@@ -5,6 +5,7 @@ on:
     branches:
       - codex/ios-app
       - codex/ios-companion
+      - codex/ios-widgets
   workflow_dispatch:
 
 permissions:
@@ -34,7 +35,9 @@ jobs:
         run: npm ci
 
       - name: Build and sync iOS project
-        run: npm run ios:sync
+        run: |
+          npm run ios:sync
+          ruby scripts/configure-widgets.rb
 
       - name: Check companion billing and session behaviour
         run: npm run test:ios

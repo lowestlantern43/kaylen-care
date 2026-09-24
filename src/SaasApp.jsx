@@ -1,3 +1,4 @@
+import { clearWidgets, consumeWidgetOpen } from "./nativeWidgets";
 import ChildSetupWizard from "./ChildSetupWizard";
 import PrivacyGate from "./PrivacyGate";
 ﻿import html2canvas from "html2canvas";
@@ -4427,6 +4428,24 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       );
     };
   }, [children, selectedFamilyId]);
+
+  useEffect(() => {
+    const openWidget = async () => {
+      const raw = await consumeWidgetOpen().catch(() => "");
+      if (!raw) return;
+      const url = new URL(raw);
+      const [family, child] = (url.searchParams.get("child") || "").split(":");
+      if (family !== selectedFamilyId || !children.some(item => item.id === child)) return;
+      const section = { meds: "Medication", fluids: "Hydration", care: "Timeline", all: "Care Snapshot" }[url.searchParams.get("section")];
+      if (!section) return;
+      sessionStorage.setItem("familytrack-widget-open", JSON.stringify({ child, section }));
+      setSelectedChildId(child);
+      window.dispatchEvent(new Event("familytrack:widget-open"));
+    };
+    openWidget();
+    const timer = setInterval(() => { if (document.visibilityState === "visible") openWidget(); }, 1500);
+    return () => clearInterval(timer);
+  }, [selectedFamilyId, children]);
 
   const completeChildSetup = (child, profile) => {
     setChildren(current => dedupeChildren([...current, child]));
@@ -15089,6 +15108,10 @@ export default function SaasApp() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!isCheckingSession && !session?.user?.id) clearWidgets().catch(() => {});
+  }, [isCheckingSession, session?.user?.id]);
+
   const logout = async () => {
     if (hasNativePush()) {
       try { await disableNativePush(api); }
@@ -15096,6 +15119,7 @@ export default function SaasApp() {
     }
     try { await api.logout(); }
     catch { window.alert("Sign-out did not complete. Check your connection and try again."); return; }
+    await clearWidgets().catch(() => {});
     setSession(null);
   };
 
