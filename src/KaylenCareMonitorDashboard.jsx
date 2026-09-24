@@ -15963,6 +15963,22 @@ export default function KaylenCareMonitorDashboard({
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
       <div className="mx-auto max-w-6xl px-4 py-4 md:px-6 md:py-8">
+        <nav aria-label="Desktop account and care navigation" className="mb-5 hidden flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex">
+          {[
+            { label: "Timeline", action: () => openSection(sections.find(item => item.title === "Timeline")) },
+            { label: "Reports", action: () => openSection(sections.find(item => item.title === "Reports")) },
+            { label: "Account settings", action: onOpenSettings },
+            { label: "Child profiles", action: onOpenChildSetup },
+            { label: "Subscription", action: onOpenSubscription },
+            { label: "Help & Support", action: onOpenSupport },
+          ].filter(item => typeof item.action === "function").map(item => <button key={item.label} type="button" onClick={item.action} className="rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-800">{item.label}</button>)}
+          <details className="relative">
+            <summary className="cursor-pointer rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-teal-50">More</summary>
+            <div className="absolute right-0 top-full z-40 mt-2 max-h-[65vh] w-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
+              {mobileMoreItems.map(item => item.type === "heading" ? <p key={item.label} className="px-3 pt-3 text-xs font-bold uppercase text-slate-500">{item.label}</p> : <button type="button" key={item.label} className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-teal-50" onClick={event => { event.currentTarget.closest("details").open = false; if (item.action) item.action(); else openSection(sections.find(section => section.title === item.title)); }}>{item.label}</button>)}
+            </div>
+          </details>
+        </nav>
         {accountAccess && !accountAccess.canAddLogs ? (
           <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
             This family account is view-only. Existing diary entries, reports and
