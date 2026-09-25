@@ -4470,8 +4470,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       const url = new URL(raw);
       const [family, child] = (url.searchParams.get("child") || "").split(":");
       if (family !== selectedFamilyId || !children.some(item => item.id === child)) return;
-      const section = { meds: "Medication", fluids: "Hydration", care: "Timeline", all: "Care Snapshot" }[url.searchParams.get("section")];
-      if (!section) return;
+      const section = "Home";
       sessionStorage.setItem("familytrack-widget-open", JSON.stringify({ child, section }));
       setSelectedChildId(child);
       window.dispatchEvent(new Event("familytrack:widget-open"));
@@ -7431,7 +7430,19 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
-          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-24 shadow-md">
+          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-36 shadow-md">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event("familytrack:open-care-snapshot"))}
+              className="absolute right-24 top-3 flex h-9 w-9 items-center justify-center rounded-full border border-rose-100 bg-white/90 text-rose-700 shadow-sm transition hover:bg-rose-50"
+              title="Care Snapshot"
+              aria-label="Open Care Snapshot"
+            >
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="4" y="5" width="16" height="16" rx="3" />
+                <path d="M9 5V3h6v2M12 9v8M8 13h8" />
+              </svg>
+            </button>
             <button
               type="button"
               onClick={() => openSettingsFromDashboard("notifications")}

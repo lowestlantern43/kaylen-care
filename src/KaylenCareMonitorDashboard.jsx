@@ -4733,13 +4733,26 @@ export default function KaylenCareMonitorDashboard({
       try {
         const pending = JSON.parse(sessionStorage.getItem("familytrack-widget-open") || "null");
         if (pending?.child !== childId) return;
+        if (pending.section === "Home") {
+          sessionStorage.removeItem("familytrack-widget-open");
+          closeSection();
+          return;
+        }
         const section = sections.find(item => item.title === pending.section);
         if (section) { sessionStorage.removeItem("familytrack-widget-open"); openSection(section); }
       } catch {}
     };
+    const openCareSnapshot = () => {
+      const section = sections.find(item => item.title === "Care Snapshot");
+      if (section) openSection(section);
+    };
     openWidgetSection();
     window.addEventListener("familytrack:widget-open", openWidgetSection);
-    return () => window.removeEventListener("familytrack:widget-open", openWidgetSection);
+    window.addEventListener("familytrack:open-care-snapshot", openCareSnapshot);
+    return () => {
+      window.removeEventListener("familytrack:widget-open", openWidgetSection);
+      window.removeEventListener("familytrack:open-care-snapshot", openCareSnapshot);
+    };
   }, [childId]);
 
   const latestEntryForSection = (sectionTitle, predicate = null) =>
