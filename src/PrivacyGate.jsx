@@ -10,6 +10,9 @@ export default function PrivacyGate({ children, onLogout }) {
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [message, setMessage] = useState("");
+  useEffect(() => {
+    if (open) window.scrollTo({ top: 0, behavior: "instant" });
+  }, [open]);
   async function load() {
     setError("");
     try { setStatus(await api.getPrivacy()); }
@@ -43,7 +46,12 @@ export default function PrivacyGate({ children, onLogout }) {
   const button = "rounded-xl bg-slate-900 px-4 py-3 text-sm font-bold text-white disabled:opacity-50";
   if (status?.accepted && !open) return <>
     {children}
-    <footer className="p-3 text-center text-xs text-slate-600"><button onClick={() => setOpen(true)} className="underline">Privacy controls</button>{" · "}<a href="https://familytrack.care/privacy.html" target="_blank" rel="noreferrer" className="underline">Privacy notice</a></footer>
+    <footer className="px-3 pt-3 pb-[calc(7rem+env(safe-area-inset-bottom))] text-center text-sm text-slate-600 md:pb-3">
+      <nav aria-label="Privacy" className="flex flex-wrap items-center justify-center gap-2">
+        <button type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 items-center rounded-xl border border-slate-200 bg-white px-4 font-semibold underline underline-offset-4">Privacy controls</button>
+        <a href="https://familytrack.care/privacy.html" target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center rounded-xl border border-slate-200 bg-white px-4 font-semibold underline underline-offset-4">Privacy notice</a>
+      </nav>
+    </footer>
   </>;
   return <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">
     <section className="mx-auto max-w-xl space-y-5 rounded-2xl bg-white p-6 shadow-sm">
