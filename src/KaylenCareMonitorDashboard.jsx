@@ -4955,46 +4955,6 @@ export default function KaylenCareMonitorDashboard({
     return items.slice(0, 3);
   }, [sharedLog, todayDashboard]);
 
-  const gentleInsightCards = useMemo(() => {
-    const insights = [];
-    const today = todayValue();
-    const todayMedication = sharedLog.filter(
-      (entry) => entry.section === "Medication" && entry.date === today,
-    );
-    const skippedThisWeek = sharedLog.filter((entry) => {
-      if (entry.section !== "Medication") return false;
-      const status = String(entry.medicationStatus || "").toLowerCase();
-      if (!["skipped", "missed", "refused"].includes(status)) return false;
-      const entryDate = entry.date ? new Date(`${entry.date}T00:00:00`) : null;
-      if (!entryDate || Number.isNaN(entryDate.getTime())) return false;
-      return Date.now() - entryDate.getTime() <= 7 * 24 * 60 * 60 * 1000;
-    }).length;
-
-    if (todayDashboard.fluidTargetMl && todayDashboard.fluidPercent < 50) {
-      insights.push({
-        key: "fluid-low",
-        text: "Worth noting: fluid intake is below the daily target so far.",
-        tone: "border-sky-100 bg-sky-50 text-sky-900",
-      });
-    }
-    if (skippedThisWeek >= 2) {
-      insights.push({
-        key: "med-skipped",
-        text: `Worth noting: medication was skipped or missed ${skippedThisWeek} times this week.`,
-        tone: "border-rose-100 bg-rose-50 text-rose-900",
-      });
-    }
-    if (!todayMedication.length && todayDashboard.medicationRequired) {
-      insights.push({
-        key: "med-none",
-        text: "Possible pattern: required medication has not been logged today yet.",
-        tone: "border-amber-100 bg-amber-50 text-amber-900",
-      });
-    }
-
-    return insights.slice(0, 2);
-  }, [sharedLog, todayDashboard]);
-
   const notificationCentreItems = useMemo(() => {
     const items = homeStatusItems.map((item) => ({
       id: `status-${item.key}`,
@@ -16304,24 +16264,9 @@ export default function KaylenCareMonitorDashboard({
                 </span>
               ))}
             </div>
-          ) : (
-            <div className="mt-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-bold text-emerald-800">
-              No urgent reminders showing.
-            </div>
-          )}
-
-          {gentleInsightCards.length ? (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {gentleInsightCards.map((insight) => (
-                <div
-                  key={insight.key}
-                  className={`rounded-2xl border px-3 py-2 text-xs font-bold leading-5 shadow-sm ${insight.tone}`}
-                >
-                  {insight.text}
-                </div>
-              ))}
-            </div>
           ) : null}
+
+
         </div>
 
         {isModuleEnabled("reports") ? (
