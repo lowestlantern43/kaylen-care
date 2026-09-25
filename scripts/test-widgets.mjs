@@ -7,13 +7,13 @@ const now=new Date(2026,8,24,10,0);
 const entry={section:'Toileting',summary:'Private detail',notes:'Secret notes',date:new Date(2026,8,24,9)};
 const snapshot=makeWidgetSnapshot({id:'f:c',name:'Demo',entries:[entry],medicines:[{name:'Scheduled',dose:'2 ml',times:['09:00','11:00'],scheduleDays:['every_day']},{name:'PRN',times:['12:00'],scheduleDays:['prn']}],scheduled:()=>true,target:800,fluid:200,now,entryDate:e=>e.date});
 assert.equal(snapshot.medicines[0].name,'Scheduled');
-assert.equal(new Date(snapshot.medicines[0].timestamp*1000).getHours(),11);
-assert.equal(snapshot.medicines.length,3);
+assert.equal(new Date(snapshot.medicines[0].timestamp*1000).getHours(),9, 'Outstanding dose stays after its scheduled time');
+assert.equal(snapshot.medicines.length,4);
 assert.equal(snapshot.care.toileting.label,'Toileting logged');
 assert.equal(snapshot.fluid,200);
 assert.ok(!JSON.stringify(snapshot).includes('Secret'));
 assert.ok(!JSON.stringify(snapshot).includes('Private'));
-console.log('PASS: next scheduled times, PRN excluded, fluid totals, no care notes in shared snapshots');
+console.log('PASS: outstanding scheduled times, PRN excluded, fluid totals, no care notes in shared snapshots');
 
 await updateWidgets('user:family',snapshot,[{id:'f:c',name:'Demo'},{id:'f:other',name:'Other'}]);
 assert.deepEqual(globalThis.widgetWrites.at(-1).children.map(c=>c.id),['f:c','f:other']);
