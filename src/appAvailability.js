@@ -3,8 +3,8 @@
 export const APP_AVAILABILITY = {
   ios: {
     label: "iOS app",
-    status: "coming_soon",
-    url: "",
+    status: "available",
+    url: "https://apps.apple.com/gb/app/familytrack/id6812253482",
   },
   android: {
     label: "Android app",
