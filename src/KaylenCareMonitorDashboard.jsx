@@ -4963,17 +4963,8 @@ export default function KaylenCareMonitorDashboard({
       tone: item.tone,
     }));
 
-    gentleInsightCards.forEach((insight) => {
-      items.push({
-        id: `insight-${insight.key}`,
-        title: insight.text,
-        detail: "Care insight",
-        tone: insight.tone,
-      });
-    });
-
     return items.slice(0, 6);
-  }, [gentleInsightCards, homeStatusItems]);
+  }, [homeStatusItems]);
 
   useEffect(() => {
     const reportCardCount = 3;
