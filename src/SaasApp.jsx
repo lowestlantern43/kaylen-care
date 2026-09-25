@@ -9834,13 +9834,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       {showPlatformAdmin ? (
         <div className="min-h-screen bg-indigo-50 px-3 py-3 sm:px-4 sm:py-5">
           <div className="mx-auto max-w-5xl">
-            <div className="flex items-start justify-between gap-3 rounded-2xl border border-indigo-100 bg-white/90 px-3 py-3 shadow-sm backdrop-blur sm:px-4">
+            <div className="admin-header flex items-start justify-between gap-3 border bg-white/90 px-4 py-4 backdrop-blur sm:px-5">
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-600">
                   Platform admin
                 </p>
                 <h2 className="truncate text-base font-bold text-slate-900 sm:text-lg">
-                  FamilyTrack SaaS
+                  FamilyTrack
                 </h2>
               </div>
               <button
