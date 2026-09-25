@@ -100,8 +100,14 @@ def run(source=None):
         command(['restic', 'restore', snapshot, '--target', str(restored), '--verify'], writer)
         command(['rclone', 'check', str(uploads), str(restored / 'uploads'),
                  '--download', '--log-level', 'ERROR', '--stats', '0'], reader)
+        # Expire only this backup set, after proving the new copy is recoverable.
+        # Paths contain temporary directories, so group by stable host/tag instead.
+        command(['restic', 'forget', '--host', 'familytrack-backups', '--tag', 'uploads',
+                 '--group-by', 'host,tags', '--keep-within', '30d', '--keep-last', '1',
+                 '--prune'], writer)
+        command(['restic', 'check'], writer)
         return {'status': 'success', 'scope': 'uploaded_files_only', 'snapshot': snapshot,
-                'files': count, 'bytes': total, 'restoreVerified': True,
+                'files': count, 'bytes': total, 'restoreVerified': True, 'retentionDays': 30,
                 'completedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
 
 

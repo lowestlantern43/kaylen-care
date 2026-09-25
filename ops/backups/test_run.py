@@ -56,18 +56,22 @@ class BackupTests(unittest.TestCase):
             with self.assertRaises(run.BackupError):
                 run.run(self.env)
 
-    def test_normal_run_never_initializes_or_prunes(self):
+    def test_retention_only_follows_verified_restore(self):
         calls = []
         def fake(args, env, cwd=None):
-            calls.append(args[:2])
+            calls.append(args)
             if args[:2] == ['restic', 'backup']:
                 return b'{"message_type":"summary","snapshot_id":"abc123"}'
             return b''
         with patch.object(run, 'command', fake):
             self.assertTrue(run.run(self.env)['restoreVerified'])
         self.assertNotIn(['restic', 'init'], calls)
-        self.assertNotIn(['restic', 'forget'], calls)
-        self.assertNotIn(['restic', 'prune'], calls)
+        forget = next(a for a in calls if a[:2] == ['restic', 'forget'])
+        self.assertIn('30d', forget)
+        self.assertIn('host,tags', forget)
+        restore_check = next(i for i,a in enumerate(calls) if a[:2] == ['rclone','check'] and 'source:familytrack' not in a)
+        self.assertGreater(calls.index(forget), restore_check)
+        self.assertEqual(calls[-1], ['restic', 'check'])
 
 
 if __name__ == '__main__':
