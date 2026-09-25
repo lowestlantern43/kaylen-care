@@ -19,7 +19,34 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             call.reject("Widget storage unavailable"); return
         }
         do {
-            try data.write(to: file, options: [.atomic, .completeFileProtection])
+            guard var incoming = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let scope = incoming["scope"] as? String, !scope.isEmpty,
+                  let profiles = incoming["children"] as? [[String: Any]] else {
+                call.reject("Invalid widget snapshot"); return
+            }
+            // A relaunch rebuilds the JavaScript cache. Keep each other profile's
+            // real snapshot instead of replacing it with an unsynced picker entry.
+            // Only merge within the same signed-in account/family, and only retain
+            // profiles still present in the incoming authorised catalogue.
+            var saved: [String: [String: Any]] = [:]
+            if let previousData = try? Data(contentsOf: file),
+               let previous = (try? JSONSerialization.jsonObject(with: previousData)) as? [String: Any],
+               previous["scope"] as? String == scope,
+               let previousProfiles = previous["children"] as? [[String: Any]] {
+                for profile in previousProfiles {
+                    if let id = profile["id"] as? String { saved[id] = profile }
+                }
+            }
+            incoming["children"] = profiles.map { profile -> [String: Any] in
+                guard let id = profile["id"] as? String,
+                      let updated = profile["updated"] as? Double, updated == 0,
+                      var cached = saved[id] else { return profile }
+                cached["name"] = profile["name"]
+                return cached
+            }
+            let merged = try JSONSerialization.data(withJSONObject: incoming)
+            guard merged.count < 200000 else { call.reject("Widget snapshot too large"); return }
+            try merged.write(to: file, options: [.atomic, .completeFileProtection])
             WidgetCenter.shared.reloadAllTimelines()
             call.resolve()
         } catch { call.reject("Could not update widgets") }

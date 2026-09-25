@@ -24,7 +24,7 @@ export function updateWidgets(scope, snapshot, profiles) {
     JSON.stringify({ ...previous, updated: 0 }) === JSON.stringify({ ...snapshot, updated: 0 });
   if (allowedIds.includes(snapshot.id) && !unchanged) snapshots.set(snapshot.id, snapshot);
   if (before === JSON.stringify([...snapshots.values()])) return writes;
-  const json = JSON.stringify({ children: [...snapshots.values()] });
+  const json = JSON.stringify({ scope, children: [...snapshots.values()] });
   writes = writes.catch(()=>{}).then(()=>bridge.write({json}));
   return writes;
 }
