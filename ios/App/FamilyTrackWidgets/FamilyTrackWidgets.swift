@@ -218,6 +218,107 @@ struct FamilyCareWidget: Widget {
             .contentMarginsDisabled()
     }
 }
+@available(iOS 17.0, *)
+enum LockScreenContent: String, AppEnum {
+    case latest, upcoming
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Display"
+    static var caseDisplayRepresentations: [LockScreenContent: DisplayRepresentation] = [
+        .latest: "Latest activity", .upcoming: "Next scheduled medication"
+    ]
+}
+@available(iOS 17.0, *)
+struct LockScreenConfiguration: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource = "FamilyTrack Lock Screen"
+    static var description = IntentDescription("Choose the latest logged activity or next scheduled medication. Open the diary to refresh.")
+    @Parameter(title: "Care profile") var child: CareChild?
+    @Parameter(title: "Display", default: .latest) var content: LockScreenContent
+    @Parameter(title: "Show name", default: false) var showName: Bool
+    @Parameter(title: "Show medication name", default: false) var showMedicine: Bool
+}
+@available(iOS 17.0, *)
+struct LockScreenEntry: TimelineEntry {
+    let date: Date
+    let configuration: LockScreenConfiguration
+    let child: ChildSnapshot?
+}
+@available(iOS 17.0, *)
+struct LockScreenProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> LockScreenEntry {
+        LockScreenEntry(date: .now, configuration: LockScreenConfiguration(), child: nil)
+    }
+    func snapshot(for configuration: LockScreenConfiguration, in context: Context) async -> LockScreenEntry {
+        LockScreenEntry(date: .now, configuration: configuration, child: WidgetSnapshot.load().children.first { $0.id == configuration.child?.id })
+    }
+    func timeline(for configuration: LockScreenConfiguration, in context: Context) async -> Timeline<LockScreenEntry> {
+        let current = await snapshot(for: configuration, in: context)
+        // Include scheduled boundaries so the next item can advance at its time.
+        let end = current.date.addingTimeInterval(21600)
+        var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0) * 900) })
+        for medicine in current.child?.medicines ?? [] {
+            let boundary = Date(timeIntervalSince1970: medicine.timestamp + 1)
+            if boundary > current.date && boundary < end { dates.insert(boundary) }
+        }
+        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(end))
+    }
+}
+@available(iOS 17.0, *)
+struct LockScreenCareView: View {
+    let entry: LockScreenEntry
+    private var upcoming: Bool { entry.configuration.content == .upcoming }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Label(entry.configuration.showName ? (entry.child?.name ?? "FamilyTrack") : "FamilyTrack", systemImage: upcoming ? "pills.fill" : "heart.text.square")
+                .font(.caption.weight(.semibold)).lineLimit(1)
+            if let child = entry.child {
+                if child.updated == 0 || entry.date.timeIntervalSince1970 - child.updated > 21600 {
+                    Text("Open diary to refresh").font(.headline).lineLimit(1)
+                    Text("Saved information is not current").font(.caption2).lineLimit(1)
+                } else if upcoming {
+                    if let medicine = child.medicines.first(where: { $0.timestamp >= entry.date.timeIntervalSince1970 }) {
+                        Text(entry.configuration.showMedicine ? medicine.name : "Next scheduled medication")
+                            .font(.headline).lineLimit(1)
+                        HStack(spacing: 4) {
+                            if !Calendar.current.isDate(Date(timeIntervalSince1970: medicine.timestamp), inSameDayAs: entry.date) {
+                                Text("Tomorrow")
+                            }
+                            Text(Date(timeIntervalSince1970: medicine.timestamp), style: .time)
+                        }.font(.caption)
+                    } else {
+                        Text("No upcoming medication").font(.headline).lineLimit(1)
+                        Text("Open app for the schedule").font(.caption2).lineLimit(1)
+                    }
+                } else if let record = child.care["latest"] {
+                    Text(record.label).font(.headline).lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text("Latest")
+                        Text(Date(timeIntervalSince1970: record.timestamp), style: .relative)
+                    }.font(.caption)
+                } else {
+                    Text("No activity recorded").font(.headline).lineLimit(1)
+                    Text("Open app to log care").font(.caption2).lineLimit(1)
+                }
+            } else {
+                Text("Choose a care profile").font(.headline).lineLimit(1)
+                Text("Edit this widget to select one").font(.caption2).lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .containerBackground(.background, for: .widget)
+        .privacySensitive()
+        .widgetURL(URL(string: "familytrack://widget?child=\(entry.child?.id ?? "")&section=home"))
+    }
+}
+@available(iOS 17.0, *)
+struct FamilyTrackLockScreenWidget: Widget {
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: "FamilyTrack.lockScreen", intent: LockScreenConfiguration.self, provider: LockScreenProvider()) { entry in
+            LockScreenCareView(entry: entry)
+        }
+        .configurationDisplayName("Latest or next")
+        .description("Latest logged care or next scheduled medication for one profile. Open the diary to refresh.")
+        .supportedFamilies([.accessoryRectangular])
+    }
+}
 @main
 @available(iOS 17.0, *)
 struct FamilyTrackWidgetBundle: WidgetBundle {
@@ -226,5 +327,6 @@ struct FamilyTrackWidgetBundle: WidgetBundle {
         FamilyCareWidget(kind: "fluids", title: "Fluids", medium: false)
         FamilyCareWidget(kind: "care", title: "Care", medium: false)
         FamilyCareWidget(kind: "all", title: "Today's care", medium: true)
+        FamilyTrackLockScreenWidget()
     }
 }
