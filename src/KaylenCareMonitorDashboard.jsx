@@ -972,6 +972,17 @@ export default function KaylenCareMonitorDashboard({
   const [customReportDays, setCustomReportDays] = useState("7");
   const [reportTab, setReportTab] = useState("recent");
   const [reportLayout, setReportLayout] = useState("daily");
+  const [desktopMenuOpen, setDesktopMenuOpen] = useState(false);
+  useEffect(() => {
+    const openMenu = () => { if (window.innerWidth >= 768) setDesktopMenuOpen(value => !value); };
+    const resize = () => { if (window.innerWidth < 768) setDesktopMenuOpen(false); };
+    window.addEventListener("familytrack:desktop-menu", openMenu);
+    window.addEventListener("resize", resize);
+    return () => {
+      window.removeEventListener("familytrack:desktop-menu", openMenu);
+      window.removeEventListener("resize", resize);
+    };
+  }, []);
   const [reportView, setReportView] = useState("trends");
   const [reportsMode, setReportsMode] = useState("choose");
   const [builderStep, setBuilderStep] = useState(1);
@@ -15903,25 +15914,37 @@ export default function KaylenCareMonitorDashboard({
         : "text-slate-500 hover:bg-white hover:text-slate-800"
     } ${extra}`;
 
+  if (desktopMenuOpen) {
+    const tools = [
+      isModuleEnabled("timeline") && { label: "Timeline", title: "Timeline", icon: "logs" },
+      isModuleEnabled("reports") && { label: "Report Builder", icon: "reports", action: () => { openSection(sections.find(item => item.title === "Reports")); setReportsMode("builder"); } },
+      isModuleEnabled("reports") && { label: "Full Care Report", icon: "reports", action: () => { openSection(sections.find(item => item.title === "Reports")); setReportsMode("full"); } },
+      ...mobileMoreItems.filter(item => item.type !== "heading" && !["Profile", "Logs Timeline", "Notification Centre"].includes(item.label)),
+    ].filter(Boolean);
+    return (
+      <main className="mx-auto max-w-6xl px-6 py-8">
+        <div className="mb-6 flex items-center justify-between gap-4">
+          <div><h2 className="text-2xl font-extrabold text-slate-900">Tools & settings</h2><p className="mt-1 text-sm text-slate-600">Reports, care tools and account settings in one place.</p></div>
+          <button type="button" onClick={() => setDesktopMenuOpen(false)} className="rounded-xl border border-slate-200 bg-white px-4 py-3 font-bold text-slate-700">Back to diary</button>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {tools.map(item => <button key={item.label} type="button" onClick={() => {
+            setDesktopMenuOpen(false);
+            if (item.action) item.action();
+            else { const section = sections.find(section => section.title === item.title); if (section) openSection(section); }
+          }} className="flex min-h-20 items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 text-left font-bold text-slate-800 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-600">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">{renderMobileNavIcon(item.icon, "h-5 w-5")}</span>
+            <span>{item.label === "Settings" ? "Account settings" : item.label}</span>
+          </button>)}
+        </div>
+      </main>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
       <div className="mx-auto max-w-6xl px-4 py-4 md:px-6 md:py-8">
-        <nav aria-label="Desktop account and care navigation" className="mb-5 hidden flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm md:flex">
-          {[
-            { label: "Timeline", action: () => openSection(sections.find(item => item.title === "Timeline")) },
-            { label: "Reports", action: () => openSection(sections.find(item => item.title === "Reports")) },
-            { label: "Account settings", action: onOpenSettings },
-            { label: "Care profiles", action: onOpenChildSetup },
-            { label: "Subscription", action: onOpenSubscription },
-            { label: "Help & Support", action: onOpenSupport },
-          ].filter(item => typeof item.action === "function").map(item => <button key={item.label} type="button" onClick={item.action} className="rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-800">{item.label}</button>)}
-          <details className="relative">
-            <summary className="cursor-pointer rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 hover:bg-teal-50">More</summary>
-            <div className="absolute right-0 top-full z-40 mt-2 max-h-[65vh] w-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-2 shadow-xl">
-              {mobileMoreItems.map(item => item.type === "heading" ? <p key={item.label} className="px-3 pt-3 text-xs font-bold uppercase text-slate-500">{item.label}</p> : <button type="button" key={item.label} className="block w-full rounded-xl px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-teal-50" onClick={event => { event.currentTarget.closest("details").open = false; if (item.action) item.action(); else openSection(sections.find(section => section.title === item.title)); }}>{item.label}</button>)}
-            </div>
-          </details>
-        </nav>
+
         {accountAccess && !accountAccess.canAddLogs ? (
           <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900">
             This family account is view-only. Existing diary entries, reports and
