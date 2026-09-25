@@ -6,6 +6,16 @@ import run
 
 
 class BackupTests(unittest.TestCase):
+    def test_failure_diagnostic_never_exposes_raw_details(self):
+        from subprocess import CompletedProcess
+        result = CompletedProcess([], 1, b'', b'AccessDenied secret-token private-file-name')
+        with patch.object(run.subprocess, 'run', return_value=result):
+            with self.assertRaises(run.BackupError) as raised:
+                run.command(['restic', 'init'], {})
+        self.assertIn('access_denied', str(raised.exception))
+        self.assertNotIn('secret-token', str(raised.exception))
+        self.assertNotIn('private-file-name', str(raised.exception))
+
     def setUp(self):
         self.env = {name: 'x' * 40 for name in run.REQUIRED}
         self.env.update(DATABASE_URL='must-not-leak', STRIPE_SECRET_KEY='must-not-leak')

@@ -19,7 +19,23 @@ def command(args, env, cwd=None):
     # Tool errors can contain object names or credentials; do not forward them.
     result = subprocess.run(args, env=env, cwd=cwd, capture_output=True, timeout=3600)
     if result.returncode:
-        raise BackupError(f'{args[0]} {args[1]} failed (exit {result.returncode})')
+        # Match known failures without emitting raw stderr, object names or secrets.
+        error = result.stderr.decode('utf-8', errors='replace').lower()
+        category = 'unclassified_tool_error'
+        for markers, label in [
+            (('repository already exists', 'config file already exists'), 'repository_already_exists'),
+            (('invalidaccesskeyid', 'access key id you provided does not exist'), 'invalid_access_key'),
+            (('signaturedoesnotmatch', 'signature we calculated does not match'), 'key_signature_mismatch'),
+            (('accessdenied', 'access denied'), 'access_denied'),
+            (('nosuchbucket', 'specified bucket does not exist'), 'bucket_not_found'),
+            (('wrong password', 'no key found'), 'repository_password_rejected'),
+            (('permission denied',), 'filesystem_permission_denied'),
+            (('no such host', 'connection refused', 'i/o timeout'), 'network_connection_failed'),
+        ]:
+            if any(marker in error for marker in markers):
+                category = label
+                break
+        raise BackupError(f'{args[0]} {args[1]} failed (exit {result.returncode}; {category})')
     return result.stdout
 
 
