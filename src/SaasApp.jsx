@@ -2433,6 +2433,16 @@ function AuthScreen({
                 : "Need a family workspace? Sign up"}
             </button>
           ) : null}
+          {IS_NATIVE_APP ? (
+            <a
+              href="https://familytrack.care/app-help.html"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex min-h-11 items-center text-sm font-semibold text-indigo-700 underline underline-offset-4"
+            >
+              New to FamilyTrack? Find out more
+            </a>
+          ) : null}
           {onBack ? (
             <button
               type="button"
