@@ -130,7 +130,7 @@ def publish_status(result, source=None):
         path.write_text(json.dumps(receipt), encoding='utf-8')
         command(['rclone', 'copyto', str(path),
                  'status:familytrack-backups-lon1/monitoring/uploads-latest.json',
-                 '--s3-acl', 'private', '--log-level', 'ERROR', '--stats', '0'], env)
+                 '--s3-no-check-bucket', '--log-level', 'ERROR', '--stats', '0'], env)
 
 
 if __name__ == '__main__':
