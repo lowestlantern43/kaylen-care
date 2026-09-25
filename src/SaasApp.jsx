@@ -7430,7 +7430,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
-          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-36 shadow-md">
+          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 shadow-md">
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("familytrack:open-care-snapshot"))}
@@ -7486,17 +7486,17 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 <path d="M21 19V5" />
               </svg>
             </button>
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-col gap-3">
+              <div className="flex min-w-0 flex-col gap-2 pr-28">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600">
+                  <p className="truncate text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600">
                     {selectedFamily.familyName}
                   </p>
                   <h1 className="truncate text-xl font-extrabold text-slate-950">
                     FamilyTrack
                   </h1>
                   <p className="truncate text-sm font-semibold text-slate-600">
-                    {selectedChild ? childDisplayName(selectedChild) : "Choose child"}
+                    {selectedChild ? childDisplayName(selectedChild) : "Choose profile"}
                   </p>
                   <p className="mt-0.5 text-xs font-bold text-slate-500">
                     {new Date().toLocaleDateString("en-GB", {
@@ -7534,9 +7534,9 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </div>
               </div>
 
-              <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
-                <div className="min-w-0 flex-1 lg:max-w-xl">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
+              <div className="min-w-0 border-t border-indigo-100/80 pt-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap gap-2">
                   {children.map((child) => {
                     const childName = childDisplayName(child);
                     const isSelected = selectedChildId === child.id;
@@ -7545,7 +7545,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         key={child.id}
                         type="button"
                         onClick={() => selectChild(child.id)}
-                        className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-2 text-sm font-bold transition ${
+                        aria-pressed={isSelected}
+                        className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${
                           isSelected
                             ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
                             : "border-slate-200 bg-white text-slate-700 shadow-sm"
@@ -7556,7 +7557,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           active={isSelected}
                           status={childAvatarStatuses[child.id]}
                         />
-                        {childName}
+                        <span className="min-w-0 truncate">{childName}</span>
                       </button>
                     );
                   })}
