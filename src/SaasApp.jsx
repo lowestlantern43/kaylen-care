@@ -7451,7 +7451,6 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
   return (
     <div className={`min-h-screen bg-slate-50${showPlatformAdmin ? " admin-calm-theme" : ""}`}>
-      {showPlatformAdmin ? <ArchivedCareProfiles api={api} /> : null}
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
@@ -10043,6 +10042,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
             ) : platformViewAsUser ? null : (
               <>
                 <AdminNavigation activeTab={platformAdminTab} onSelect={setPlatformAdminTab} />
+                {platformAdminTab === "archived-care-profiles" ? <ArchivedCareProfiles api={api} /> : null}
                 {platformAdminTab === "service-health" ? <AdminServiceHealth /> : null}
                 <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
