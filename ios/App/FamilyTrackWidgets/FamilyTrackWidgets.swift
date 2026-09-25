@@ -89,32 +89,68 @@ struct CareWidgetView: View {
     let kind: String
     private var stale: Bool { guard let child = entry.child else { return true }; return entry.date.timeIntervalSince1970 - child.updated > 21600 }
     private var sameDay: Bool { guard let child = entry.child else { return false }; return Calendar.current.isDate(Date(timeIntervalSince1970: child.updated), inSameDayAs: entry.date) }
+    private var accent: Color {
+        switch kind {
+        case "meds": return .indigo
+        case "fluids": return .cyan
+        case "care": return .teal
+        default: return .indigo
+        }
+    }
+    private var compact: Bool { kind == "all" }
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack { Image(systemName: "heart.text.square.fill").foregroundStyle(.teal); Text(entry.configuration.showName ? (entry.child?.name ?? "FamilyTrack") : "FamilyTrack").font(.caption.bold()).lineLimit(1) }
-            if let child = entry.child {
-                if stale { Text("Open app to refresh").font(.headline); Text("Care information is out of date").font(.caption) }
-                else if kind == "all" {
-                    HStack(alignment: .top, spacing: 12) { medicine(child); Divider(); VStack(alignment: .leading, spacing: 6) { fluids(child); care(child) } }
-                } else if kind == "meds" { medicine(child) }
-                else if kind == "fluids" { fluids(child) }
-                else { care(child) }
-                Spacer(minLength: 0)
-                Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)").font(.system(size: 10)).foregroundStyle(.secondary)
-            } else {
-                Text("Choose a care profile").font(.headline)
-                Text("Open their diary, then edit this widget to select them.").font(.caption).foregroundStyle(.secondary)
+        HStack(spacing: 0) {
+            GeometryReader { geometry in
+                Text(entry.configuration.showName ? (entry.child?.name ?? "FamilyTrack") : "FamilyTrack")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: max(0, geometry.size.height - 24), height: 28)
+                    .rotationEffect(.degrees(-90))
+                    .position(x: geometry.size.width / 2, y: geometry.size.height / 2)
             }
+            .frame(width: 28)
+            .background(accent.gradient)
+            VStack(alignment: .leading, spacing: 8) {
+                if let child = entry.child {
+                    if stale {
+                        Text("Open app to refresh").font(.headline)
+                        Text("Care information is out of date").font(.caption).foregroundStyle(.secondary)
+                    } else if compact {
+                        HStack(alignment: .top, spacing: 10) {
+                            medicine(child).frame(maxWidth: .infinity, alignment: .topLeading)
+                            Divider()
+                            fluids(child).frame(maxWidth: .infinity, alignment: .topLeading)
+                            Divider()
+                            care(child).frame(maxWidth: .infinity, alignment: .topLeading)
+                        }
+                        .frame(maxHeight: .infinity, alignment: .top)
+                    } else if kind == "meds" { medicine(child) }
+                    else if kind == "fluids" { fluids(child) }
+                    else { care(child) }
+                    Spacer(minLength: 0)
+                    Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)")
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                } else {
+                    Text("Choose a care profile").font(.subheadline.bold())
+                    Text("Open their diary, then edit this widget to select them.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
         }
         .containerBackground(.background, for: .widget)
         .privacySensitive()
         .widgetURL(URL(string: "familytrack://widget?child=\(entry.child?.id ?? "")&section=\(kind)"))
     }
     @ViewBuilder private func medicine(_ child: ChildSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Next scheduled").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
+            Label("Scheduled", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if let med = child.medicines.first(where: { $0.timestamp >= entry.date.timeIntervalSince1970 }) {
-                Text(entry.configuration.showMedicine ? med.name : "Medication").font(.headline).lineLimit(2)
+                Text(entry.configuration.showMedicine ? med.name : "Medication").font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 if entry.configuration.showMedicine { Text(med.dose).font(.caption).lineLimit(1) }
                 Text(Date(timeIntervalSince1970: med.timestamp), style: .time).font(.title3.bold())
                 if !Calendar.current.isDate(Date(timeIntervalSince1970: med.timestamp), inSameDayAs: entry.date) { Text("Tomorrow").font(.caption) }
@@ -122,8 +158,8 @@ struct CareWidgetView: View {
         }
     }
     @ViewBuilder private func fluids(_ child: ChildSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Fluids today").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
+            Label("Fluids", systemImage: "drop.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if sameDay {
                 Text("\(Int(child.fluid)) ml").font(.headline)
                 if child.target > 0 { ProgressView(value: min(child.fluid, child.target), total: child.target).tint(.cyan); Text("of \(Int(child.target)) ml").font(.caption) }
@@ -132,10 +168,10 @@ struct CareWidgetView: View {
         }
     }
     @ViewBuilder private func care(_ child: ChildSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text("Latest care").font(.caption).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 5) {
+            Label("Care", systemImage: "heart.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if let record = child.care[entry.configuration.activity.rawValue] {
-                Text(record.label).font(.headline).lineLimit(2)
+                Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 Text(Date(timeIntervalSince1970: record.timestamp), style: .relative).font(.caption)
             } else { Text("No activity recorded").font(.caption) }
         }
@@ -153,6 +189,7 @@ struct FamilyCareWidget: Widget {
             .configurationDisplayName(title)
             .description("A snapshot from your latest FamilyTrack visit. Open the app to refresh.")
             .supportedFamilies(medium ? [.systemMedium] : [.systemSmall])
+            .contentMarginsDisabled()
     }
 }
 @main
