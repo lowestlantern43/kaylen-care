@@ -2972,6 +2972,9 @@ export default function KaylenCareMonitorDashboard({
       row.notes ? `Notes: ${row.notes}` : null,
       row.createdByName ? `Logged by: ${row.createdByName}` : null,
     ].filter(Boolean),
+    medicationName: row.data?.medicine || "",
+    medicationDose: row.data?.dose || "",
+    medicationWindow: row.data?.scheduled_window || "",
     medicationStatus: row.data?.status || "given",
     statusTone: medicationStatusTone(row.data?.status || "given"),
   });
@@ -3349,6 +3352,8 @@ export default function KaylenCareMonitorDashboard({
             ? `Notes: ${parseNotesValue(row.notes, "Notes")}`
             : null,
         ].filter(Boolean),
+        medicationName: row.medicine || "",
+        medicationDose: row.dose || "",
         medicationStatus,
         statusTone: medicationStatusTone(medicationStatus),
       };

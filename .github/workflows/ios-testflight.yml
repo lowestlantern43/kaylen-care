@@ -35,6 +35,7 @@ jobs:
           npm ci
           npm run ios:sync
           npm run test:ios
+          node scripts/test-widget-medication.mjs
           npm ci --prefix backend
           npm run test:notifications
       - name: Install signing credentials

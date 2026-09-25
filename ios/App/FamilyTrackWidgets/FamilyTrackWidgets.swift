@@ -101,9 +101,15 @@ struct CareProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: CareConfiguration, in context: Context) async -> Timeline<CareEntry> {
         let current = entry(configuration)
-        // Re-evaluate scheduled times and stale/day boundaries even without opening the app.
-        let entries = (0...24).map { index in CareEntry(date: current.date.addingTimeInterval(Double(index)*900), configuration: configuration, child: current.child) }
-        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(21600)))
+        // Request a cache refresh in ten minutes; WidgetKit may defer it.
+        // Future entries still work if the request is delayed. No network fetch occurs.
+        var dates = Set((0...36).map { current.date.addingTimeInterval(Double($0) * 600) })
+        for medicine in current.child?.medicines ?? [] {
+            let boundary = Date(timeIntervalSince1970: medicine.timestamp + 1)
+            if boundary > current.date && boundary < current.date.addingTimeInterval(21600) { dates.insert(boundary) }
+        }
+        let entries = dates.sorted().map { CareEntry(date: $0, configuration: configuration, child: current.child) }
+        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(600)))
     }
 }
 @available(iOS 17.0, *)
@@ -174,12 +180,15 @@ struct CareWidgetView: View {
     }
     @ViewBuilder private func medicine(_ child: ChildSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Label("Scheduled", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-            if let med = child.medicines.first(where: { $0.timestamp >= entry.date.timeIntervalSince1970 }) {
+            Label("Medication", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            if let med = child.medicines.first {
                 Text(entry.configuration.showMedicine ? med.name : "Medication").font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 if entry.configuration.showMedicine { Text(med.dose).font(.caption).lineLimit(1) }
                 Text(Date(timeIntervalSince1970: med.timestamp), style: .time).font(.title3.bold())
-                if !Calendar.current.isDate(Date(timeIntervalSince1970: med.timestamp), inSameDayAs: entry.date) { Text("Tomorrow").font(.caption) }
+                if med.timestamp < entry.date.timeIntervalSince1970 {
+                    Text("Overdue").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                }
+                if !Calendar.current.isDate(Date(timeIntervalSince1970: med.timestamp), inSameDayAs: entry.date) { Text(Date(timeIntervalSince1970: med.timestamp), style: .date).font(.caption) }
             } else { Text("Check medicine schedule in app").font(.caption) }
         }
     }
@@ -251,14 +260,14 @@ struct LockScreenProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: LockScreenConfiguration, in context: Context) async -> Timeline<LockScreenEntry> {
         let current = await snapshot(for: configuration, in: context)
-        // Include scheduled boundaries so the next item can advance at its time.
+        // Keep outstanding doses visible and transition to overdue at the due time.
         let end = current.date.addingTimeInterval(21600)
-        var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0) * 900) })
+        var dates = Set((0...36).map { current.date.addingTimeInterval(Double($0) * 600) })
         for medicine in current.child?.medicines ?? [] {
             let boundary = Date(timeIntervalSince1970: medicine.timestamp + 1)
             if boundary > current.date && boundary < end { dates.insert(boundary) }
         }
-        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(end))
+        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(current.date.addingTimeInterval(600)))
     }
 }
 @available(iOS 17.0, *)
@@ -274,17 +283,18 @@ struct LockScreenCareView: View {
                     Text("Open diary to refresh").font(.headline).lineLimit(1)
                     Text("Saved information is not current").font(.caption2).lineLimit(1)
                 } else if upcoming {
-                    if let medicine = child.medicines.first(where: { $0.timestamp >= entry.date.timeIntervalSince1970 }) {
+                    if let medicine = child.medicines.first {
                         Text(entry.configuration.showMedicine ? medicine.name : "Next scheduled medication")
                             .font(.headline).lineLimit(1)
                         HStack(spacing: 4) {
+                            if medicine.timestamp < entry.date.timeIntervalSince1970 { Text("Overdue").bold() }
                             if !Calendar.current.isDate(Date(timeIntervalSince1970: medicine.timestamp), inSameDayAs: entry.date) {
-                                Text("Tomorrow")
+                                Text(Date(timeIntervalSince1970: medicine.timestamp), style: .date)
                             }
                             Text(Date(timeIntervalSince1970: medicine.timestamp), style: .time)
                         }.font(.caption)
                     } else {
-                        Text("No upcoming medication").font(.headline).lineLimit(1)
+                        Text("No outstanding medication").font(.headline).lineLimit(1)
                         Text("Open app for the schedule").font(.caption2).lineLimit(1)
                     }
                 } else if let record = child.care["latest"] {

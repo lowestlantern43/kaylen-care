@@ -1,3 +1,4 @@
+import { pendingWidgetDoses } from './widgetMedication.js';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const bridge = registerPlugin('WidgetBridge');
 let owner = '';
@@ -36,19 +37,8 @@ export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,f
     // Only category and time: never copy free-text care notes to the Home Screen.
     if(record) care[key]={label:record.e.section==='Food Diary'?(record.e.isMilk?'Drink logged':'Food logged'):`${record.e.section} logged`,timestamp:record.date.getTime()/1000};
   }
-  const doses=[];
-  for(let day=0;day<2;day++){
-    const date=new Date(now); date.setDate(date.getDate()+day);
-    for(const med of medicines.filter(m=>m.active!==false && !m.scheduleDays?.includes('prn') && scheduled(m,date))){
-      for(const time of med.times||[]){
-        if(!/^([01]\d|2[0-3]):[0-5]\d$/.test(time))continue;
-        const due=new Date(date);const [h,m]=time.split(':').map(Number);due.setHours(h,m,0,0);
-        if(due>=now) doses.push({name:String(med.name).slice(0,80),dose:String(med.dose||'').slice(0,50),timestamp:due.getTime()/1000});
-      }
-    }
-  }
-  doses.sort((a,b)=>a.timestamp-b.timestamp);
-  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses.slice(0,30),care};
+  const doses = pendingWidgetDoses({ medicines, entries, scheduled, entryDate, now });
+  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care};
 }
 
 export async function consumeWidgetOpen() { return Capacitor.getPlatform() === "ios" ? (await bridge.consumeOpen()).url : ""; }
