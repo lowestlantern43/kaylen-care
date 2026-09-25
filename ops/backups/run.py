@@ -111,10 +111,39 @@ def run(source=None):
                 'completedAt': datetime.datetime.now(datetime.timezone.utc).isoformat()}
 
 
+def publish_status(result, source=None):
+    source = dict(os.environ) if source is None else source
+    _, writer = environments(source)
+    env = {k: v for k, v in writer.items() if k in ('PATH', 'HOME', 'TMPDIR', 'SSL_CERT_FILE')}
+    env.update(RCLONE_CONFIG='/dev/null', RCLONE_CONFIG_STATUS_TYPE='s3',
+               RCLONE_CONFIG_STATUS_PROVIDER='DigitalOcean',
+               RCLONE_CONFIG_STATUS_ENDPOINT='https://lon1.digitaloceanspaces.com',
+               RCLONE_CONFIG_STATUS_REGION='lon1',
+               RCLONE_CONFIG_STATUS_ACCESS_KEY_ID=source['BACKUP_ACCESS_KEY'],
+               RCLONE_CONFIG_STATUS_SECRET_ACCESS_KEY=source['BACKUP_SECRET_KEY'])
+    # Separate private receipt: no filenames, care data or credentials.
+    receipt = {k: result[k] for k in ('status', 'scope', 'completedAt', 'restoreVerified', 'retentionDays') if k in result}
+    receipt['recordedAt'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    os.umask(0o077)
+    with tempfile.TemporaryDirectory(prefix='backup-status-') as directory:
+        path = Path(directory) / 'status.json'
+        path.write_text(json.dumps(receipt), encoding='utf-8')
+        command(['rclone', 'copyto', str(path),
+                 'status:familytrack-backups-lon1/monitoring/uploads-latest.json',
+                 '--s3-acl', 'private', '--log-level', 'ERROR', '--stats', '0'], env)
+
+
 if __name__ == '__main__':
     try:
-        print(json.dumps(run()), flush=True)
+        result = run()
+        if result.get('status') == 'success':
+            publish_status(result)
+        print(json.dumps(result), flush=True)
     except Exception as error:
         detail = str(error) if isinstance(error, BackupError) else type(error).__name__
         print(json.dumps({'status': 'failed', 'detail': detail}), flush=True)
+        try:
+            publish_status({'status': 'failed', 'scope': 'uploaded_files_only'})
+        except Exception:
+            print('{"status":"status_publish_failed"}', flush=True)
         raise SystemExit(1)

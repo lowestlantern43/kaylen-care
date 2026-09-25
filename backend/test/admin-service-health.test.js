@@ -14,7 +14,7 @@ test('health observations use only reads, and absent activity is not success', a
 });
 test('failed reads are isolated and do not expose internal errors', async () => {
   const report = await getAdminServiceHealth({config:{}, query:async()=>{throw Error('secret connection string');}});
-  assert.equal(report.checks.length,7);
+  assert.equal(report.checks.length,8);
   assert.equal(report.checks.find(x=>x.id==='database').status,'unknown');
   assert.doesNotMatch(JSON.stringify(report),/secret connection/);
 });
