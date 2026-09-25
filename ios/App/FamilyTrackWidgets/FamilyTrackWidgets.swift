@@ -55,11 +55,34 @@ enum CareChoice: String, AppEnum {
     static var caseDisplayRepresentations: [CareChoice: DisplayRepresentation] = [.latest: "Latest activity", .toileting: "Toileting", .sleep: "Sleep", .food: "Food"]
 }
 @available(iOS 17.0, *)
+enum BarColour: String, AppEnum {
+    case automatic, blue, purple, teal, green, pink, orange, slate
+    static var typeDisplayRepresentation: TypeDisplayRepresentation = "Bar colour"
+    static var caseDisplayRepresentations: [BarColour: DisplayRepresentation] = [
+        .automatic: "Automatic", .blue: "Blue", .purple: "Purple",
+        .teal: "Teal", .green: "Green", .pink: "Pink", .orange: "Orange", .slate: "Slate"
+    ]
+    var colour: Color? {
+        // Dark enough to keep the white profile name readable.
+        switch self {
+        case .automatic: return nil
+        case .blue: return Color(red: 0.15, green: 0.32, blue: 0.68)
+        case .purple: return Color(red: 0.43, green: 0.24, blue: 0.65)
+        case .teal: return Color(red: 0.05, green: 0.40, blue: 0.43)
+        case .green: return Color(red: 0.18, green: 0.42, blue: 0.27)
+        case .pink: return Color(red: 0.65, green: 0.20, blue: 0.40)
+        case .orange: return Color(red: 0.65, green: 0.30, blue: 0.08)
+        case .slate: return Color(red: 0.28, green: 0.34, blue: 0.43)
+        }
+    }
+}
+@available(iOS 17.0, *)
 struct CareConfiguration: WidgetConfigurationIntent {
     static var title: LocalizedStringResource = "FamilyTrack widget"
     static var description = IntentDescription("Open each person's diary in FamilyTrack to update their widget data.")
     @Parameter(title: "Care profile") var child: CareChild?
     @Parameter(title: "Show name", default: false) var showName: Bool
+    @Parameter(title: "Bar colour", default: .automatic) var barColour: BarColour
     @Parameter(title: "Show medication details", default: false) var showMedicine: Bool
     @Parameter(title: "Care activity", default: .latest) var activity: CareChoice
 }
@@ -90,6 +113,7 @@ struct CareWidgetView: View {
     private var stale: Bool { guard let child = entry.child else { return true }; return entry.date.timeIntervalSince1970 - child.updated > 21600 }
     private var sameDay: Bool { guard let child = entry.child else { return false }; return Calendar.current.isDate(Date(timeIntervalSince1970: child.updated), inSameDayAs: entry.date) }
     private var accent: Color {
+        if let selected = entry.configuration.barColour.colour { return selected }
         switch kind {
         case "meds": return .indigo
         case "fluids": return .cyan
