@@ -25,3 +25,7 @@ Versioning retains deleted file bodies. Review the existing deleteSpacesObject a
 ## Deployment boundaries
 
 The inspection script and this plan are operational tools only: no runtime imports, migration, API changes, billing changes or iOS changes. No new backup destination, scheduled job, restore cluster, lifecycle rule or versioning setting has been created by this preparation.
+
+## Live uploads protection added 25 September 2026
+
+The preparation-only statement above describes the initial planning stage. A private encrypted Restic repository now exists in familytrack-backups-lon1/uploads, using separate source-read and destination-write credentials. The first 5-file backup was restored and verified successfully at 12:27 UTC. See ops/backups/README.md for the daily schedule, 30-day retention, alerts and recovery procedure. PostgreSQL exports, independent missed-run monitoring and immutable/off-account storage remain future work; do not mark those complete.
