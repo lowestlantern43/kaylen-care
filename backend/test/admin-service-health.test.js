@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { getAdminServiceHealth } from '../src/services/adminServiceHealth.js';
+test('reminder reset filters observations without deleting historical records', async()=>{
+  let cutoff;
+  const report = await getAdminServiceHealth({now:new Date('2026-09-25T15:00:00Z'),config:{reminderHealthSince:'2026-09-25T14:00:00Z'},query:async(sql,params)=>{
+    assert.match(sql,/^SELECT /);
+    if(sql.includes('FROM notification_events')) cutoff=params[0];
+    return {rows:[{processed:0,failed:0,stalled:0,sent:0,skipped:0}]};
+  }});
+  assert.equal(cutoff,'2026-09-25T14:00:00.000Z');
+  assert.equal(report.checks.find(x=>x.id==='reminders').status,'unknown');
+});
 test('health observations use only reads, and absent activity is not success', async () => {
   const report = await getAdminServiceHealth({config:{}, query:async sql => {
     assert.match(sql, /^SELECT /);

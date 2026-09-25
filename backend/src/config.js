@@ -52,6 +52,7 @@ export const config = {
   vapidSubject:
     process.env.VAPID_SUBJECT ||
     `mailto:${process.env.SUPPORT_EMAIL || "hello@familytrack.care"}`,
+  reminderHealthSince: process.env.REMINDER_HEALTH_SINCE || "",
   notificationSchedulerEnabled:
     String(process.env.ENABLE_NOTIFICATION_SCHEDULER || "").toLowerCase() === "true",
   platformAdminEmails: String(process.env.PLATFORM_ADMIN_EMAILS || "")
