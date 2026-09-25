@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-const output=await build({entryPoints:['src/nativeWidgets.js'],bundle:true,write:false,format:'esm',plugins:[{name:'mock',setup(b){b.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const Capacitor={getPlatform:()=>"web"}; export const registerPlugin=()=>({});'}));}}]});
-const {makeWidgetSnapshot}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
+const output=await build({entryPoints:['src/nativeWidgets.js'],bundle:true,write:false,format:'esm',plugins:[{name:'mock',setup(b){b.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const Capacitor={getPlatform:()=>"ios"}; export const registerPlugin=()=>({write:async ({json})=>{globalThis.widgetWrites.push(JSON.parse(json))},clear:async()=>{}});'}));}}]});
+globalThis.widgetWrites=[];
+const {makeWidgetSnapshot,updateWidgets,clearWidgets}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 const now=new Date(2026,8,24,10,0);
 const entry={section:'Toileting',summary:'Private detail',notes:'Secret notes',date:new Date(2026,8,24,9)};
 const snapshot=makeWidgetSnapshot({id:'f:c',name:'Demo',entries:[entry],medicines:[{name:'Scheduled',dose:'2 ml',times:['09:00','11:00'],scheduleDays:['every_day']},{name:'PRN',times:['12:00'],scheduleDays:['prn']}],scheduled:()=>true,target:800,fluid:200,now,entryDate:e=>e.date});
@@ -13,3 +14,13 @@ assert.equal(snapshot.fluid,200);
 assert.ok(!JSON.stringify(snapshot).includes('Secret'));
 assert.ok(!JSON.stringify(snapshot).includes('Private'));
 console.log('PASS: next scheduled times, PRN excluded, fluid totals, no care notes in shared snapshots');
+
+await updateWidgets('user:family',snapshot,[{id:'f:c',name:'Demo'},{id:'f:other',name:'Other'}]);
+assert.deepEqual(globalThis.widgetWrites.at(-1).children.map(c=>c.id),['f:c','f:other']);
+assert.equal(globalThis.widgetWrites.at(-1).children[1].updated,0);
+await updateWidgets('user:family',snapshot,[{id:'f:c',name:'Demo'}]);
+assert.equal(globalThis.widgetWrites.at(-1).children.length,1);
+await updateWidgets('other:family',{...snapshot,id:'new:c'},[{id:'new:c',name:'New'}]);
+assert.deepEqual(globalThis.widgetWrites.at(-1).children.map(c=>c.id),['new:c']);
+await clearWidgets();
+console.log('PASS: all profiles selectable before sync, archived profiles removed, account isolation');

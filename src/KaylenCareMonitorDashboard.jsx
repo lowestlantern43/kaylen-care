@@ -4725,8 +4725,8 @@ export default function KaylenCareMonitorDashboard({
     const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
       entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
       target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
-    updateWidgets(`${currentUser.id}:${familyId}`, snapshot, children.map(child => `${familyId}:${child.id}`))?.catch(() => {});
-  }, [widgetLoadedKey, sharedLog, childProfile, childId, familyId, childName, currentUser?.id]);
+    updateWidgets(`${currentUser.id}:${familyId}`, snapshot, children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' })))?.catch(() => {});
+  }, [widgetLoadedKey, sharedLog, childProfile, childId, familyId, childName, currentUser?.id, children]);
 
   useEffect(() => {
     const openWidgetSection = () => {

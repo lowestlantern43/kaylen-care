@@ -140,7 +140,7 @@ struct CareWidgetView: View {
                 if let child = entry.child {
                     if stale {
                         Text("Open app to refresh").font(.headline)
-                        Text("Care information is out of date").font(.caption).foregroundStyle(.secondary)
+                        Text(child.updated == 0 ? "Open this profile’s diary to sync" : "Care information is out of date").font(.caption).foregroundStyle(.secondary)
                     } else if compact {
                         HStack(alignment: .top, spacing: 10) {
                             medicine(child).frame(maxWidth: .infinity, alignment: .topLeading)
@@ -154,8 +154,10 @@ struct CareWidgetView: View {
                     else if kind == "fluids" { fluids(child) }
                     else { care(child) }
                     Spacer(minLength: 0)
-                    Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)")
-                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    if child.updated > 0 {
+                        Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)")
+                            .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                    }
                 } else {
                     Text("Choose a care profile").font(.subheadline.bold())
                     Text("Open their diary, then edit this widget to select them.")
