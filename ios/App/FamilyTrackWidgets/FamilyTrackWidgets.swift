@@ -101,15 +101,9 @@ struct CareProvider: AppIntentTimelineProvider {
     }
     func timeline(for configuration: CareConfiguration, in context: Context) async -> Timeline<CareEntry> {
         let current = entry(configuration)
-        // Request a cache refresh in ten minutes; WidgetKit may defer it.
-        // Future entries still work if the request is delayed. No network fetch occurs.
-        var dates = Set((0...36).map { current.date.addingTimeInterval(Double($0) * 600) })
-        for medicine in current.child?.medicines ?? [] {
-            let boundary = Date(timeIntervalSince1970: medicine.timestamp + 1)
-            if boundary > current.date && boundary < current.date.addingTimeInterval(21600) { dates.insert(boundary) }
-        }
-        let entries = dates.sorted().map { CareEntry(date: $0, configuration: configuration, child: current.child) }
-        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(600)))
+        // Re-evaluate saved data at the original fifteen-minute timeline intervals.
+        let entries = (0...24).map { index in CareEntry(date: current.date.addingTimeInterval(Double(index)*900), configuration: configuration, child: current.child) }
+        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(21600)))
     }
 }
 @available(iOS 17.0, *)
@@ -262,12 +256,12 @@ struct LockScreenProvider: AppIntentTimelineProvider {
         let current = await snapshot(for: configuration, in: context)
         // Keep outstanding doses visible and transition to overdue at the due time.
         let end = current.date.addingTimeInterval(21600)
-        var dates = Set((0...36).map { current.date.addingTimeInterval(Double($0) * 600) })
+        var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0) * 900) })
         for medicine in current.child?.medicines ?? [] {
             let boundary = Date(timeIntervalSince1970: medicine.timestamp + 1)
             if boundary > current.date && boundary < end { dates.insert(boundary) }
         }
-        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(current.date.addingTimeInterval(600)))
+        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(end))
     }
 }
 @available(iOS 17.0, *)
