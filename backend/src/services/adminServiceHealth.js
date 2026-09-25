@@ -1,6 +1,7 @@
 // Admin-only, read-only observations. Never trigger deliveries or repair actions.
 import { readUploadsBackupHealth } from './backupHealth.js';
-export async function getAdminServiceHealth({ query, config, now = new Date(), readBackupHealth = readUploadsBackupHealth }) {
+import { readDatabaseBackupHealth } from './databaseBackupHealth.js';
+export async function getAdminServiceHealth({ query, config, now = new Date(), readBackupHealth = readUploadsBackupHealth, readDatabaseHealth = readDatabaseBackupHealth }) {
   const checks = [{ id: 'api', label: 'Website API', status: 'working', detail: 'This authenticated admin request reached the API. This is not an external uptime check.' }];
   const observe = async (id, label, read) => {
     try { checks.push({ id, label, ...await read() }); }
@@ -43,7 +44,7 @@ export async function getAdminServiceHealth({ query, config, now = new Date(), r
     return { status: rows[0].failed ? 'attention' : 'unknown', lastRecordedAt: rows[0].lastRecordedAt,
       detail: `${rows[0].failed} failed reminder records in the last 7 days. Delivery records do not prove every scheduled job ran. No scheduler heartbeat is currently recorded.` };
   });
-  checks.push({id:'backups', label:'Database backups', status:'unknown', detail:'Backup completion and restore checks are not connected to FamilyTrack. Verify these with the database host; a working database does not confirm a backup exists.'});
+  await observe('backups', 'Database backups', () => readDatabaseHealth({ now }));
   await observe('uploads-backups', 'Uploaded-file backups', () => readBackupHealth({ now }));
   return { checkedAt: now.toISOString(), checks };
 }
