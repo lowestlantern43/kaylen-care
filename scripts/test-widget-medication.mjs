@@ -22,3 +22,16 @@ assert.equal(pending([], [{ ...medicine, active: false }]).length, 0);
 assert.equal(pending([], [{ ...medicine, scheduleDays: ['prn'] }]).length, 0);
 assert.equal(pending([], [{ ...medicine, times: ['25:00', '08:00', '08:00'] }]).length, 2);
 console.log('PASS: outstanding doses, matching, duplicate logs, status, date and schedule guards');
+const morning = { ...medicine, times: [], timeWindow: 'morning' };
+assert.equal(pending([], [morning]).length, 2);
+assert.equal(pending([], [morning])[0].window, 'morning');
+assert.equal(new Date(pending([], [morning])[0].windowEnd * 1000).getHours(), 12);
+assert.equal(pending([log('09:15')], [morning]).length, 1);
+const twice = { ...morning, timeWindows: ['morning', 'evening'] };
+assert.equal(pending([log('09:15')], [twice]).length, 3);
+assert.equal(pending([log('09:15', { medicationStatus: 'refused' })], [twice]).length, 4);
+assert.equal(pending([], [{ ...medicine, timeWindows: ['morning'] }]).length, 4, 'No duplicate window dose when exact times exist');
+assert.equal(pending([], [{ ...morning, timeWindow: 'unknown' }]).length, 0);
+assert.equal(pending([], [{ ...morning, timeWindow: 'evening' }])[0].windowEnd,
+  new Date(2026, 8, 26, 0).getTime() / 1000, 'Evening ends at next midnight');
+console.log('PASS: window-only doses, completion, exact-time precedence and midnight boundary');
