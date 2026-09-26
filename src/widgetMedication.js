@@ -1,4 +1,5 @@
 const normalise = value => String(value || '').trim().toLowerCase();
+const normaliseDose = value => normalise(value).replace(/\s+/g, '');
 const windowFor = hour => hour >= 18 ? 'evening' : hour >= 12 ? 'afternoon' : hour >= 6 ? 'morning' : '';
 const windows = { morning: [6, 12], afternoon: [12, 18], evening: [18, 24] };
 
@@ -39,7 +40,7 @@ export function pendingWidgetDoses({ medicines, entries, scheduled, entryDate, n
     const date = entryDate(entry);
     if (!date || !Number.isFinite(date.getTime()) || date > now || !entry.medicationName) continue;
     let candidates = doses.filter(d => d.due.toDateString() === date.toDateString() &&
-      normalise(d.name) === normalise(entry.medicationName) && normalise(d.dose) === normalise(entry.medicationDose));
+      normalise(d.name) === normalise(entry.medicationName) && normaliseDose(d.dose) === normaliseDose(entry.medicationDose));
     if (entry.medicationWindow) candidates = candidates.filter(d => windowFor(d.due.getHours()) === normalise(entry.medicationWindow));
     else if (candidates.length > 1 && candidates.every(d => d.window)) candidates = candidates.filter(d => d.window === windowFor(date.getHours()));
     const exact = candidates.filter(d => d.due.getHours() === date.getHours() && d.due.getMinutes() === date.getMinutes());

@@ -185,7 +185,7 @@ struct CareWidgetView: View {
     @ViewBuilder private func medicine(_ child: ChildSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Label("Medication", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
-            if let med = child.medicines.first {
+            if let med = child.medicines.first(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
                 Text(entry.configuration.showMedicine ? med.name : "Medication").font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 if entry.configuration.showMedicine { Text(med.dose).font(.caption).lineLimit(1) }
                 if let label = med.windowLabel(at: entry.date) {
@@ -197,7 +197,8 @@ struct CareWidgetView: View {
                     Text("Overdue").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                 }
                 if !Calendar.current.isDate(Date(timeIntervalSince1970: med.timestamp), inSameDayAs: entry.date) { Text(Date(timeIntervalSince1970: med.timestamp), style: .date).font(.caption) }
-            } else { Text("Check medicine schedule in app").font(.caption) }
+            } else if sameDay { Text("Nothing else due today").font(.caption) }
+            else { Text("Open app for today's schedule").font(.caption) }
         }
     }
     @ViewBuilder private func fluids(_ child: ChildSnapshot) -> some View {
@@ -291,7 +292,7 @@ struct LockScreenCareView: View {
                     Text("Open diary to refresh").font(.headline).lineLimit(1)
                     Text("Saved information is not current").font(.caption2).lineLimit(1)
                 } else if upcoming {
-                    if let medicine = child.medicines.first {
+                    if let medicine = child.medicines.first(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
                         Text(entry.configuration.showMedicine ? medicine.name : "Next scheduled medication")
                             .font(.headline).lineLimit(1)
                         HStack(spacing: 4) {
@@ -302,9 +303,11 @@ struct LockScreenCareView: View {
                             if let label = medicine.windowLabel(at: entry.date) { Text(label) }
                             else { Text(Date(timeIntervalSince1970: medicine.timestamp), style: .time) }
                         }.font(.caption)
+                    } else if Calendar.current.isDate(Date(timeIntervalSince1970: child.updated), inSameDayAs: entry.date) {
+                        Text("Nothing else due today").font(.caption.weight(.semibold)).lineLimit(2)
                     } else {
-                        Text("No outstanding medication").font(.headline).lineLimit(1)
-                        Text("Open app for the schedule").font(.caption2).lineLimit(1)
+                        Text("Open app to refresh").font(.headline).lineLimit(1)
+                        Text("Check today's schedule").font(.caption2).lineLimit(1)
                     }
                 } else if let record = child.care["latest"] {
                     Text(record.label).font(.headline).lineLimit(1)

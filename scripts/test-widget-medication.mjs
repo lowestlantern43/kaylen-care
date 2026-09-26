@@ -35,3 +35,5 @@ assert.equal(pending([], [{ ...morning, timeWindow: 'unknown' }]).length, 0);
 assert.equal(pending([], [{ ...morning, timeWindow: 'evening' }])[0].windowEnd,
   new Date(2026, 8, 26, 0).getTime() / 1000, 'Evening ends at next midnight');
 console.log('PASS: window-only doses, completion, exact-time precedence and midnight boundary');
+assert.equal(pending([log('09:15', { medicationDose: '5ml' })], [{ ...morning, dose: '5 ml' }]).length, 1);
+assert.equal(pending([log('09:15', { medicationDose: '10 ml' })], [{ ...morning, dose: '5 ml' }]).length, 2);
