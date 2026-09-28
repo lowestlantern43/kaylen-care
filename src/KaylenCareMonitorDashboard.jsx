@@ -10544,13 +10544,17 @@ export default function KaylenCareMonitorDashboard({
             <button
               type="button"
               onClick={() => {
+                if (sleepEntryId) {
+                  clearUnfinishedSleep();
+                  return;
+                }
                 clearLogDraft("sleep");
                 resetSleepForm();
               }}
               disabled={isSavingSleep || !!activeSaveAction}
               className="w-full rounded-2xl border border-slate-300 bg-white px-5 py-4 text-base font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Clear sleep form
+              {activeSaveAction === "sleep-clear" ? "Cancelling..." : sleepEntryId ? "Cancel this sleep" : "Clear sleep form"}
             </button>
           </div>
         </div>
