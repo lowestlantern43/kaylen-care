@@ -1,3 +1,4 @@
+import UnfinishedSleepPrompt from "./UnfinishedSleepPrompt";
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -10230,6 +10231,32 @@ export default function KaylenCareMonitorDashboard({
     );
   };
 
+  const clearUnfinishedSleep = async () => {
+    if (!sleepEntryId || !window.confirm("Delete this unfinished sleep record? This will not create a wake-up time or a completed sleep entry.")) return;
+    await runLockedSave("sleep-clear", async () => {
+      try {
+        if (useSaasApi) {
+          const latest = await api.getIncompleteSleepLog(familyId, childId);
+          if (!latest || String(latest.id) !== String(sleepEntryId)) {
+            await loadLatestIncompleteSleepEntry();
+            alert("This sleep record has changed. Please check the updated details.");
+            return;
+          }
+          await api.deleteCareLog(familyId, sleepEntryId);
+        } else {
+          const { error } = await supabase.from("sleep_logs").delete().eq("id", String(sleepEntryId)).is("wake_time", null);
+          if (error) throw error;
+        }
+        clearLogDraft("sleep");
+        resetSleepForm();
+        await loadEntriesFromSupabase();
+        await loadLatestIncompleteSleepEntry();
+      } catch (error) {
+        alert(error.message || "Could not clear the unfinished sleep. Please try again.");
+      }
+    });
+  };
+
   const renderSleepForm = () => {
     const wakeDate = sleepForm.wakeDate || todayValue();
     const durationPreview = formatSleepDuration(
@@ -10262,6 +10289,12 @@ export default function KaylenCareMonitorDashboard({
     return (
       <div className="mt-6 space-y-4">
         {renderDraftRecoveryPrompt("sleep")}
+        {sleepEntryId && !isLoadingSleepDraft ? <UnfinishedSleepPrompt
+          startedAt={parseDisplayDateTime(sleepForm.date, sleepForm.bedtime)?.getTime()}
+          busy={isSavingSleep || !!activeSaveAction}
+          onClear={clearUnfinishedSleep}
+        /> : null}
+
 
         {sleepBanner ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
@@ -10342,7 +10375,7 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </div>
 
-        <div className="rounded-3xl border border-indigo-200 bg-white p-4 shadow-sm">
+        <div id="sleep-wake-details" className="rounded-3xl border border-indigo-200 bg-white p-4 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div>
               <h4 className="text-lg font-bold text-slate-900">Wake-up</h4>
