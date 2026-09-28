@@ -76,15 +76,15 @@ final class WidgetNoRedirect: NSObject, URLSessionTaskDelegate {
 actor WidgetFetcher {
     static let shared = WidgetFetcher()
     private var pending: Task<Void, Never>?
-    func refresh() async {
+    func refresh(force: Bool = false) async {
         if let pending = pending { await pending.value; return }
-        let task = Task { await Self.fetch() }
+        let task = Task { await Self.fetch(force: force) }
         pending = task; await task.value; pending = nil
     }
-    private static func fetch() async {
+    private static func fetch(force: Bool) async {
         guard let access = WidgetBackground.grant(), access.expires > Date().timeIntervalSince1970,
               !WidgetBackground.denied(access) else { return }
-        if let cached = WidgetBackground.dictionary("widget-cache-\(access.generation).json"),
+        if !force, let cached = WidgetBackground.dictionary("widget-cache-\(access.generation).json"),
            let fetched = cached["fetchedAt"] as? Double, Date().timeIntervalSince1970 - fetched < 60 { return }
         var components = URLComponents(string: "https://familytrack.care/api/widgets/snapshot")!
         components.queryItems = [URLQueryItem(name: "timeZone", value: TimeZone.current.identifier)]

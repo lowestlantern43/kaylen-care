@@ -117,7 +117,7 @@ struct CareProvider: AppIntentTimelineProvider {
         let current = entry(configuration)
         // Re-evaluate saved data at the original fifteen-minute timeline intervals.
         let entries = (0...24).map { index in CareEntry(date: current.date.addingTimeInterval(Double(index)*900), configuration: configuration, child: current.child) }
-        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(1800)))
+        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(600)))
     }
 }
 @available(iOS 17.0, *)
@@ -298,7 +298,7 @@ struct LockScreenProvider: AppIntentTimelineProvider {
             let boundary = Date(timeIntervalSince1970: (medicine.windowEnd ?? medicine.timestamp) + 1)
             if boundary > current.date && boundary < end { dates.insert(boundary) }
         }
-        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(current.date.addingTimeInterval(1800)))
+        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(current.date.addingTimeInterval(600)))
     }
 }
 @available(iOS 17.0, *)

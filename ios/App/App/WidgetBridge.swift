@@ -83,6 +83,10 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             let access = WidgetGrant(token: token, scope: scope, expires: expires, generation: UUID().uuidString)
             try WidgetBackground.save(JSONEncoder().encode(access), name: "widget-access.json")
             WidgetBackground.removeOldCaches()
+            Task {
+                await WidgetFetcher.shared.refresh(force: true)
+                WidgetCenter.shared.reloadAllTimelines()
+            }
             WidgetCenter.shared.reloadAllTimelines(); call.resolve()
         } catch { call.reject("Could not connect widgets") }
     }
