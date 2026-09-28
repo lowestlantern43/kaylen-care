@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { sessionCookieName } from '../utils/sessions.js';
+import { widgetSnapshot } from '../services/widgetSnapshot.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireFamilyMember } from '../middleware/familyAccess.js';
 import { requirePrivacyConsent } from '../services/privacyConsent.js';
@@ -18,7 +20,7 @@ widgetsRouter.use((req,res,next) => {
 widgetsRouter.post('/families/:familyId/access', requireAuth, requirePrivacyConsent, requireFamilyMember,
   asyncHandler(async(req,res) => {
     const installationId = requireUuid(req.body?.installationId, 'Installation ID');
-    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId);
+    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId,req.cookies?.[sessionCookieName]);
     res.json({data,error:null});
   }));
 widgetsRouter.delete('/access', asyncHandler(async(req,res) => {
@@ -29,4 +31,11 @@ widgetsRouter.delete('/access', asyncHandler(async(req,res) => {
 widgetsRouter.get('/access', asyncHandler(async(req,res) => {
   await readWidgetAccess(bearerWidgetToken(req));
   res.json({data:{available:true},error:null});
+}));
+widgetsRouter.get('/snapshot', asyncHandler(async(req,res) => {
+  const token=bearerWidgetToken(req);
+  const access=await readWidgetAccess(token);
+  const data=await widgetSnapshot(access.family_id,req.query.timeZone);
+  await readWidgetAccess(token);
+  res.json({data,error:null});
 }));

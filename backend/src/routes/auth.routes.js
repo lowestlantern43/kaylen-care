@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { revokeSessionWidgets } from "../services/widgetAccess.js";
 import { config } from "../config.js";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -12,6 +13,7 @@ import {
 import { hashPassword, verifyPassword } from "../utils/passwords.js";
 import {
   clearSessionCookie,
+  sessionCookieName,
   createSessionToken,
   setSessionCookie,
 } from "../utils/sessions.js";
@@ -289,7 +291,9 @@ authRouter.post(
   }),
 );
 
-authRouter.post("/logout", (req, res) => {
+authRouter.post("/logout", async (req, res) => {
+  try { await revokeSessionWidgets(req.cookies?.[sessionCookieName]); }
+  catch { console.error('Widget grant revocation unavailable during logout'); }
   clearSessionCookie(res);
   res.json({ data: { ok: true }, error: null });
 });

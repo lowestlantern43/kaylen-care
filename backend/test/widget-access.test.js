@@ -19,15 +19,17 @@ mock.module('../src/middleware/familyAccess.js',{namedExports:{requireFamilyMemb
   if(req.params.familyId!=='family') return res.sendStatus(404);
   req.familyMember={family_id:'family'};next();
 }}});
-const { issueWidgetAccess, readWidgetAccess, widgetTokenHash, revokeWidgetAccess }=await import('../src/services/widgetAccess.js');
+const { issueWidgetAccess, readWidgetAccess, widgetTokenHash, revokeWidgetAccess, revokeSessionWidgets }=await import('../src/services/widgetAccess.js');
 const {widgetsRouter}=await import('../src/routes/widgets.routes.js');
 test('opaque grants rotate per installation, store hashes and enforce live access checks',async()=>{
-  const first=await issueWidgetAccess('user','family','device');
+  const first=await issueWidgetAccess('user','family','device','private-session');
   const second=await issueWidgetAccess('user','family','device');
   assert.match(first.token,/^ftw_[A-Za-z0-9_-]{43}$/);
   assert.notEqual(first.token,second.token);
   assert.ok(!JSON.stringify(calls).includes(first.token));
   assert.equal(calls.find(c=>c.sql.includes('INSERT')).params[0],widgetTokenHash(first.token));
+  assert.equal(calls.find(c=>c.sql.includes('INSERT')).params[5],widgetTokenHash('private-session'));
+  assert.ok(!JSON.stringify(calls).includes('private-session'));
   assert.ok(new Date(first.expiresAt)-Date.now()<=7*86400000);
   assert.deepEqual(await readWidgetAccess(first.token),{user_id:'user',family_id:'family'});
   const sql=calls.find(c=>c.sql.includes('SELECT g.user_id')).sql;
@@ -55,6 +57,13 @@ test('routes are disabled by default, no cookie substitution, no family escalati
   assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');
   const {data}=await response.json();
   assert.equal((await fetch(base+'/access',{headers:{Authorization:`Bearer ${data.token}`}})).status,200);
+  const snapshot=await fetch(base+'/snapshot?timeZone=Europe%2FLondon',{headers:{Authorization:`Bearer ${data.token}`}});
+  assert.equal(snapshot.status,200);assert.deepEqual((await snapshot.json()).data,{children:[]});
+  const profileRead=calls.find(c=>c.sql.includes('FROM children c LEFT JOIN'));
+  assert.deepEqual(profileRead.params,['family']);assert.ok(profileRead.sql.includes('c.deleted_at IS NULL'));
+  await revokeSessionWidgets('private-session');
+  assert.equal(calls.at(-1).params[0],widgetTokenHash('private-session'));
+  assert.ok(calls.at(-1).sql.includes('session_hash=$1'));
   assert.equal((await fetch(base+'/access',{method:'DELETE',headers:{Authorization:`Bearer ${data.token}`}})).status,200);
  } finally {if(previous===undefined)delete process.env.WIDGET_BACKGROUND_ENABLED;else process.env.WIDGET_BACKGROUND_ENABLED=previous;server.closeAllConnections();await new Promise(r=>server.close(r));}
 });

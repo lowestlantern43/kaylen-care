@@ -13,23 +13,30 @@ export const widgetAccessSchema = `CREATE TABLE IF NOT EXISTS widget_access_gran
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   expires_at TIMESTAMPTZ NOT NULL,
   revoked_at TIMESTAMPTZ,
+  session_hash TEXT,
   UNIQUE(user_id, family_id, installation_id)
 )`;
 let schema;
 export function ensureWidgetAccessSchema() {
-  if (!schema) schema = query(widgetAccessSchema).catch(error => { schema = null; throw error; });
+  if (!schema) schema = query(widgetAccessSchema).then(() => query('ALTER TABLE widget_access_grants ADD COLUMN IF NOT EXISTS session_hash TEXT')).catch(error => { schema = null; throw error; });
   return schema;
 }
 
-export async function issueWidgetAccess(userId, familyId, installationId) {
+export async function issueWidgetAccess(userId, familyId, installationId, session = '') {
   await ensureWidgetAccessSchema();
   const token = `ftw_${randomBytes(32).toString('base64url')}`;
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-  await query(`INSERT INTO widget_access_grants(token_hash,user_id,family_id,installation_id,expires_at)
-    VALUES($1,$2,$3,$4,$5) ON CONFLICT(user_id,family_id,installation_id) DO UPDATE
-    SET token_hash=EXCLUDED.token_hash, expires_at=EXCLUDED.expires_at, revoked_at=NULL, created_at=now()`,
-    [widgetTokenHash(token), userId, familyId, installationId, expiresAt]);
+  await query(`INSERT INTO widget_access_grants(token_hash,user_id,family_id,installation_id,expires_at,session_hash)
+    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id,family_id,installation_id) DO UPDATE
+    SET token_hash=EXCLUDED.token_hash, expires_at=EXCLUDED.expires_at, session_hash=EXCLUDED.session_hash, revoked_at=NULL, created_at=now()`,
+    [widgetTokenHash(token), userId, familyId, installationId, expiresAt, session ? widgetTokenHash(session) : null]);
   return { token, expiresAt };
+}
+
+export async function revokeSessionWidgets(session) {
+  if (!session || process.env.WIDGET_BACKGROUND_ENABLED !== 'true') return;
+  await ensureWidgetAccessSchema();
+  await query('UPDATE widget_access_grants SET revoked_at=now() WHERE session_hash=$1 AND revoked_at IS NULL', [widgetTokenHash(session)]);
 }
 
 export function bearerWidgetToken(req) {
