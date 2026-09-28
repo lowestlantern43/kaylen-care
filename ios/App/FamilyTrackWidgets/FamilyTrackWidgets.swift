@@ -38,8 +38,7 @@ struct ChildSnapshot: Codable, Identifiable {
 struct WidgetSnapshot: Codable {
     var children: [ChildSnapshot]
     static func load() -> WidgetSnapshot {
-        guard let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.care.familytrack.app")?.appendingPathComponent("widgets.json"),
-              let data = try? Data(contentsOf: url), let snapshot = try? JSONDecoder().decode(Self.self, from: data) else { return Self(children: []) }
+        guard let data = WidgetBackground.snapshotData(), let snapshot = try? JSONDecoder().decode(Self.self, from: data) else { return Self(children: []) }
         return snapshot
     }
 }
@@ -114,10 +113,11 @@ struct CareProvider: AppIntentTimelineProvider {
         CareEntry(date: .now, configuration: configuration, child: WidgetSnapshot.load().children.first { $0.id == configuration.child?.id })
     }
     func timeline(for configuration: CareConfiguration, in context: Context) async -> Timeline<CareEntry> {
+        await WidgetFetcher.shared.refresh()
         let current = entry(configuration)
         // Re-evaluate saved data at the original fifteen-minute timeline intervals.
         let entries = (0...24).map { index in CareEntry(date: current.date.addingTimeInterval(Double(index)*900), configuration: configuration, child: current.child) }
-        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(21600)))
+        return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(1800)))
     }
 }
 @available(iOS 17.0, *)
@@ -289,6 +289,7 @@ struct LockScreenProvider: AppIntentTimelineProvider {
         LockScreenEntry(date: .now, configuration: configuration, child: WidgetSnapshot.load().children.first { $0.id == configuration.child?.id })
     }
     func timeline(for configuration: LockScreenConfiguration, in context: Context) async -> Timeline<LockScreenEntry> {
+        await WidgetFetcher.shared.refresh()
         let current = await snapshot(for: configuration, in: context)
         // Keep outstanding doses visible and transition to overdue at the due time.
         let end = current.date.addingTimeInterval(21600)
@@ -297,7 +298,7 @@ struct LockScreenProvider: AppIntentTimelineProvider {
             let boundary = Date(timeIntervalSince1970: (medicine.windowEnd ?? medicine.timestamp) + 1)
             if boundary > current.date && boundary < end { dates.insert(boundary) }
         }
-        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(end))
+        return Timeline(entries: dates.sorted().map { LockScreenEntry(date: $0, configuration: configuration, child: current.child) }, policy: .after(current.date.addingTimeInterval(1800)))
     }
 }
 @available(iOS 17.0, *)

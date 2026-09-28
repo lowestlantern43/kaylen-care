@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-const output=await build({entryPoints:['src/nativeWidgets.js'],bundle:true,write:false,format:'esm',plugins:[{name:'mock',setup(b){b.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const Capacitor={getPlatform:()=>"ios"}; export const registerPlugin=()=>({write:async ({json})=>{globalThis.widgetWrites.push(JSON.parse(json))},clear:async()=>{}});'}));}}]});
-globalThis.widgetWrites=[];
+const output=await build({entryPoints:['src/nativeWidgets.js'],bundle:true,write:false,format:'esm',plugins:[{name:'mock',setup(b){b.onResolve({filter:/api\/client$/},()=>({path:'api',namespace:'api-mock'}));b.onLoad({filter:/.*/,namespace:'api-mock'},()=>({contents:'export const api={issueWidgetAccess:async()=>({token:"test",expiresAt:new Date(Date.now()+604800000).toISOString()})};'}));b.onResolve({filter:/^@capacitor\/core$/},()=>({path:'core',namespace:'mock'}));b.onLoad({filter:/.*/,namespace:'mock'},()=>({contents:'export const Capacitor={getPlatform:()=>"ios"}; export const registerPlugin=()=>({write:async ({json})=>{globalThis.widgetWrites.push(JSON.parse(json))},clear:async()=>{},connection:async()=>({installationId:"device"}),connect:async(value)=>{globalThis.widgetConnections.push(value)}});'}));}}]});
+globalThis.widgetWrites=[]; globalThis.widgetConnections=[];
 const {makeWidgetSnapshot,updateWidgets,clearWidgets}=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));
 const now=new Date(2026,8,24,10,0);
 const entry={section:'Toileting',summary:'Private detail',notes:'Secret notes',date:new Date(2026,8,24,9)};

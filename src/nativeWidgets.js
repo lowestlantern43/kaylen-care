@@ -1,17 +1,20 @@
 import { pendingWidgetDoses } from './widgetMedication.js';
+import { api } from './api/client';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const bridge = registerPlugin('WidgetBridge');
 let owner = '';
 let snapshots = new Map();
 let writes = Promise.resolve();
+let generation = 0;
 export function clearWidgets() {
+  generation++;
   owner = ''; snapshots.clear();
-  writes = writes.catch(()=>{}).then(()=>Capacitor.getPlatform()==='ios' ? bridge.clear() : null);
-  return writes;
+  return Capacitor.getPlatform()==='ios' ? bridge.clear() : Promise.resolve();
 }
 export function updateWidgets(scope, snapshot, profiles) {
   if (Capacitor.getPlatform() !== 'ios') return;
-  if (owner !== scope) { snapshots.clear(); owner = scope; }
+  if (owner !== scope) { generation++; snapshots.clear(); owner = scope; }
+  const expected = generation;
   const before = JSON.stringify([...snapshots.values()]);
   const allowedIds = profiles.map(profile => profile.id);
   for (const id of snapshots.keys()) if (!allowedIds.includes(id)) snapshots.delete(id);
@@ -25,8 +28,20 @@ export function updateWidgets(scope, snapshot, profiles) {
     JSON.stringify({ ...previous, updated: 0 }) === JSON.stringify({ ...snapshot, updated: 0 });
   if (allowedIds.includes(snapshot.id) && !unchanged) snapshots.set(snapshot.id, snapshot);
   if (before === JSON.stringify([...snapshots.values()])) return writes;
-  const json = JSON.stringify({ scope, children: [...snapshots.values()] });
-  writes = writes.catch(()=>{}).then(()=>bridge.write({json}));
+  const json = JSON.stringify({ scope, catalogueUpdated: Date.now()/1000, children: [...snapshots.values()] });
+  writes = writes.catch(()=>{}).then(async()=>{
+    if(expected !== generation) return;
+    await bridge.write({json});
+    try {
+      const connection = await bridge.connection();
+      if(expected !== generation) return;
+      if(connection.scope === scope && connection.expires > Date.now()/1000 + 86400) return;
+      const familyId = scope.split(':')[1];
+      const access = await api.issueWidgetAccess(familyId, connection.installationId);
+      if(expected !== generation) return;
+      await bridge.connect({scope,token:access.token,expires:Date.parse(access.expiresAt)/1000});
+    } catch { /* Old/disabled backends continue using the existing local snapshots. */ }
+  });
   return writes;
 }
 export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,fluid,now=new Date(),entryDate}) {

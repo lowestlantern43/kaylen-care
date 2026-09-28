@@ -10,6 +10,9 @@ target.source_build_phase.add_file_reference(file, true)
 app_group = project.main_group.find_subpath('App')
 bridge = app_group.files.find { |f| f.path == 'WidgetBridge.swift' } || app_group.new_file('WidgetBridge.swift')
 app.source_build_phase.add_file_reference(bridge, true)
+background = app_group.files.find { |f| f.path == 'WidgetBackground.swift' } || app_group.new_file('WidgetBackground.swift')
+app.source_build_phase.add_file_reference(background, true)
+target.source_build_phase.add_file_reference(background, true)
 app.add_dependency(target) unless app.dependencies.any? { |d| d.target == target }
 embed = app.copy_files_build_phases.find { |p| p.name == 'Embed Widget Extension' } || app.new_copy_files_build_phase('Embed Widget Extension')
 embed.dst_subfolder_spec = '13'

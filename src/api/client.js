@@ -155,6 +155,9 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  issueWidgetAccess: (familyId, installationId) => request(`/widgets/families/${familyId}/access`, {
+    method: 'POST', body: JSON.stringify({installationId}),
+  }),
   archiveCareProfile: (familyId, id) => request(`/families/${familyId}/children/${id}`, { method: 'DELETE' }),
   adminArchivedProfiles: () => request('/admin/archived-profiles'),
   adminRestoreProfile: id => request(`/admin/archived-profiles/${id}/restore`, { method: 'POST' }),
