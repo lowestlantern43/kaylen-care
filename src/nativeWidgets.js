@@ -38,7 +38,33 @@ export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,f
     if(record) care[key]={label:record.e.section==='Food Diary'?(record.e.isMilk?'Drink logged':'Food logged'):`${record.e.section} logged`,timestamp:record.date.getTime()/1000};
   }
   const doses = pendingWidgetDoses({ medicines, entries, scheduled, entryDate, now });
-  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care};
+  const latestSleep = sorted.find(({e}) => e.section === 'Sleep');
+  const sleepingSince = latestSleep?.e.rawCategory === 'sleep' &&
+    !latestSleep.e.rawData?.wake_time && latestSleep.e.rawData?.bedtime
+    ? latestSleep.date.getTime()/1000 : null;
+  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince};
+}
+
+// Store a tiny thumbnail, not a remote URL or a full-size profile photograph.
+export function widgetPhoto(url) {
+  if (Capacitor.getPlatform() !== 'ios' || !url) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const timer = setTimeout(() => { img.onload = img.onerror = null; resolve(null); }, 4000);
+    img.onerror = () => { clearTimeout(timer); resolve(null); };
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const canvas = document.createElement('canvas'); canvas.width = canvas.height = 80;
+        const size = Math.min(img.naturalWidth, img.naturalHeight);
+        canvas.getContext('2d').drawImage(img, (img.naturalWidth-size)/2, (img.naturalHeight-size)/2, size, size, 0, 0, 80, 80);
+        const encoded = canvas.toDataURL('image/jpeg', 0.65).split(',')[1];
+        resolve(encoded.length < 12000 ? encoded : null);
+      } catch { resolve(null); }
+    };
+    img.src = url;
+  });
 }
 
 export async function consumeWidgetOpen() { return Capacitor.getPlatform() === "ios" ? (await bridge.consumeOpen()).url : ""; }

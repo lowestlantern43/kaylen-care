@@ -24,3 +24,11 @@ await updateWidgets('other:family',{...snapshot,id:'new:c'},[{id:'new:c',name:'N
 assert.deepEqual(globalThis.widgetWrites.at(-1).children.map(c=>c.id),['new:c']);
 await clearWidgets();
 console.log('PASS: all profiles selectable before sync, archived profiles removed, account isolation');
+const sleepArgs = {id:'f:c',name:'Demo',medicines:[],scheduled:()=>true,target:0,fluid:0,now,entryDate:e=>e.date};
+const sleeping = {section:'Sleep',rawCategory:'sleep',rawData:{bedtime:'09:00',wake_time:''},date:new Date(2026,8,24,9)};
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[sleeping]}).sleepingSince,sleeping.date.getTime()/1000);
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[{...sleeping,rawData:{...sleeping.rawData,wake_time:'09:30'}}]}).sleepingSince,null);
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[sleeping,{...sleeping,date:new Date(2026,8,24,9,30),rawData:{bedtime:'09:30',wake_time:'09:45'}}]}).sleepingSince,null);
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[{...sleeping,date:new Date(2026,8,25,9)}]}).sleepingSince,null);
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[]}).sleepingSince,null);
+console.log('PASS: active sleep, waking, newer completed sleep, future logs and empty profiles');

@@ -1,6 +1,7 @@
 import Foundation
 import WidgetKit
 import SwiftUI
+import UIKit
 import AppIntents
 
 struct CareRecord: Codable {
@@ -31,6 +32,8 @@ struct ChildSnapshot: Codable, Identifiable {
     var target: Double
     var medicines: [MedicineRecord]
     var care: [String: CareRecord]
+    var sleepingSince: Double?
+    var photo: String?
 }
 struct WidgetSnapshot: Codable {
     var children: [ChildSnapshot]
@@ -92,6 +95,7 @@ struct CareConfiguration: WidgetConfigurationIntent {
     static var description = IntentDescription("Open each person's diary in FamilyTrack to update their widget data.")
     @Parameter(title: "Care profile") var child: CareChild?
     @Parameter(title: "Show name", default: false) var showName: Bool
+    @Parameter(title: "Show profile photo", default: true) var showPhoto: Bool
     @Parameter(title: "Bar colour", default: .automatic) var barColour: BarColour
     @Parameter(title: "Show medication details", default: false) var showMedicine: Bool
     @Parameter(title: "Care activity", default: .latest) var activity: CareChoice
@@ -213,11 +217,28 @@ struct CareWidgetView: View {
     }
     @ViewBuilder private func care(_ child: ChildSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
+            if let started = child.sleepingSince {
+                if entry.configuration.showPhoto, let encoded = child.photo,
+                   let data = Data(base64Encoded: encoded), let photo = UIImage(data: data) {
+                    Image(uiImage: photo).resizable().scaledToFill()
+                        .frame(width: compact ? 36 : 52, height: compact ? 36 : 52).clipShape(Circle())
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "moon.fill").font(.caption).foregroundStyle(.indigo)
+                                .padding(3).background(.background, in: Circle())
+                        }
+                } else {
+                    Image(systemName: "moon.zzz.fill").font(.title2).foregroundStyle(.indigo)
+                }
+                Text(entry.date.timeIntervalSince1970 - started > 46800 ? "Sleep still running?" : "Sleeping")
+                    .font(.subheadline.weight(.semibold))
+                Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
+            } else {
             Label("Care", systemImage: "heart.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if let record = child.care[entry.configuration.activity.rawValue] {
                 Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 Text(Date(timeIntervalSince1970: record.timestamp), style: .relative).font(.caption)
             } else { Text("No activity recorded").font(.caption) }
+            }
         }
     }
 }

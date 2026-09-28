@@ -1,5 +1,5 @@
 import UnfinishedSleepPrompt from "./UnfinishedSleepPrompt";
-import { makeWidgetSnapshot, updateWidgets } from "./nativeWidgets";
+import { makeWidgetSnapshot, updateWidgets, widgetPhoto } from "./nativeWidgets";
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
@@ -4731,7 +4731,13 @@ export default function KaylenCareMonitorDashboard({
     const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
       entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
       target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
-    updateWidgets(`${currentUser.id}:${familyId}`, snapshot, children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' })))?.catch(() => {});
+    let cancelled = false;
+    const selected = children.find(child => child.id === childId);
+    const profiles = children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' }));
+    widgetPhoto(selected?.avatarUrl || selected?.avatar_url).then(photo => {
+      if (!cancelled) updateWidgets(`${currentUser.id}:${familyId}`, { ...snapshot, photo }, profiles)?.catch(() => {});
+    });
+    return () => { cancelled = true; };
   }, [widgetLoadedKey, sharedLog, childProfile, childId, familyId, childName, currentUser?.id, children]);
 
   useEffect(() => {
