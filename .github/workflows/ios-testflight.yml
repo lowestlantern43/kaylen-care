@@ -91,7 +91,14 @@ jobs:
         env:
           KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/export/App.ipa" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID"
+        run: |
+          set -euo pipefail
+          xcrun altool --upload-app --type ios --file "$RUNNER_TEMP/export/App.ipa" --apiKey "$KEY_ID" --apiIssuer "$ISSUER_ID" 2>&1 | tee "$RUNNER_TEMP/upload.log"
+          if grep -Eiq 'UPLOAD FAILED|Failed to upload|Validation failed|ERROR:' "$RUNNER_TEMP/upload.log"; then
+            echo "Apple rejected the upload."
+            exit 1
+          fi
+          grep -Eiq 'UPLOAD SUCCEEDED|No errors uploading|successfully uploaded' "$RUNNER_TEMP/upload.log" || { echo "Upload success was not confirmed."; exit 1; }
       - name: Save signed build
         uses: actions/upload-artifact@v4
         with:
