@@ -1,4 +1,5 @@
 import { archivedProfilesRouter } from "./archivedProfiles.routes.js";
+import { widgetsRouter } from "./widgets.routes.js";
 import { clientActivityRouter } from "./clientActivity.routes.js";
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -21,6 +22,7 @@ import { subscriptionsRouter } from "./subscriptions.routes.js";
 import { uploadsRouter } from "./uploads.routes.js";
 
 export const apiRouter = Router();
+apiRouter.use('/widgets', widgetsRouter);
 
 apiRouter.use("/health", healthRouter);
 apiRouter.use("/client-activity", clientActivityRouter);
