@@ -29,3 +29,14 @@ test('timezone, midnight, DST and PRN schedules',async()=>{
  assert.equal(projectWidget({...profile,current_medications:profile.current_medications.replace('every_day','prn')},[],'f','Europe/London',now).medicines.length,0);
  await assert.rejects(widgetSnapshot('f','invalid/zone'),e=>e.status===400);
 });
+test('space-separated saved times retain the evening dose after the morning dose is resolved',()=>{
+ const daily={...profile,current_medications:'Demo|6|ml|07:30, 19:30|active||required|morning, evening|every_day'};
+ for(const status of ['given','skipped']) {
+  const result=projectWidget(daily,[{id:'morning',category:'medication',day:'2026-09-29',time:'07:30',medicine:'Demo',dose:'6 ml',status}],
+   'f','Europe/London',new Date('2026-09-29T09:00:00Z'));
+  assert.equal(result.medicines.length,3);
+  assert.equal(new Date(result.medicines[0].timestamp*1000).toISOString(),'2026-09-29T18:30:00.000Z');
+ }
+ const windows={...profile,current_medications:'Demo|6|ml||active||required|morning, evening|mon, tue'};
+ assert.equal(projectWidget(windows,[],'f','Europe/London',new Date('2026-09-29T09:00:00Z')).medicines.length,2);
+});

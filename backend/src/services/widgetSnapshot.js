@@ -20,10 +20,11 @@ export function instant(wall, zone) {
   throw new HttpError(503,'widget_time_unavailable','Open the diary to check this schedule.');
 }
 export function medicinesFromProfile(text) {
+  const list = value => String(value || '').split(',').map(item=>item.trim()).filter(Boolean);
   return String(text||'').split(/\n|;/).filter(line=>line.includes('|')).map(line=>{
     const [name,amount,unit,times,active,,required,windows,days] = line.split('|').map(s=>s.trim());
-    return {name,dose:[amount,unit].filter(Boolean).join(' '),times:(times||'').split(','),active:active!=='inactive',
-      requiredDaily:required==='required',timeWindows:(windows||'').toLowerCase().split(','),scheduleDays:(days||'every_day').toLowerCase().split(',')};
+    return {name,dose:[amount,unit].filter(Boolean).join(' '),times:list(times),active:active!=='inactive',
+      requiredDaily:required==='required',timeWindows:list((windows||'').toLowerCase()),scheduleDays:list((days||'every_day').toLowerCase())};
   });
 }
 const labels = {food:'Food Diary',medication:'Medication',sleep:'Sleep',toileting:'Toileting',behaviour:'Behaviour',health:'Health',measurement:'Measurements',activity:'Activity'};
