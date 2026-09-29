@@ -147,6 +147,9 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  adminInsights: (days) => request(`/admin/insights?days=${days}`),
+  saveAdminDigest: (settings) => request('/admin/insights/digest', {method:'PUT',body:JSON.stringify(settings)}),
+  previewAdminDigest: () => request('/admin/insights/preview'),
   archiveCareProfile: (familyId, id) => request(`/families/${familyId}/children/${id}`, { method: 'DELETE' }),
   adminArchivedProfiles: () => request('/admin/archived-profiles'),
   adminRestoreProfile: id => request(`/admin/archived-profiles/${id}/restore`, { method: 'POST' }),

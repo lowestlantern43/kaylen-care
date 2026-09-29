@@ -1,3 +1,5 @@
+import AdminInsights from "./components/AdminInsights";
+import PublicTraffic from "./components/PublicTraffic";
 import ArchivedCareProfiles from "./ArchivedCareProfiles";
 import ChildSetupWizard from "./ChildSetupWizard";
 import PrivacyGate from "./PrivacyGate";
@@ -10044,6 +10046,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 <AdminNavigation activeTab={platformAdminTab} onSelect={setPlatformAdminTab} />
                 {platformAdminTab === "archived-care-profiles" ? <ArchivedCareProfiles api={api} /> : null}
                 {platformAdminTab === "service-health" ? <AdminServiceHealth /> : null}
+                {platformAdminTab === "traffic" ? <AdminInsights /> : null}
                 <div className="relative mt-3 rounded-2xl border border-indigo-100 bg-white px-3 py-2.5 shadow-sm">
                   <label className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500">
                     Quick search and jump
@@ -15335,40 +15338,40 @@ export default function SaasApp() {
 
     if (publicView === "auth") {
       return (
-        <AuthScreen
+        <PublicTraffic view={publicView}><AuthScreen
           initialMode="signup"
           onAuthenticated={setSession}
           onBack={() => setPublicView("landing")}
-        />
+        /></PublicTraffic>
       );
     }
 
     if (publicView === "login") {
       return (
-        <AuthScreen
+        <PublicTraffic view={publicView}><AuthScreen
           initialMode="login"
           onAuthenticated={setSession}
           onBack={() => setPublicView("landing")}
-        />
+        /></PublicTraffic>
       );
     }
 
     if (seoPage && currentPath !== "/") {
       return (
-        <SeoLandingPage
+        <PublicTraffic><SeoLandingPage
           page={seoPage}
           onStartFree={() => setPublicView("auth")}
           onLogin={() => setPublicView("login")}
-        />
+        /></PublicTraffic>
       );
     }
 
     return (
-      <LandingPage
+      <PublicTraffic><LandingPage
         onStartFree={() => setPublicView("auth")}
         onLogin={() => setPublicView("login")}
         pricing={publicPricing}
-      />
+      /></PublicTraffic>
     );
   }
 

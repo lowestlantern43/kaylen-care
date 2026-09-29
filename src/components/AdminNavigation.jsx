@@ -6,7 +6,7 @@ const sectionIcons = {
   Settings: <><path d="M4 6h16M4 12h16M4 18h16" /><circle cx="8" cy="6" r="2" fill="currentColor" /><circle cx="16" cy="12" r="2" fill="currentColor" /><circle cx="10" cy="18" r="2" fill="currentColor" /></>,
 };
 const sections = [
-  { label: "Overview", description: "Account health, attention items and recent activity.", tabs: [["overview", "Summary"], ["stats", "Statistics"], ["service-health", "Service health"]] },
+  { label: "Overview", description: "Account health, attention items and recent activity.", tabs: [["overview", "Summary"], ["stats", "Statistics"], ["traffic", "Website traffic"], ["service-health", "Service health"]] },
   { label: "Families", description: "Find a family, manage members or recover archived care profiles.", tabs: [["families", "Families"], ["accounts", "User accounts"], ["create", "Create family"], ["archived-care-profiles", "Archived care profiles"]] },
   { label: "Billing", description: "Revenue and subscriptions. Open a family to see its email and billing history.", tabs: [["revenue", "Revenue & subscriptions"]] },
   { label: "Support", description: "Review reported issues and track their progress.", tabs: [["issues", "Reported issues"]] },
