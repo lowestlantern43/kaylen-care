@@ -9,7 +9,7 @@ const pending = (entries = [], medicines = [medicine]) => pendingWidgetDoses({ m
 assert.equal(pending().length, 4, 'Overdue morning dose must remain');
 assert.equal(pending([log('08:00')]).length, 3, 'Taken dose disappears, other doses remain');
 assert.equal(pending([log('08:15', { medicationWindow: 'morning', medicationStatus: 'late' })]).length, 3);
-for (const status of ['missed', 'refused', 'skipped', 'unknown']) {
+for (const status of ['missed', 'refused', 'unknown']) {
   assert.equal(pending([log('08:00', { medicationStatus: status })]).length, 4);
 }
 assert.equal(pending([log('08:00'), log('08:00')]).length, 3, 'Duplicate cannot complete a second dose');
@@ -37,3 +37,8 @@ assert.equal(pending([], [{ ...morning, timeWindow: 'evening' }])[0].windowEnd,
 console.log('PASS: window-only doses, completion, exact-time precedence and midnight boundary');
 assert.equal(pending([log('09:15', { medicationDose: '5ml' })], [{ ...morning, dose: '5 ml' }]).length, 1);
 assert.equal(pending([log('09:15', { medicationDose: '10 ml' })], [{ ...morning, dose: '5 ml' }]).length, 2);
+
+assert.equal(pending([log('08:00', { medicationStatus: 'skipped' })]).length, 3, 'Skipped dose clears only its matching dose');
+assert.equal(pending([log('09:15', { medicationStatus: 'skipped', medicationWindow: 'morning' })], [twice]).length, 3, 'Skipped morning window leaves evening due');
+assert.equal(pending([log('08:15', { medicationStatus: 'skipped' })]).length, 4, 'Ambiguous skip must not hide another dose');
+console.log('PASS: skipped exact/window doses clear without hiding other doses');
