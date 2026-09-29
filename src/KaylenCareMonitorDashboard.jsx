@@ -16180,7 +16180,7 @@ export default function KaylenCareMonitorDashboard({
               </article>
             ) : null}
 
-            {isModuleEnabled("medication") && todayDashboard.activeRequiredMedication.length ? (
+            {isModuleEnabled("medication") && todayDashboard.requiredMedication.length ? (
               <article
                 className={`rounded-[1.55rem] border p-4 shadow-md ${
                   todayDashboard.activeRequiredMedication.some(
@@ -16204,7 +16204,7 @@ export default function KaylenCareMonitorDashboard({
                           (medicine) => medicine.status === "due" || medicine.status === "missed",
                         )
                           ? "Doses needing attention"
-                          : "No medication due right now"}
+                          : "Medication later today"}
                       </h2>
                     </div>
                   </div>
@@ -16213,11 +16213,9 @@ export default function KaylenCareMonitorDashboard({
                   </span>
                 </div>
 
-                {todayDashboard.activeRequiredMedication.some(
-                  (medicine) => medicine.status === "due" || medicine.status === "missed",
-                ) ? (
+                {todayDashboard.requiredMedication.length ? (
                   <div className="mt-3 space-y-2">
-                    {todayDashboard.activeRequiredMedication
+                    {todayDashboard.requiredMedication
                       .slice(0, 3)
                       .map((medicine) => (
                       <button
