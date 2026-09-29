@@ -35,7 +35,7 @@ export function pendingWidgetDoses({ medicines, entries, scheduled, entryDate, n
   }
   const seen = new Set();
   for (const entry of entries) {
-    if (entry.section !== 'Medication' || !['given', 'late', 'taken'].includes(normalise(entry.medicationStatus))) continue;
+    if (entry.section !== 'Medication' || !['given', 'late', 'taken', 'skipped'].includes(normalise(entry.medicationStatus))) continue;
     if (entry.id && seen.has(entry.id)) continue;
     if (entry.id) seen.add(entry.id);
     const date = entryDate(entry);

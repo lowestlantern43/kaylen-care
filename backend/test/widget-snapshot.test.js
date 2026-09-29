@@ -12,6 +12,7 @@ test('minimal summaries, completed medication, fluids and active/woken/cancelled
  const result=projectWidget(profile,rows,'family','Europe/London',now);
  assert.equal(result.fluid,200);assert.equal(result.target,800);
  assert.equal(result.medicines.length,1); // tomorrow only: today was recorded
+ assert.equal(projectWidget(profile,rows.map(r=>r.id==='m'?{...r,status:'skipped'}:r),'family','Europe/London',now).medicines.length,1);
  assert.equal(new Date(result.medicines[0].timestamp*1000).toISOString(),'2026-09-29T05:00:00.000Z');
  assert.equal(result.sleepingSince,Date.parse('2026-09-28T09:00:00Z')/1000);
  assert.ok(!JSON.stringify(result).includes('SECRET'));assert.ok(!JSON.stringify(result).includes('PRIVATE'));
