@@ -1,10 +1,15 @@
 import { createApp } from "./app.js";
 import { config, requireConfig } from "./config.js";
 import { runDueReminderScan } from "./services/pushNotifications.js";
+import { runAdminDigest } from "./services/adminDigest.js";
 
 requireConfig();
 
 const app = createApp();
+
+const scanAdminDigest = () => runAdminDigest().catch(() => console.error('Admin digest scan failed; inspect owner insights status.'));
+setInterval(scanAdminDigest, 60 * 1000);
+setTimeout(scanAdminDigest, 15 * 1000);
 
 app.listen(config.port, () => {
   console.log(`FamilyTrack API listening on http://localhost:${config.port}`);

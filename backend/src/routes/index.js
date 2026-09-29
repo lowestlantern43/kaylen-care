@@ -1,4 +1,5 @@
 import { archivedProfilesRouter } from "./archivedProfiles.routes.js";
+import { insightsRouter } from "./insights.routes.js";
 import { widgetsRouter } from "./widgets.routes.js";
 import { clientActivityRouter } from "./clientActivity.routes.js";
 import { Router } from "express";
@@ -22,6 +23,7 @@ import { subscriptionsRouter } from "./subscriptions.routes.js";
 import { uploadsRouter } from "./uploads.routes.js";
 
 export const apiRouter = Router();
+apiRouter.use(insightsRouter);
 apiRouter.use('/widgets', widgetsRouter);
 
 apiRouter.use("/health", healthRouter);
