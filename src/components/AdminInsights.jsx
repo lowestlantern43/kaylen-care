@@ -22,7 +22,7 @@ export default function AdminInsights(){
       <div className="mt-4 flex flex-wrap gap-2"><button disabled={busy||!data} type="button" onClick={save} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Save email settings</button><button disabled={busy||!data} type="button" onClick={showPreview} className="rounded-lg border px-4 py-2">Preview last reporting period</button></div>
       {notice?<p role="status" className="mt-3 text-sm">{notice}</p>:null}
       {data?.digest.runs.map(run=><p key={run.period_end} className="mt-3 text-sm">{new Date(run.period_end).toLocaleString('en-GB',{timeZone:'Europe/London'})} — {run.status} ({run.attempts} attempts)</p>)}
-      {preview?<pre className="mt-4 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-xs">{preview.body}</pre>:null}
+      {preview?<><iframe title="Admin email preview" sandbox="" srcDoc={preview.html || ''} className="mt-4 h-[650px] w-full rounded-xl border"/><details className="mt-3"><summary className="cursor-pointer text-sm">Plain-text version</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-xs">{preview.body}</pre></details></>:null}
     </div>
     {error?<p role="alert" className="rounded-xl bg-red-50 p-3 text-red-800">{error}</p>:null}
   </section>;
