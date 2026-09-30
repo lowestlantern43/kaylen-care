@@ -1013,7 +1013,14 @@ export default function KaylenCareMonitorDashboard({
     )}-${String(start.getDate()).padStart(2, "0")}`;
   });
   const [reportEndDate, setReportEndDate] = useState(todayIsoValue());
-  const [sharedLog, setSharedLog] = useState([]);
+  const logScope = `${familyId}:${childId}`;
+  const currentLogScope = useRef(logScope);
+  currentLogScope.current = logScope;
+  const logRequest = useRef(0);
+  const [loadedLogs, setLoadedLogs] = useState({ scope: "", entries: [], loadedAt: 0 });
+  const sharedLog = loadedLogs.scope === logScope ? loadedLogs.entries : [];
+  const logsReady = !useSaasApi || loadedLogs.scope === logScope;
+  const setSharedLog = (entries) => setLoadedLogs({ scope: logScope, entries, loadedAt: Date.now() / 1000 });
   const [widgetLoadedKey, setWidgetLoadedKey] = useState("");
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -3179,9 +3186,13 @@ export default function KaylenCareMonitorDashboard({
   const loadEntriesFromSaasApi = async () => {
     if (!familyId || !childId) return false;
 
+    const scope = `${familyId}:${childId}`;
+    const request = ++logRequest.current;
     const logs = await api.listCareLogs(familyId, {
       childId,
     });
+    // Ignore late responses from another profile or an older refresh.
+    if (currentLogScope.current !== scope || request !== logRequest.current) return false;
 
     setSharedLog(
       logs
@@ -4727,7 +4738,7 @@ export default function KaylenCareMonitorDashboard({
   ]);
 
   useEffect(() => {
-    if (!currentUser?.id || widgetLoadedKey !== `${familyId}:${childId}`) return;
+    if (!logsReady || !currentUser?.id || widgetLoadedKey !== `${familyId}:${childId}`) return;
     const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
       entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
       target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
@@ -4735,7 +4746,7 @@ export default function KaylenCareMonitorDashboard({
     const selected = children.find(child => child.id === childId);
     const profiles = children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' }));
     widgetPhoto(selected?.avatarUrl || selected?.avatar_url).then(photo => {
-      if (!cancelled) updateWidgets(`${currentUser.id}:${familyId}`, { ...snapshot, photo }, profiles)?.catch(() => {});
+      if (!cancelled) updateWidgets(`${currentUser.id}:${familyId}`, { ...snapshot, updated: loadedLogs.loadedAt, photo }, profiles)?.catch(() => {});
     });
     return () => { cancelled = true; };
   }, [widgetLoadedKey, sharedLog, childProfile, childId, familyId, childName, currentUser?.id, children]);
@@ -16145,7 +16156,7 @@ export default function KaylenCareMonitorDashboard({
                         Hydration
                       </p>
                       <h2 className="mt-0.5 text-lg font-black text-slate-950">
-                        {todayDashboard.fluidTargetMl
+                        {!logsReady ? "Loading fluids…" : todayDashboard.fluidTargetMl
                           ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
                           : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
                       </h2>
