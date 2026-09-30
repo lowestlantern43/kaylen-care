@@ -13,7 +13,7 @@ for (const status of ['missed', 'refused', 'unknown']) {
   assert.equal(pending([log('08:00', { medicationStatus: status })]).length, 4);
 }
 assert.equal(pending([log('08:00'), log('08:00')]).length, 3, 'Duplicate cannot complete a second dose');
-assert.equal(pending([log('08:15')]).length, 4, 'Ambiguous administration must not hide a dose');
+assert.equal(pending([log('08:15')]).length, 3, 'Single morning dose matches an off-time administration');
 assert.equal(pending([log('08:00', { medicationName: 'Demo' })]).length, 4, 'No substring matching');
 assert.equal(pending([log('08:00', { medicationDose: 'Different' })]).length, 4);
 assert.equal(pending([log('20:00')]).length, 4, 'Future records do not complete doses');
@@ -40,5 +40,7 @@ assert.equal(pending([log('09:15', { medicationDose: '10 ml' })], [{ ...morning,
 
 assert.equal(pending([log('08:00', { medicationStatus: 'skipped' })]).length, 3, 'Skipped dose clears only its matching dose');
 assert.equal(pending([log('09:15', { medicationStatus: 'skipped', medicationWindow: 'morning' })], [twice]).length, 3, 'Skipped morning window leaves evening due');
-assert.equal(pending([log('08:15', { medicationStatus: 'skipped' })]).length, 4, 'Ambiguous skip must not hide another dose');
+assert.equal(pending([log('08:15', { medicationStatus: 'skipped' })]).length, 3, 'Single morning dose matches an off-time skip');
 console.log('PASS: skipped exact/window doses clear without hiding other doses');
+
+assert.equal(pending([log('08:15')], [{...medicine,times:['08:00','10:00','20:00']}]).length,6,'Two morning doses stay ambiguous');
