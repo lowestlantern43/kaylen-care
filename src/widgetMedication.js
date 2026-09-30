@@ -42,7 +42,7 @@ export function pendingWidgetDoses({ medicines, entries, scheduled, entryDate, n
     let candidates = doses.filter(d => d.due.toDateString() === date.toDateString() &&
       normalise(d.name) === normalise(entry.medicationName) && normaliseDose(d.dose) === normaliseDose(entry.medicationDose));
     if (entry.medicationWindow) candidates = candidates.filter(d => windowFor(d.due.getHours()) === normalise(entry.medicationWindow));
-    else if (candidates.length > 1 && candidates.every(d => d.window)) candidates = candidates.filter(d => d.window === windowFor(date.getHours()));
+    else if (candidates.length > 1) candidates = candidates.filter(d => windowFor(d.due.getHours()) === windowFor(date.getHours()));
     const exact = candidates.filter(d => d.due.getHours() === date.getHours() && d.due.getMinutes() === date.getMinutes());
     if (exact.length === 1) candidates = exact;
     if (candidates.length === 1) candidates[0].taken = true;
