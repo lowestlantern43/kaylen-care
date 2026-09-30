@@ -1020,7 +1020,14 @@ export default function KaylenCareMonitorDashboard({
     )}-${String(start.getDate()).padStart(2, "0")}`;
   });
   const [reportEndDate, setReportEndDate] = useState(todayIsoValue());
-  const [sharedLog, setSharedLog] = useState([]);
+  const logScope = `${familyId}:${childId}`;
+  const currentLogScope = useRef(logScope);
+  currentLogScope.current = logScope;
+  const logRequest = useRef(0);
+  const [loadedLogs, setLoadedLogs] = useState({ scope: "", entries: [], loadedAt: 0 });
+  const sharedLog = loadedLogs.scope === logScope ? loadedLogs.entries : [];
+  const logsReady = !useSaasApi || loadedLogs.scope === logScope;
+  const setSharedLog = (entries) => setLoadedLogs({ scope: logScope, entries, loadedAt: Date.now() / 1000 });
   const [shareCopied, setShareCopied] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [isReportEmailOpen, setIsReportEmailOpen] = useState(false);
@@ -3182,9 +3189,13 @@ export default function KaylenCareMonitorDashboard({
   const loadEntriesFromSaasApi = async () => {
     if (!familyId || !childId) return false;
 
+    const scope = `${familyId}:${childId}`;
+    const request = ++logRequest.current;
     const logs = await api.listCareLogs(familyId, {
       childId,
     });
+    // Ignore late responses from another profile or an older refresh.
+    if (currentLogScope.current !== scope || request !== logRequest.current) return false;
 
     setSharedLog(
       logs
@@ -16133,7 +16144,7 @@ export default function KaylenCareMonitorDashboard({
                         Hydration
                       </p>
                       <h2 className="mt-0.5 text-lg font-black text-slate-950">
-                        {todayDashboard.fluidTargetMl
+                        {!logsReady ? "Loading fluids…" : todayDashboard.fluidTargetMl
                           ? `${Math.round(todayDashboard.fluidMl)}ml / ${todayDashboard.fluidTargetMl}ml`
                           : `${Math.round(todayDashboard.fluidMl)}ml fluids logged`}
                       </h2>
