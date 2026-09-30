@@ -9,7 +9,7 @@ export async function deliverDigest(run, fetcher=fetch) {
     method:'POST', signal:AbortSignal.timeout(20000),
     headers:{Authorization:`Bearer ${config.resendApiKey}`,'Content-Type':'application/json',
       'Idempotency-Key':`familytrack-admin-${new Date(run.period_end).toISOString()}`},
-    body:JSON.stringify({from:config.emailFrom,to:[run.recipient],subject:run.subject,text:run.body}),
+    body:JSON.stringify({from:config.emailFrom,to:[run.recipient],subject:run.subject,text:run.body,...(run.html?{html:run.html}:{})}),
   });
   return response.ok;
 }
@@ -35,8 +35,8 @@ export async function runAdminDigest() {
     const exists=await query('SELECT 1 FROM admin_digest_runs WHERE period_end=$1',[window.end]);
     if(!exists.rowCount){
       const message=await buildDigest(window.start,window.end);
-      await query(`INSERT INTO admin_digest_runs(period_end,recipient,subject,body) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING`,
-        [window.end,settings.recipient,message.subject,message.body]);
+      await query(`INSERT INTO admin_digest_runs(period_end,recipient,subject,body,html) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,
+        [window.end,settings.recipient,message.subject,message.body,message.html]);
     }
     const claimed=await query(`UPDATE admin_digest_runs SET status='sending',attempts=attempts+1,claimed_until=now()+interval '5 minutes'
       WHERE period_end=$1 AND status IN ('pending','sending') AND (claimed_until IS NULL OR claimed_until<now()) RETURNING *`,[window.end]);

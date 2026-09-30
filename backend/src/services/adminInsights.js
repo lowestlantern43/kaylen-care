@@ -1,4 +1,5 @@
 import { query } from "../db/pool.js";
+import { adminDigestHtml } from './adminDigestTemplate.js';
 
 // New, isolated tables. No changes to subscription, authentication or care data.
 export const insightsSchema = `
@@ -16,7 +17,8 @@ CREATE TABLE IF NOT EXISTS admin_digest_runs (
  period_end timestamptz PRIMARY KEY, recipient text NOT NULL, subject text NOT NULL,
  body text NOT NULL, status text NOT NULL DEFAULT 'pending', attempts integer NOT NULL DEFAULT 0,
  claimed_until timestamptz, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
-);`;
+);
+ALTER TABLE admin_digest_runs ADD COLUMN IF NOT EXISTS html text;`;
 let schema;
 export function ensureInsights() {
   if (!schema) schema = query(insightsSchema).catch(error => { schema = null; throw error; });
@@ -64,7 +66,7 @@ export async function digestWindow() {
 }
 export async function buildDigest(start,end) {
   const range=[start,end];
-  const [users,emails,traffic,trials] = await Promise.all([
+  const [users,emails,traffic,trials,billing,support] = await Promise.all([
     query(`SELECT email,created_at FROM users WHERE created_at >= $1 AND created_at < $2 AND deleted_at IS NULL ORDER BY created_at LIMIT 101`,range),
     query(`SELECT b.event_type,b.occurred_at,b.metadata->>'daysLeft' AS days_left,
       b.metadata->>'emailType' AS email_type,u.email FROM billing_audit_events b LEFT JOIN users u ON u.id=b.user_id AND u.deleted_at IS NULL
@@ -74,13 +76,22 @@ export async function buildDigest(start,end) {
     query(`SELECT count(*) FILTER(WHERE kind='page_view')::int AS views,count(DISTINCT visitor_id) FILTER(WHERE kind='page_view')::int AS visitors,
       count(*) FILTER(WHERE kind='signup_interest')::int AS interest FROM public_traffic_events WHERE occurred_at >= $1 AND occurred_at < $2`,range),
     query(`SELECT count(*)::int AS ending FROM subscriptions WHERE trial_ends_at >= $1 AND trial_ends_at < $1::timestamptz+interval '3 days' AND (status='trialing' OR billing_status='trialing')`,[end]),
+    query(`SELECT event_type,count(*)::int AS count FROM billing_audit_events WHERE occurred_at >= $1 AND occurred_at < $2
+      AND event_type IN ('payment_failed','subscription_cancelled','dispute_created','early_fraud_warning') GROUP BY event_type`,range).catch(()=>null),
+    query("SELECT count(*)::int AS count FROM issue_reports WHERE status IN ('new','in_progress')").catch(()=>null),
   ]);
   const date = value => new Date(value).toLocaleString('en-GB',{timeZone:'Europe/London',dateStyle:'medium',timeStyle:'short'});
   const subject=`FamilyTrack Admin Update — ${new Date(end).toLocaleDateString('en-GB',{timeZone:'Europe/London',day:'numeric',month:'long',year:'numeric'})}`;
   const t=traffic.rows[0];
+  const attention=[...[
+    ['Failed payment events','payment_failed'],['Subscription cancellations','subscription_cancelled'],
+    ['New disputes','dispute_created'],['Early fraud warnings','early_fraud_warning'],
+  ].map(([label,type])=>[label,billing ? billing.rows.find(row=>row.event_type===type)?.count || 0 : 'Unavailable']),
+    ['Unresolved support issues',support?.rows[0]?.count ?? 'Unavailable']];
   const lines=[subject, '', `${date(start)} to ${date(end)} (UK time)`, '',
     'WEBSITE TRAFFIC (visitors who opted in)', `${t.visitors} measured visitors · ${t.views} page views · ${t.interest} signup clicks`,
     'These figures exclude visitors who declined analytics and authenticated app activity.', '',
+    'ATTENTION',...attention.map(([label,value])=>`${label}: ${value}`),'',
     `NEW USERS (${users.rows.length>100?'100+':users.rows.length})`,
     ...users.rows.slice(0,100).map(u=>`${u.email} — ${date(u.created_at)}`),
     ...(users.rows.length?[]:['No new users in this period.']), '',
@@ -91,5 +102,11 @@ export async function buildDigest(start,end) {
     ...(emails.rows.length>200?['Showing the first 200 email events; see the admin billing timelines for more.']:[]), '',
     'Sent means accepted by the email provider. Failed/skipped messages are shown separately.',
     'No care records are included.', '', 'Open the owner platform: https://familytrack.care/'];
-  return {subject,body:lines.join('\n')};
+  const html=adminDigestHtml({subject,period:`${date(start)} to ${date(end)} (UK time)`,traffic:t,
+    newUsers:users.rows.length>100?'100+':users.rows.length,trials:trials.rows[0].ending,attention,
+    users:users.rows.slice(0,100).map(u=>[u.email,date(u.created_at)]),
+    emails:emails.rows.slice(0,200).map(event=>[event.email||'Recipient not recorded',
+      `${event.event_type.startsWith('trial_') ? `${event.days_left || '?'}-day trial warning` : (event.email_type || 'Email').replaceAll('_',' ')} · ${date(event.occurred_at)}`,
+      event.event_type.split('_').at(-1)])});
+  return {subject,body:lines.join('\n'),html};
 }
