@@ -44,7 +44,9 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
       medicationWindow:row.scheduled_window,medicationStatus:row.status||'given',date:row.date})),entryDate:e=>e.date
   }).map(m=>({...m,timestamp:instant(new Date(m.timestamp*1000),zone),...(m.windowEnd?{windowEnd:instant(new Date(m.windowEnd*1000),zone)}:{})}));
   const sleep=entries.find(r=>r.category==='sleep');
-  const fluid=entries.filter(r=>r.day===today&&r.category==='food'&&['drink','milk'].includes(r.type))
+  // Hydration is the diary's total for the local calendar day, including entries
+  // whose recorded clock time is later today, matching the app dashboard.
+  const fluid=rows.filter(r=>r.day===today&&r.category==='food'&&['drink','milk'].includes(r.type))
     .reduce((sum,r)=>sum+(Number.isFinite(Number(r.amount))?Math.max(0,Number(r.amount))*(r.unit==='ml'?1:29.5735):0),0);
   return {id:`${familyId}:${profile.id}`,name:String(profile.first_name||'Care profile').slice(0,80),updated:now.getTime()/1000,
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,

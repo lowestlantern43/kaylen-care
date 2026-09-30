@@ -5,6 +5,17 @@ const {projectWidget,wallTime,instant,widgetSnapshot}=await import('../src/servi
 const profile={id:'p',first_name:'Demo',daily_fluid_target_ml:800,current_medications:'Medicine|2|ml||active|SECRET|true|morning|every_day'};
 profile.current_medications=profile.current_medications.replace('|true|','|required|');
 const now=new Date('2026-09-28T10:00:00Z');
+
+test('hydration matches the full local-day diary total regardless of recorded time',()=>{
+ const rows=[
+  {category:'food',type:'drink',day:'2026-09-28',time:'08:00',amount:'400',unit:'ml'},
+  {category:'food',type:'drink',day:'2026-09-28',time:'20:00',amount:'400',unit:'ml'},
+  {category:'food',type:'drink',day:'2026-09-27',time:'20:00',amount:'200',unit:'ml'},
+ ];
+ assert.equal(projectWidget(profile,rows,'f','Europe/London',now).fluid,800);
+ assert.equal(projectWidget(profile,rows,'f','Europe/London',new Date('2026-09-28T21:00:00Z')).fluid,800);
+ assert.equal(projectWidget(profile,rows,'f','Europe/London',new Date('2026-09-28T23:30:00Z')).fluid,0);
+});
 test('minimal summaries, completed medication, fluids and active/woken/cancelled sleep',()=>{
  const rows=[{id:'m',category:'medication',day:'2026-09-28',time:'08:00',medicine:'Medicine',dose:'2ml',status:'given'},
   {id:'f',category:'food',day:'2026-09-28',time:'09:00',type:'drink',amount:'200',unit:'ml',notes:'PRIVATE'},
