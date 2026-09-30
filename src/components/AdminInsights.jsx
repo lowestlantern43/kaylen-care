@@ -7,6 +7,7 @@ export default function AdminInsights(){
   useEffect(()=>{let active=true;setError('');api.adminInsights(days).then(value=>{if(active){setData(value);setRecipient(value.digest.recipient);setEnabled(value.digest.enabled);}}).catch(e=>{if(active)setError(e.message);});return()=>{active=false;};},[days]);
   async function save(){setBusy(true);setError('');setNotice('');try{const digest=await api.saveAdminDigest({recipient,enabled});setData(d=>({...d,digest}));setNotice('Email settings saved.');}catch(e){setError(e.message);}finally{setBusy(false);}}
   async function showPreview(){setBusy(true);try{setPreview(await api.previewAdminDigest());}catch(e){setError(e.message);}finally{setBusy(false);}}
+  async function sendTest(){setBusy(true);setError('');setNotice('');try{const result=await api.testAdminDigest();setNotice(result.message);}catch(e){setError(e.message);}finally{setBusy(false);}}
   const box='rounded-2xl border border-slate-200 bg-white p-4 shadow-sm';
   const t=data?.traffic;
   return <section className="mt-4 space-y-4" aria-label="Website traffic and admin updates">
@@ -20,6 +21,7 @@ export default function AdminInsights(){
       <label className="mt-4 block text-sm">Recipient email<input type="email" value={recipient} onChange={e=>setRecipient(e.target.value)} className="mt-1 block w-full rounded-lg border p-2"/></label>
       <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Send nightly admin update</label>
       <div className="mt-4 flex flex-wrap gap-2"><button disabled={busy||!data} type="button" onClick={save} className="rounded-lg bg-indigo-600 px-4 py-2 text-white">Save email settings</button><button disabled={busy||!data} type="button" onClick={showPreview} className="rounded-lg border px-4 py-2">Preview last reporting period</button></div>
+      <button disabled={busy||!data?.digest.recipient} type="button" onClick={sendTest} className="mt-3 rounded-lg border px-4 py-2">Send test email to saved recipient</button>
       {notice?<p role="status" className="mt-3 text-sm">{notice}</p>:null}
       {data?.digest.runs.map(run=><p key={run.period_end} className="mt-3 text-sm">{new Date(run.period_end).toLocaleString('en-GB',{timeZone:'Europe/London'})} — {run.status} ({run.attempts} attempts)</p>)}
       {preview?<><iframe title="Admin email preview" sandbox="" srcDoc={preview.html || ''} className="mt-4 h-[650px] w-full rounded-xl border"/><details className="mt-3"><summary className="cursor-pointer text-sm">Plain-text version</summary><pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-slate-50 p-3 text-xs">{preview.body}</pre></details></>:null}
