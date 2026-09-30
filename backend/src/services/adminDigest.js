@@ -8,10 +8,29 @@ export async function deliverDigest(run, fetcher=fetch) {
   const response=await fetcher('https://api.resend.com/emails',{
     method:'POST', signal:AbortSignal.timeout(20000),
     headers:{Authorization:`Bearer ${config.resendApiKey}`,'Content-Type':'application/json',
-      'Idempotency-Key':`familytrack-admin-${new Date(run.period_end).toISOString()}`},
+      'Idempotency-Key':`familytrack-admin-${run.is_test?'test-':''}${new Date(run.period_end).toISOString()}`},
     body:JSON.stringify({from:config.emailFrom,to:[run.recipient],subject:run.subject,text:run.body,...(run.html?{html:run.html}:{})}),
   });
   return response.ok;
+}
+export async function sendAdminDigestTest() {
+  await ensureInsights();
+  const settings=(await query('SELECT recipient FROM admin_digest_settings WHERE id=1')).rows[0];
+  if(!settings?.recipient) throw new Error('Save the recipient email before sending a test.');
+  const end=new Date(),start=new Date(end.getTime()-86400000);
+  const message=await buildDigest(start,end);
+  const slot=Math.floor(end.getTime()/300000);
+  // One test per five minutes across all instances; never changes nightly settings or runs.
+  const claim=await query('INSERT INTO admin_digest_tests(slot) VALUES($1) ON CONFLICT DO NOTHING RETURNING slot',[slot]);
+  if(!claim.rowCount)return {sent:false,message:'A test was already requested in this five-minute period. Check your inbox before trying again.'};
+  let sent=false;
+  try {
+    sent=await deliverDigest({period_end:end,is_test:true,recipient:settings.recipient,
+      subject:`TEST — ${message.subject}`,body:message.body,html:message.html});
+  } finally {
+    await query('UPDATE admin_digest_tests SET status=$2 WHERE slot=$1',[slot,sent?'sent':'failed']);
+  }
+  return {sent,message:sent?'Test email accepted by the email provider. The 22:30 schedule is unchanged.':'The provider did not confirm the test email. The nightly schedule is unchanged.'};
 }
 let running=false;
 let cleanedAt=0;
@@ -23,6 +42,7 @@ export async function runAdminDigest() {
     if(Date.now()-cleanedAt>86400000){
       await query("DELETE FROM public_traffic_events WHERE occurred_at < now()-interval '90 days'");
       await query("DELETE FROM admin_digest_runs WHERE period_end < now()-interval '90 days'");
+      await query("DELETE FROM admin_digest_tests WHERE created_at < now()-interval '90 days'");
       cleanedAt=Date.now();
     }
     const settings=(await query('SELECT * FROM admin_digest_settings WHERE id=1')).rows[0];

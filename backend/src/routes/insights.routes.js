@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { query } from '../db/pool.js';
 import { config } from '../config.js';
+import { sendAdminDigestTest } from '../services/adminDigest.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requirePlatformAdmin } from '../middleware/platformAdmin.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -39,4 +40,7 @@ insightsRouter.get('/admin/insights/preview',asyncHandler(async(req,res)=>{
   await ensureInsights();
   const window=await digestWindow();
   res.json({data:await buildDigest(window.start,window.end),error:null});
+}));
+insightsRouter.post('/admin/insights/test',asyncHandler(async(req,res)=>{
+  res.json({data:await sendAdminDigestTest(),error:null});
 }));

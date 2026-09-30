@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS admin_digest_runs (
  body text NOT NULL, status text NOT NULL DEFAULT 'pending', attempts integer NOT NULL DEFAULT 0,
  claimed_until timestamptz, sent_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
 );
-ALTER TABLE admin_digest_runs ADD COLUMN IF NOT EXISTS html text;`;
+ALTER TABLE admin_digest_runs ADD COLUMN IF NOT EXISTS html text;
+CREATE TABLE IF NOT EXISTS admin_digest_tests (
+ slot bigint PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now(), status text NOT NULL DEFAULT 'sending'
+);`;
 let schema;
 export function ensureInsights() {
   if (!schema) schema = query(insightsSchema).catch(error => { schema = null; throw error; });
