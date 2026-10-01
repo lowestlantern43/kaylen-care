@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import express from 'express';
 let authorised = true, consent = true;
 const calls=[];
-mock.module('../src/db/pool.js',{namedExports:{query:async(sql,params=[])=>{
+mock.module('../src/db/pool.js',{namedExports:{withTransaction:async()=>{throw new Error('unexpected write')},query:async(sql,params=[])=>{
   calls.push({sql,params});
   return {rows:sql.includes('SELECT g.user_id') && authorised ? [{user_id:'user',family_id:'family'}] : []};
 }}});

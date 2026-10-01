@@ -18,18 +18,18 @@ export const widgetAccessSchema = `CREATE TABLE IF NOT EXISTS widget_access_gran
 )`;
 let schema;
 export function ensureWidgetAccessSchema() {
-  if (!schema) schema = query(widgetAccessSchema).then(() => query('ALTER TABLE widget_access_grants ADD COLUMN IF NOT EXISTS session_hash TEXT')).catch(error => { schema = null; throw error; });
+  if (!schema) schema = query(widgetAccessSchema).then(() => query('ALTER TABLE widget_access_grants ADD COLUMN IF NOT EXISTS session_hash TEXT, ADD COLUMN IF NOT EXISTS sleep_actions BOOLEAN NOT NULL DEFAULT false')).catch(error => { schema = null; throw error; });
   return schema;
 }
 
-export async function issueWidgetAccess(userId, familyId, installationId, session = '') {
+export async function issueWidgetAccess(userId, familyId, installationId, session = '', sleepActions = false) {
   await ensureWidgetAccessSchema();
   const token = `ftw_${randomBytes(32).toString('base64url')}`;
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-  await query(`INSERT INTO widget_access_grants(token_hash,user_id,family_id,installation_id,expires_at,session_hash)
-    VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(user_id,family_id,installation_id) DO UPDATE
-    SET token_hash=EXCLUDED.token_hash, expires_at=EXCLUDED.expires_at, session_hash=EXCLUDED.session_hash, revoked_at=NULL, created_at=now()`,
-    [widgetTokenHash(token), userId, familyId, installationId, expiresAt, session ? widgetTokenHash(session) : null]);
+  await query(`INSERT INTO widget_access_grants(token_hash,user_id,family_id,installation_id,expires_at,session_hash,sleep_actions)
+    VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(user_id,family_id,installation_id) DO UPDATE
+    SET token_hash=EXCLUDED.token_hash, expires_at=EXCLUDED.expires_at, session_hash=EXCLUDED.session_hash, sleep_actions=EXCLUDED.sleep_actions, revoked_at=NULL, created_at=now()`,
+    [widgetTokenHash(token), userId, familyId, installationId, expiresAt, session ? widgetTokenHash(session) : null, sleepActions === true]);
   return { token, expiresAt };
 }
 
@@ -47,7 +47,7 @@ export function bearerWidgetToken(req) {
 
 export async function readWidgetAccess(token) {
   await ensureWidgetAccessSchema();
-  const {rows} = await query(`SELECT g.user_id, g.family_id
+  const {rows} = await query(`SELECT g.user_id, g.family_id, g.sleep_actions, fm.role
     FROM widget_access_grants g
     JOIN users u ON u.id=g.user_id
     JOIN families f ON f.id=g.family_id

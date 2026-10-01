@@ -29,6 +29,7 @@ const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
 async function ensureChildProfileHydrationSchema() {
   await query(`
     ALTER TABLE child_profiles
+      ADD COLUMN IF NOT EXISTS usual_bedtime TEXT,
       ADD COLUMN IF NOT EXISTS hydration_checkpoints JSONB NOT NULL DEFAULT
         '[{"time":"13:00","percent":50},{"time":"16:30","percent":70},{"time":"20:00","percent":100}]'::JSONB,
       ADD COLUMN IF NOT EXISTS hydration_notification_tone TEXT NOT NULL DEFAULT 'gentle',
@@ -61,6 +62,7 @@ const profileFields = [
   "hydrationNotificationTone",
   "quietHours",
   "sleepPreferences",
+  "usualBedtime",
   "toiletingNotes",
   "sensoryNeeds",
   "schoolEhcpNotes",
@@ -84,6 +86,7 @@ const profileColumnMap = {
   hydrationNotificationTone: "hydration_notification_tone",
   quietHours: "quiet_hours",
   sleepPreferences: "sleep_preferences",
+  usualBedtime: "usual_bedtime",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
   schoolEhcpNotes: "school_ehcp_notes",
@@ -333,6 +336,7 @@ childrenRouter.get(
           hydration_notification_tone AS "hydrationNotificationTone",
           quiet_hours AS "quietHours",
           sleep_preferences AS "sleepPreferences",
+          usual_bedtime AS "usualBedtime",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -358,8 +362,13 @@ childrenRouter.put(
     const childId = requireUuid(req.params.childId, "Child ID");
     await assertChildInFamily(childId, req.familyMember.family_id);
 
+    if (req.body.usualBedtime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(req.body.usualBedtime)) {
+      throw badRequest("Usual bedtime must be a valid HH:mm time.");
+    }
     const values = profileFields.map((field) =>
-      field === "dailyFluidTargetMl"
+      field === "usualBedtime"
+        ? optionalTime(req.body, field)
+        : field === "dailyFluidTargetMl"
         ? optionalInteger(req.body, field, "Daily fluid target")
         : field === "hydrationCheckpoints"
           ? optionalJson(req.body, field, DEFAULT_HYDRATION_CHECKPOINTS)
@@ -372,7 +381,9 @@ childrenRouter.put(
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
     const updateColumns = profileFields.map(
-      (field) => `${profileColumnMap[field]} = EXCLUDED.${profileColumnMap[field]}`,
+      (field) => field === "usualBedtime" && !Object.hasOwn(req.body, field)
+        ? "usual_bedtime = child_profiles.usual_bedtime"
+        : `${profileColumnMap[field]} = EXCLUDED.${profileColumnMap[field]}`,
     );
 
     const { rows } = await query(
@@ -406,6 +417,7 @@ childrenRouter.put(
           hydration_notification_tone AS "hydrationNotificationTone",
           quiet_hours AS "quietHours",
           sleep_preferences AS "sleepPreferences",
+          usual_bedtime AS "usualBedtime",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",

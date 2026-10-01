@@ -1,3 +1,5 @@
+import { ensureWidgetSleepSchema } from './widgetSleepSchema.js';
+import { getFamilyPlanAccess } from './planAccess.js';
 import { query } from '../db/pool.js';
 import { badRequest, HttpError } from '../utils/httpError.js';
 import { pendingWidgetDoses } from './widgetMedication.js';
@@ -27,6 +29,11 @@ export function medicinesFromProfile(text) {
       requiredDaily:required==='required',timeWindows:list((windows||'').toLowerCase()),scheduleDays:list((days||'every_day').toLowerCase())};
   });
 }
+function sleepCompletedAt(sleep, zone) {
+  if (!sleep?.wake_time) return null;
+  try { return instant(new Date(`${sleep.wake_date || sleep.day}T${sleep.wake_time}Z`),zone); }
+  catch { return null; } // Legacy malformed dates must not break the whole widget response.
+}
 const labels = {food:'Food Diary',medication:'Medication',sleep:'Sleep',toileting:'Toileting',behaviour:'Behaviour',health:'Health',measurement:'Measurements',activity:'Activity'};
 export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
   const wallNow=wallTime(now,zone), today=wallNow.toISOString().slice(0,10);
@@ -50,28 +57,34 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
     .reduce((sum,r)=>sum+(Number.isFinite(Number(r.amount))?Math.max(0,Number(r.amount))*(r.unit==='ml'?1:29.5735):0),0);
   return {id:`${familyId}:${profile.id}`,name:String(profile.first_name||'Care profile').slice(0,80),updated:now.getTime()/1000,
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,
+    usualBedtime:profile.usual_bedtime || null, sleepLogId:sleep?.id || '',
+    sleepCompletedAt:sleepCompletedAt(sleep,zone),
     sleepingSince:sleep?.bedtime&&!sleep.wake_time?instant(sleep.date,zone):null};
 }
-export async function widgetSnapshot(familyId, zone, now=new Date()) {
+export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) {
+  await ensureWidgetSleepSchema();
   if(typeof zone!=='string'||zone.length>100) throw badRequest('A timezone is required.');
   try { wallTime(now,zone); } catch { throw badRequest('Invalid timezone.'); }
-  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml
+  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime
     FROM children c LEFT JOIN child_profiles cp ON cp.child_id=c.id AND cp.family_id=c.family_id
     WHERE c.family_id=$1 AND c.deleted_at IS NULL ORDER BY c.id LIMIT 51`,[familyId]);
   if(profiles.length>50) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');
+  const plan = access.sleep_actions ? await getFamilyPlanAccess(familyId) : {};
+  const canStartSleep = !!(access.sleep_actions && ['owner','parent','carer'].includes(access.role) && plan.canAddLogs);
+  const canEndSleep = !!(access.sleep_actions && ['owner','parent'].includes(access.role) && plan.canEditLogs);
   const children=[];
   for(const profile of profiles) {
     // Whitelist structured fields. Never load notes, diagnoses or whole JSON records.
     const {rows}=await query(`SELECT id,category,log_date::text AS day,to_char(log_time,'HH24:MI') AS time,
       data->>'type' AS type,data->>'amount' AS amount,data->>'unit' AS unit,
       data->>'medicine' AS medicine,data->>'dose' AS dose,data->>'status' AS status,
-      data->>'scheduled_window' AS scheduled_window,data->>'bedtime' AS bedtime,data->>'wake_time' AS wake_time
+      data->>'scheduled_window' AS scheduled_window,data->>'bedtime' AS bedtime,data->>'wake_time' AS wake_time,data->>'wake_date' AS wake_date
       FROM care_logs WHERE family_id=$1 AND child_id=$2 AND deleted_at IS NULL
       ORDER BY log_date DESC,log_time DESC,created_at DESC LIMIT 3001`,[familyId,profile.id]);
     // Do not present truncated totals as complete.
     if(rows.length>3000 && rows.at(-1).day>=wallTime(now,zone).toISOString().slice(0,10))
       throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');
-    children.push(projectWidget(profile,rows,familyId,zone,now));
+    children.push({...projectWidget(profile,rows,familyId,zone,now),canStartSleep,canEndSleep});
   }
   const result={children};
   if(Buffer.byteLength(JSON.stringify(result))>190000) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');

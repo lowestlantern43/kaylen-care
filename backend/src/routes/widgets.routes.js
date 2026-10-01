@@ -1,3 +1,4 @@
+import { widgetSleepAction } from '../services/widgetSleep.js';
 import { Router } from 'express';
 import { sessionCookieName } from '../utils/sessions.js';
 import { widgetSnapshot } from '../services/widgetSnapshot.js';
@@ -20,7 +21,7 @@ widgetsRouter.use((req,res,next) => {
 widgetsRouter.post('/families/:familyId/access', requireAuth, requirePrivacyConsent, requireFamilyMember,
   asyncHandler(async(req,res) => {
     const installationId = requireUuid(req.body?.installationId, 'Installation ID');
-    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId,req.cookies?.[sessionCookieName]);
+    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId,req.cookies?.[sessionCookieName],req.body?.sleepActions === true);
     res.json({data,error:null});
   }));
 widgetsRouter.delete('/access', asyncHandler(async(req,res) => {
@@ -35,7 +36,14 @@ widgetsRouter.get('/access', asyncHandler(async(req,res) => {
 widgetsRouter.get('/snapshot', asyncHandler(async(req,res) => {
   const token=bearerWidgetToken(req);
   const access=await readWidgetAccess(token);
-  const data=await widgetSnapshot(access.family_id,req.query.timeZone);
+  const data=await widgetSnapshot(access.family_id,req.query.timeZone, new Date(), access);
   await readWidgetAccess(token);
+  res.json({data,error:null});
+}));
+
+widgetsRouter.post('/sleep', asyncHandler(async(req,res) => {
+  const token = bearerWidgetToken(req);
+  const access = await readWidgetAccess(token);
+  const data = await widgetSleepAction(access, req.body);
   res.json({data,error:null});
 }));
