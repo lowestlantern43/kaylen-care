@@ -249,15 +249,20 @@ struct CareWidgetView: View {
                 if child.canEndSleep == true && entry.date.timeIntervalSince1970 - started <= 46800 {
                     sleepButton(child, action: "end", title: "Wake up", symbol: "sun.max.fill")
                 }
+            } else if canOfferSleep(child) {
+                VStack(alignment: .center, spacing: 8) {
+                    Image(systemName: "moon.stars.fill")
+                        .font(compact ? .title2 : .largeTitle).foregroundStyle(.indigo)
+                    Text("Ready for sleep?").font(.caption.weight(.semibold)).lineLimit(2)
+                    sleepButton(child, action: "start", title: "Start sleep", symbol: "moon.fill")
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
             Label("Care", systemImage: "heart.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if let record = child.care[entry.configuration.activity.rawValue] {
-                Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(canOfferSleep(child) ? 1 : 2)
+                Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 Text(Date(timeIntervalSince1970: record.timestamp), style: .relative).font(.caption)
             } else { Text("No activity recorded").font(.caption) }
-            if canOfferSleep(child) {
-                sleepButton(child, action: "start", title: "Start sleep", symbol: "moon.fill")
-            }
             }
         }
     }
@@ -269,8 +274,9 @@ struct CareWidgetView: View {
     }
     private func sleepButton(_ child: ChildSnapshot, action: String, title: String, symbol: String) -> some View {
         Button(intent: SleepLogIntent(profileID: child.id, action: action, expectedSleepID: child.sleepLogId ?? "")) {
-            Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
-        }.buttonStyle(.bordered).tint(.indigo)
+            Label(title, systemImage: symbol).font(.system(size: compact ? 12 : 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: compact ? 30 : 36)
+        }.buttonStyle(.borderedProminent).tint(.indigo)
         .accessibilityLabel("\(title) for \(child.name)")
     }
 }
