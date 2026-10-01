@@ -9263,6 +9263,12 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
                   {["general", "support"].includes(careProfileTab) ? (
                   <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
+                    {careProfileTab === "support" && <label className="text-sm font-semibold text-slate-700">
+                      Usual bedtime (optional)
+                      <input type="time" className={inputClass} value={childProfile.usualBedtime || ""}
+                        onChange={event => setChildProfile({...childProfile, usualBedtime: event.target.value})} />
+                      <span className="mt-1 block text-xs font-normal text-slate-500">Shows Start sleep in this profile’s Care widget from this time. Sleep is only logged when you tap the button. Clear the time to turn it off.</span>
+                    </label>}
                     {(careProfileTab === "general"
                       ? [
                           ["diagnosisNeeds", "Diagnosis / needs"],
