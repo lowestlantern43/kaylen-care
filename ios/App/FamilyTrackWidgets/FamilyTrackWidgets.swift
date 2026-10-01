@@ -254,7 +254,7 @@ struct CareWidgetView: View {
                     Image(systemName: "moon.stars.fill")
                         .font(compact ? .title2 : .largeTitle).foregroundStyle(.indigo)
                     Text("Ready for sleep?").font(.caption.weight(.semibold)).lineLimit(2)
-                    sleepButton(child, action: "start", title: "Start sleep", symbol: "moon.fill")
+                    sleepButton(child, action: "start", title: "Start", symbol: "moon.fill")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -277,7 +277,7 @@ struct CareWidgetView: View {
             Label(title, systemImage: symbol).font(.system(size: compact ? 12 : 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
                 .frame(maxWidth: .infinity, minHeight: compact ? 30 : 36)
         }.buttonStyle(.borderedProminent).tint(.indigo)
-        .accessibilityLabel("\(title) for \(child.name)")
+        .accessibilityLabel("\(action == "start" ? "Start sleep" : title) for \(child.name)")
     }
 }
 @available(iOS 17.0, *)
