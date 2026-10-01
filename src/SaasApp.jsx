@@ -4901,6 +4901,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
   const saveChildProfile = async (event) => {
     event.preventDefault();
     if (!selectedFamilyId || !selectedChildId) return;
+    // Native time pickers can commit their DOM value before React's change event.
+    const submittedBedtime = new FormData(event.currentTarget).get("usualBedtime");
 
     setIsSavingProfile(true);
     setError("");
@@ -4908,6 +4910,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     try {
       const profileToSave = {
         ...childProfile,
+        ...(submittedBedtime !== null ? { usualBedtime: String(submittedBedtime) } : {}),
         currentMedications: serializeCareMedicationRows(careMedicationRows),
       };
       const profile = await api.updateChildProfile(
@@ -9265,7 +9268,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   <div className="grid gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-2">
                     {careProfileTab === "support" && <label className="text-sm font-semibold text-slate-700">
                       Usual bedtime (optional)
-                      <input type="time" className={inputClass} value={childProfile.usualBedtime || ""}
+                      <input type="time" name="usualBedtime" className={inputClass} value={childProfile.usualBedtime || ""}
+                        onInput={event => { const value = event.currentTarget.value; setChildProfile(current => ({...current, usualBedtime: value})); }}
                         onChange={event => setChildProfile({...childProfile, usualBedtime: event.target.value})} />
                       <span className="mt-1 block text-xs font-normal text-slate-500">Shows Start sleep in this profile’s Care widget from this time. Sleep is only logged when you tap the button. Clear the time to turn it off.</span>
                     </label>}
