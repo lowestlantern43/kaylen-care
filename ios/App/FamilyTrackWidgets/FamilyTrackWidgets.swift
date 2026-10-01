@@ -32,6 +32,11 @@ struct ChildSnapshot: Codable, Identifiable {
     var target: Double
     var medicines: [MedicineRecord]
     var care: [String: CareRecord]
+    var usualBedtime: String?
+    var sleepLogId: String?
+    var sleepCompletedAt: Double?
+    var canStartSleep: Bool?
+    var canEndSleep: Bool?
     var sleepingSince: Double?
     var photo: String?
 }
@@ -116,7 +121,14 @@ struct CareProvider: AppIntentTimelineProvider {
         await WidgetFetcher.shared.refresh()
         let current = entry(configuration)
         // Re-evaluate saved data at the original fifteen-minute timeline intervals.
-        let entries = (0...24).map { index in CareEntry(date: current.date.addingTimeInterval(Double(index)*900), configuration: configuration, child: current.child) }
+        var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0)*900) })
+        if let time = current.child?.usualBedtime {
+            let parts = time.split(separator: ":").compactMap { Int($0) }
+            if parts.count == 2, let bedtime = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: current.date), bedtime > current.date {
+                dates.insert(bedtime)
+            }
+        }
+        let entries = dates.sorted().map { CareEntry(date: $0, configuration: configuration, child: current.child) }
         return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(600)))
     }
 }
@@ -168,7 +180,9 @@ struct CareWidgetView: View {
                     else if kind == "fluids" { fluids(child) }
                     else { care(child) }
                     Spacer(minLength: 0)
-                    if child.updated > 0 {
+                    if (kind == "care" || compact), let message = WidgetSleepAction.message(for: child.id) {
+                        Text(message).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2)
+                    } else if child.updated > 0 {
                         Text("Updated \(Date(timeIntervalSince1970: child.updated), style: .time)")
                             .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
                     }
@@ -221,7 +235,7 @@ struct CareWidgetView: View {
                 if entry.configuration.showPhoto, let encoded = child.photo,
                    let data = Data(base64Encoded: encoded), let photo = UIImage(data: data) {
                     Image(uiImage: photo).resizable().scaledToFill()
-                        .frame(width: compact ? 36 : 52, height: compact ? 36 : 52).clipShape(Circle())
+                        .frame(width: compact ? 24 : 28, height: compact ? 24 : 28).clipShape(Circle())
                         .overlay(alignment: .bottomTrailing) {
                             Image(systemName: "moon.fill").font(.caption).foregroundStyle(.indigo)
                                 .padding(3).background(.background, in: Circle())
@@ -232,14 +246,32 @@ struct CareWidgetView: View {
                 Text(entry.date.timeIntervalSince1970 - started > 46800 ? "Sleep still running?" : "Sleeping")
                     .font(.subheadline.weight(.semibold))
                 Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
+                if child.canEndSleep == true && entry.date.timeIntervalSince1970 - started <= 46800 {
+                    sleepButton(child, action: "end", title: "Wake up", symbol: "sun.max.fill")
+                }
             } else {
             Label("Care", systemImage: "heart.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
             if let record = child.care[entry.configuration.activity.rawValue] {
-                Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
+                Text(record.label).font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(canOfferSleep(child) ? 1 : 2)
                 Text(Date(timeIntervalSince1970: record.timestamp), style: .relative).font(.caption)
             } else { Text("No activity recorded").font(.caption) }
+            if canOfferSleep(child) {
+                sleepButton(child, action: "start", title: "Start sleep", symbol: "moon.fill")
+            }
             }
         }
+    }
+    private func canOfferSleep(_ child: ChildSnapshot) -> Bool {
+        guard child.canStartSleep == true, let time = child.usualBedtime else { return false }
+        let parts = time.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 2, let bedtime = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: entry.date) else { return false }
+        return entry.date >= bedtime && (child.sleepCompletedAt ?? 0) < bedtime.timeIntervalSince1970
+    }
+    private func sleepButton(_ child: ChildSnapshot, action: String, title: String, symbol: String) -> some View {
+        Button(intent: SleepLogIntent(profileID: child.id, action: action, expectedSleepID: child.sleepLogId ?? "")) {
+            Label(title, systemImage: symbol).font(.system(size: 11, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+        }.buttonStyle(.bordered).tint(.indigo)
+        .accessibilityLabel("\(title) for \(child.name)")
     }
 }
 @available(iOS 17.0, *)
@@ -372,5 +404,64 @@ struct FamilyTrackWidgetBundle: WidgetBundle {
         FamilyCareWidget(kind: "care", title: "Care", medium: false)
         FamilyCareWidget(kind: "all", title: "Today's care", medium: true)
         FamilyTrackLockScreenWidget()
+    }
+}
+
+@available(iOS 17.0, *)
+struct SleepLogIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log sleep"
+    static var openAppWhenRun: Bool = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+    @Parameter(title: "Care profile") var profileID: String
+    @Parameter(title: "Action") var action: String
+    @Parameter(title: "Expected sleep") var expectedSleepID: String
+    init() {}
+    init(profileID: String, action: String, expectedSleepID: String) {
+        self.profileID = profileID; self.action = action; self.expectedSleepID = expectedSleepID
+    }
+    func perform() async throws -> some IntentResult {
+        await WidgetSleepAction.save(profileID: profileID, action: action, expectedSleepID: expectedSleepID)
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+enum WidgetSleepAction {
+    static func message(for profile: String) -> String? {
+        guard let access = WidgetBackground.grant(), let saved = WidgetBackground.dictionary("widget-action-\(access.generation).json"),
+              saved["profile"] as? String == profile, let time = saved["time"] as? Double,
+              Date().timeIntervalSince1970 - time < 180 else { return nil }
+        return saved["message"] as? String
+    }
+    static func save(profileID: String, action: String, expectedSleepID: String) async {
+        guard let access = WidgetBackground.grant(), access.expires > Date().timeIntervalSince1970, !WidgetBackground.denied(access),
+              let family = access.scope.split(separator: ":").last,
+              profileID.hasPrefix("\(family):"), let child = profileID.split(separator: ":").last else { return }
+        var message = "Not saved. Open app to check."
+        var request = URLRequest(url: URL(string: "https://familytrack.care/api/widgets/sleep")!)
+        request.httpMethod = "POST"; request.timeoutInterval = 12
+        request.setValue("Bearer \(access.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["childId": String(child), "action": action,
+            "expectedSleepId": expectedSleepID, "timeZone": TimeZone.current.identifier])
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil; config.urlCache = nil; config.timeoutIntervalForResource = 15
+        let session = URLSession(configuration: config, delegate: WidgetNoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard WidgetBackground.grant()?.generation == access.generation else { return }
+            if let http = response as? HTTPURLResponse {
+                if http.statusCode == 200 { message = action == "start" ? "Sleep started" : "Wake-up saved" }
+                else if http.statusCode == 409 { message = "Sleep changed. Check app." }
+                else if http.statusCode == 401 || http.statusCode == 403 { message = "Open app to check access." }
+            }
+        } catch { message = "Check connection; open app." }
+        guard WidgetBackground.grant()?.generation == access.generation else { return }
+        if let data = try? JSONSerialization.data(withJSONObject: ["profile": profileID,"time": Date().timeIntervalSince1970,"message": message]) {
+            try? WidgetBackground.save(data, name: "widget-action-\(access.generation).json")
+        }
+        await WidgetFetcher.shared.refresh(force: true)
     }
 }

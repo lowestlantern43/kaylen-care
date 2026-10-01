@@ -16,7 +16,7 @@ enum WidgetBackground {
     }
     static func removeOldCaches() {
         guard let directory = directory, let files = try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else { return }
-        for file in files where file.lastPathComponent.hasPrefix("widget-cache-") || file.lastPathComponent.hasPrefix("widget-denied-") {
+        for file in files where file.lastPathComponent.hasPrefix("widget-cache-") || file.lastPathComponent.hasPrefix("widget-denied-") || file.lastPathComponent.hasPrefix("widget-action-") {
             try? FileManager.default.removeItem(at: file)
         }
     }
@@ -53,6 +53,10 @@ enum WidgetBackground {
             let localProfile = saved.first { $0["id"] as? String == id }
             let remoteProfile = profiles.first { $0["id"] as? String == id }
             var chosen = (localProfile?["updated"] as? Double ?? 0) > (remoteProfile?["updated"] as? Double ?? 0) ? localProfile ?? item : remoteProfile ?? item
+            // Action permissions and state come only from a successful server snapshot.
+            for key in ["canStartSleep", "canEndSleep", "sleepLogId", "sleepCompletedAt"] {
+                chosen[key] = remoteProfile?[key]
+            }
             if let photo = localProfile?["photo"] as? String { chosen["photo"] = photo }
             return chosen
         }

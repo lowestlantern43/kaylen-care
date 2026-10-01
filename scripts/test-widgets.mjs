@@ -32,3 +32,9 @@ assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[sleeping,{...sleeping,dat
 assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[{...sleeping,date:new Date(2026,8,25,9)}]}).sleepingSince,null);
 assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[]}).sleepingSince,null);
 console.log('PASS: active sleep, waking, newer completed sleep, future logs and empty profiles');
+
+const sleepSettings = makeWidgetSnapshot({...sleepArgs,usualBedtime:'20:00',entries:[{...sleeping,id:'care-123'}]});
+assert.equal(sleepSettings.usualBedtime,'20:00');
+assert.equal(sleepSettings.sleepLogId,'123');
+assert.equal(makeWidgetSnapshot({...sleepArgs,entries:[]}).usualBedtime,null);
+console.log('PASS: optional bedtime and sleep state reference');

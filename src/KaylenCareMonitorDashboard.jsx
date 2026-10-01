@@ -3238,6 +3238,15 @@ export default function KaylenCareMonitorDashboard({
     }
   };
 
+  useEffect(() => {
+    if (!useSaasApi || !familyId || !childId) return;
+    const refresh = () => {
+      if (document.visibilityState === "visible") loadEntriesFromSaasApi().catch(() => {});
+    };
+    document.addEventListener("visibilitychange", refresh);
+    return () => document.removeEventListener("visibilitychange", refresh);
+  }, [useSaasApi, familyId, childId]);
+
   const loadEntriesFromSupabase = async () => {
     if (useSaasApi) {
       try {
@@ -4741,7 +4750,7 @@ export default function KaylenCareMonitorDashboard({
     if (!logsReady || !currentUser?.id || widgetLoadedKey !== `${familyId}:${childId}`) return;
     const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
       entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
-      target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
+      usualBedtime: childProfile.usualBedtime, target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
     let cancelled = false;
     const selected = children.find(child => child.id === childId);
     const profiles = children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' }));

@@ -3,17 +3,18 @@ import { api } from './api/client';
 import { Capacitor, registerPlugin } from '@capacitor/core';
 const bridge = registerPlugin('WidgetBridge');
 let owner = '';
+let sleepAccessRequested = false;
 let snapshots = new Map();
 let writes = Promise.resolve();
 let generation = 0;
 export function clearWidgets() {
   generation++;
-  owner = ''; snapshots.clear();
+  owner = ''; sleepAccessRequested = false; snapshots.clear();
   return Capacitor.getPlatform()==='ios' ? bridge.clear() : Promise.resolve();
 }
 export function updateWidgets(scope, snapshot, profiles) {
   if (Capacitor.getPlatform() !== 'ios') return;
-  if (owner !== scope) { generation++; snapshots.clear(); owner = scope; }
+  if (owner !== scope) { generation++; snapshots.clear(); owner = scope; sleepAccessRequested = false; }
   const expected = generation;
   const before = JSON.stringify([...snapshots.values()]);
   const allowedIds = profiles.map(profile => profile.id);
@@ -35,16 +36,17 @@ export function updateWidgets(scope, snapshot, profiles) {
     try {
       const connection = await bridge.connection();
       if(expected !== generation) return;
-      if(connection.scope === scope && connection.expires > Date.now()/1000 + 86400) return;
+      if(sleepAccessRequested && connection.scope === scope && connection.expires > Date.now()/1000 + 86400) return;
       const familyId = scope.split(':')[1];
       const access = await api.issueWidgetAccess(familyId, connection.installationId);
       if(expected !== generation) return;
       await bridge.connect({scope,token:access.token,expires:Date.parse(access.expiresAt)/1000});
+      sleepAccessRequested = true;
     } catch { /* Old/disabled backends continue using the existing local snapshots. */ }
   });
   return writes;
 }
-export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,fluid,now=new Date(),entryDate}) {
+export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,fluid,usualBedtime,now=new Date(),entryDate}) {
   const care = {};
   const sorted = entries.map(e=>({e,date:entryDate(e)})).filter(v=>v.date && Number.isFinite(v.date.getTime()) && v.date<=now).sort((a,b)=>b.date-a.date);
   for (const [key,match] of Object.entries({latest:()=>true,toileting:e=>e.section==='Toileting',sleep:e=>e.section==='Sleep',food:e=>e.section==='Food Diary'&&!e.isMilk})) {
@@ -57,7 +59,7 @@ export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,f
   const sleepingSince = latestSleep?.e.rawCategory === 'sleep' &&
     !latestSleep.e.rawData?.wake_time && latestSleep.e.rawData?.bedtime
     ? latestSleep.date.getTime()/1000 : null;
-  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince};
+  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince,usualBedtime:usualBedtime || null,sleepLogId:String(latestSleep?.e.id || '').replace(/^care-/, '')};
 }
 
 // Store a tiny thumbnail, not a remote URL or a full-size profile photograph.
