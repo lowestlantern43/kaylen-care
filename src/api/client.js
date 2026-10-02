@@ -147,6 +147,12 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  adminEmails: () => request('/admin/emails'),
+  adminEmailRecipients: () => request('/admin/emails/recipients'),
+  adminEmailCreate: payload => request('/admin/emails', {method:'POST',body:JSON.stringify(payload)}),
+  adminEmailDetail: id => request(`/admin/emails/${id}`),
+  adminEmailSend: id => request(`/admin/emails/${id}/send`, {method:'POST',body:JSON.stringify({confirm:true})}),
+
   adminInsights: (days) => request(`/admin/insights?days=${days}`),
   saveAdminDigest: (settings) => request('/admin/insights/digest', {method:'PUT',body:JSON.stringify(settings)}),
   previewAdminDigest: () => request('/admin/insights/preview'),

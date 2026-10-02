@@ -1,3 +1,4 @@
+import AdminEmail from "./components/AdminEmail";
 import AdminInsights from "./components/AdminInsights";
 import PublicTraffic from "./components/PublicTraffic";
 import ArchivedCareProfiles from "./ArchivedCareProfiles";
@@ -3403,6 +3404,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     plan: "trial",
   });
   const [dismissedUpgradeBanners, setDismissedUpgradeBanners] = useState({});
+  const [emailInitial, setEmailInitial] = useState({});
   const [platformAdminTab, setPlatformAdminTab] = useState("overview");
   const [showAdminStatsPopup, setShowAdminStatsPopup] = useState(false);
   const [toast, setToast] = useState(null);
@@ -10053,6 +10055,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
               </div>
             ) : platformViewAsUser ? null : (
               <>
+                {platformAdminTab === "email" ? <AdminEmail initial={emailInitial} /> : null}
                 <AdminNavigation activeTab={platformAdminTab} onSelect={setPlatformAdminTab} />
                 {platformAdminTab === "archived-care-profiles" ? <ArchivedCareProfiles api={api} /> : null}
                 {platformAdminTab === "service-health" ? <AdminServiceHealth /> : null}
@@ -13486,6 +13489,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  <button type="button" className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white" onClick={() => {setEmailInitial({familyId:selectedPlatformFamily.family?.id});setSelectedPlatformFamily(null);setPlatformAdminTab("email");}}>Email family</button>
                   <button
                     type="button"
                     onClick={() => setPlatformFamilyDetailTab("overview")}
@@ -14509,6 +14513,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap gap-2">
+                  <button type="button" className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white" onClick={() => {setEmailInitial({userId:selectedPlatformUser.user?.id});setSelectedPlatformUser(null);setPlatformAdminTab("email");}}>Email user</button>
                   <button
                     type="button"
                     onClick={() => setPlatformUserDetailTab("notes")}

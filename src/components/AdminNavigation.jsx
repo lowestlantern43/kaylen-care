@@ -9,7 +9,7 @@ const sections = [
   { label: "Overview", description: "Account health, attention items and recent activity.", tabs: [["overview", "Summary"], ["stats", "Statistics"], ["traffic", "Website traffic"], ["service-health", "Service health"]] },
   { label: "Families", description: "Find a family, manage members or recover archived care profiles.", tabs: [["families", "Families"], ["accounts", "User accounts"], ["create", "Create family"], ["archived-care-profiles", "Archived care profiles"]] },
   { label: "Billing", description: "Revenue and subscriptions. Open a family to see its email and billing history.", tabs: [["revenue", "Revenue & subscriptions"]] },
-  { label: "Support", description: "Review reported issues and track their progress.", tabs: [["issues", "Reported issues"]] },
+  { label: "Support", description: "Review reported issues and track their progress.", tabs: [["issues", "Reported issues"], ["email", "Email"]] },
   { label: "Settings", description: "Platform configuration, Stripe setup and document storage.", tabs: [["billing", "Billing & website setup"], ["storage", "Document storage"]] },
 ];
 
