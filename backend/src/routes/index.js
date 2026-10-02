@@ -1,3 +1,4 @@
+import { adminEmailRouter } from "./adminEmail.routes.js";
 import { archivedProfilesRouter } from "./archivedProfiles.routes.js";
 import { insightsRouter } from "./insights.routes.js";
 import { widgetsRouter } from "./widgets.routes.js";
@@ -32,6 +33,7 @@ apiRouter.use("/auth", authRouter);
 apiRouter.use("/billing", billingRouter);
 apiRouter.use("/account", accountRouter);
 apiRouter.use("/admin/archived-profiles", archivedProfilesRouter);
+apiRouter.use("/admin/emails", adminEmailRouter);
 apiRouter.use("/admin", adminRouter);
 apiRouter.use("/feedback", feedbackRouter);
 apiRouter.use("/notifications", requireAuth, requirePrivacyConsent, notificationsRouter);

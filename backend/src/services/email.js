@@ -15,7 +15,7 @@ function escapeHtml(value = "") {
     .replace(/'/g, "&#39;");
 }
 
-function buildEmailHtml({ subject, text }) {
+export function buildEmailHtml({ subject, text }) {
   const lines = String(text || "")
     .split(/\r?\n/)
     .map((line) => line.trimEnd());
