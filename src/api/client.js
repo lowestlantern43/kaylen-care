@@ -155,6 +155,7 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  correctCareLog: (familyId,id,payload) => request(`/families/${familyId}/care-logs/${id}/correction`,{method:"POST",body:JSON.stringify(payload)}),
   issueWidgetAccess: (familyId, installationId) => request(`/widgets/families/${familyId}/access`, {
     method: 'POST', body: JSON.stringify({installationId, sleepActions: true}),
   }),
