@@ -13187,6 +13187,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
           onStartDocumentVaultCheckout={startDocumentVaultCheckout}
           isDocumentVaultCheckoutLoading={isCheckoutLoading}
           showToast={showToast}
+          familyRole={selectedFamily?.role || "viewer"}
           currentUser={session.user}
           useSaasApi
         />

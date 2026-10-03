@@ -1,3 +1,4 @@
+import CareEntryEditor from "./components/CareEntryEditor";
 import UnfinishedSleepPrompt from "./UnfinishedSleepPrompt";
 import { useEffect, useMemo, useRef, useState } from "react";
 import html2canvas from "html2canvas";
@@ -931,6 +932,7 @@ export default function KaylenCareMonitorDashboard({
   childProfile: childProfileProp = {},
   importantEvents = [],
   accountAccess = null,
+  familyRole = "viewer",
   moduleVisibility = DEFAULT_MODULE_VISIBILITY,
   documentVault = null,
   onStartDocumentVaultCheckout,
@@ -3180,6 +3182,8 @@ export default function KaylenCareMonitorDashboard({
       ...mapped,
       childId: row.childId || row.child_id || "",
       childName: row.childFirstName || row.childName || "",
+      rawLogDate: row.logDate,
+      rawUpdatedAt: row.updatedAt,
       rawCategory: row.category || "",
       rawData: row.data || {},
       rawNotes: row.notes || "",
@@ -12696,6 +12700,20 @@ export default function KaylenCareMonitorDashboard({
     return configBySection[sectionTitle] || null;
   };
 
+  const [entryToEdit, setEntryToEdit] = useState(null);
+  const [deletedEntryUndo, setDeletedEntryUndo] = useState(null);
+  const [correctionBusy, setCorrectionBusy] = useState(false);
+  const canCorrectEntries = useSaasApi && ["owner", "parent"].includes(familyRole) && accountAccess?.canEditLogs !== false && !isReadOnly;
+  const refreshCorrectedEntries = async () => { await loadEntriesFromSupabase(); await loadUnifiedTimelineData(); };
+  const correctEntry = async (action, payload) => {
+    const entry = entryToEdit;
+    const result = await api.correctCareLog(familyId, String(entry.id).replace(/^care-/, ""), {action, expectedUpdatedAt:entry.rawUpdatedAt, ...payload});
+    if(action === "delete") setDeletedEntryUndo({...result, familyId});
+    await refreshCorrectedEntries();
+    showToast?.({message: action === "move" ? "Entry moved" : action === "delete" ? "Entry deleted" : "Changes saved", type:"success"});
+  };
+  const entryActions = entry => canCorrectEntries && entry?.rawUpdatedAt ? <button type="button" aria-label={`Edit, move or delete ${entry.summary || "entry"}`} className="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-1 text-lg font-bold text-slate-700" onClick={()=>setEntryToEdit(entry)}>⋯</button> : null;
+
   const renderFormLastLoggedPanel = () => {
     const view = getFormLastLoggedConfig(activeSection?.title);
     if (!view) return null;
@@ -12778,6 +12796,7 @@ export default function KaylenCareMonitorDashboard({
                     {view.title}
                   </span>
                 </div>
+                {entryActions(entry)}
                 {entry.details?.length ? (
                   <p className="mt-2 line-clamp-3 text-xs font-semibold leading-5 text-slate-600">
                     {entry.details.slice(0, 3).join(" - ")}
@@ -13025,6 +13044,7 @@ export default function KaylenCareMonitorDashboard({
                         </span>
                       </button>
 
+                      {item.kind === "log" ? entryActions(item.entry) : null}
                       {isExpanded ? (
                         <div className="mt-3 rounded-xl border border-white/80 bg-white/80 p-3">
                           <p className="text-sm font-semibold leading-6 text-slate-700">
@@ -15991,6 +16011,9 @@ export default function KaylenCareMonitorDashboard({
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white to-slate-100 pb-[calc(6.75rem+env(safe-area-inset-bottom))] text-slate-900 md:pb-0">
+      {entryToEdit ? <CareEntryEditor key={entryToEdit.id} entry={entryToEdit} profiles={children} onClose={()=>setEntryToEdit(null)} onSave={correctEntry}/> : null}
+      {deletedEntryUndo ? <div role="status" className="fixed bottom-24 left-3 right-3 z-[101] flex items-center justify-between gap-2 rounded-xl bg-slate-900 p-4 text-white shadow-lg">Entry deleted.<button type="button" disabled={correctionBusy} className="font-bold underline" onClick={async()=>{setCorrectionBusy(true);try{await api.correctCareLog(deletedEntryUndo.familyId,deletedEntryUndo.id,{action:"restore",expectedUpdatedAt:deletedEntryUndo.updatedAt});setDeletedEntryUndo(null);await refreshCorrectedEntries();}catch(e){showToast?.({message:e.message,type:"error"});}finally{setCorrectionBusy(false);}}}>Undo</button><button type="button" onClick={()=>setDeletedEntryUndo(null)}>Dismiss</button></div> : null}
+
       <div className="mx-auto max-w-6xl px-4 py-4 md:px-6 md:py-8">
 
         {accountAccess && !accountAccess.canAddLogs ? (
