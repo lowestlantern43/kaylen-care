@@ -3945,7 +3945,7 @@ export default function KaylenCareMonitorDashboard({
   };
   const exportReportBuilderPdf = async () => {
     setIsExportingPdf(true);
-    try { await exportPdf(makeBuilderPdf(), 'familytrack-report-' + todayIsoValue() + '.pdf'); }
+    try { await exportPdf(makeBuilderPdf(), 'familytrack-report-' + todayIsoValue() + '.pdf'); noteActivation('report'); }
     catch(error){ showToast?.({message:error.message || "Could not export report",type:"error"}); }
     finally { setIsExportingPdf(false); }
   };
@@ -8048,6 +8048,7 @@ export default function KaylenCareMonitorDashboard({
       await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant });
       await exportPdf(pdf, filename || defaultReportPdfFilename(variant));
+      noteActivation('report');
       showToast?.({
         message:
           variant === "trends"
