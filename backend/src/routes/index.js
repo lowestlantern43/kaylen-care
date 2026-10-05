@@ -1,4 +1,5 @@
 import { adminEmailRouter } from "./adminEmail.routes.js";
+import { activationRouter } from './activation.routes.js';
 import { archivedProfilesRouter } from "./archivedProfiles.routes.js";
 import { insightsRouter } from "./insights.routes.js";
 import { widgetsRouter } from "./widgets.routes.js";
@@ -40,6 +41,7 @@ apiRouter.use("/notifications", requireAuth, requirePrivacyConsent, notification
 apiRouter.use("/public", publicRouter);
 apiRouter.use("/uploads", requireAuth, requirePrivacyConsent, uploadsRouter);
 apiRouter.use("/families", requireAuth, requirePrivacyConsent);
+apiRouter.use('/families/:familyId/activation', activationRouter);
 apiRouter.use("/families/:familyId/documents", documentsRouter);
 apiRouter.use("/families/:familyId/children", childrenRouter);
 apiRouter.use("/families/:familyId/care-logs", careLogsRouter);

@@ -2,10 +2,12 @@ import { createApp } from "./app.js";
 import { config, requireConfig } from "./config.js";
 import { runDueReminderScan } from "./services/pushNotifications.js";
 import { runAdminDigest } from "./services/adminDigest.js";
+import { ensureActivation, runActivationReminders } from './services/activation.js';
 
 requireConfig();
 
 const app = createApp();
+ensureActivation().catch(() => console.error('Guided activation unavailable; care logging is unaffected.'));
 
 const scanAdminDigest = () => runAdminDigest().catch(() => console.error('Admin digest scan failed; inspect owner insights status.'));
 setInterval(scanAdminDigest, 60 * 1000);
@@ -16,6 +18,16 @@ app.listen(config.port, () => {
 });
 
 if (config.notificationSchedulerEnabled) {
+  let activationRunning = false;
+  const activationScan = async () => {
+    if (activationRunning) return;
+    activationRunning = true;
+    try { await runActivationReminders(); }
+    catch { console.error('Guided activation reminder scan failed.'); }
+    finally { activationRunning = false; }
+  };
+  setInterval(activationScan, 5 * 60 * 1000);
+  setTimeout(activationScan, 45000);
   let isRunningReminderScan = false;
   const runScan = async () => {
     if (isRunningReminderScan) return;

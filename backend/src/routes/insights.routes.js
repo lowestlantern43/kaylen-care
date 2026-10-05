@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { activationMetrics } from '../services/activation.js';
 import { query } from '../db/pool.js';
 import { config } from '../config.js';
 import { sendAdminDigestTest } from '../services/adminDigest.js';
@@ -26,6 +27,9 @@ insightsRouter.post('/public/traffic',asyncHandler(async(req,res)=>{
 insightsRouter.use('/admin/insights',requireAuth,requirePlatformAdmin,(req,res,next)=>{res.set('Cache-Control','no-store');next();});
 insightsRouter.get('/admin/insights',asyncHandler(async(req,res)=>{
   res.json({data:{traffic:await trafficReport(req.query.days),digest:await digestSettings()},error:null});
+}));
+insightsRouter.get('/admin/insights/activation',asyncHandler(async(req,res)=>{
+  res.json({data:await activationMetrics(),error:null});
 }));
 insightsRouter.put('/admin/insights/digest',asyncHandler(async(req,res)=>{
   const recipient=String(req.body.recipient || '').trim().toLowerCase();
