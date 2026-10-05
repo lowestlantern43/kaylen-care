@@ -1606,6 +1606,7 @@ const emptyChildProfile = {
   triggers: "",
   calmingStrategies: "",
   eatingPreferences: "",
+  smartInsightsEnabled: false,
   feedingSettings: {route:"oral",fluidMode:"unsure",routes:[]},
   dailyFluidTargetMl: "",
   hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
@@ -8587,6 +8588,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </div>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
+                  {careProfileTab === "general" && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><label className="flex items-start gap-3 text-sm font-semibold"><input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={childProfile.smartInsightsEnabled === true} onChange={e=>setChildProfile(p=>({...p,smartInsightsEnabled:e.target.checked}))}/>Smart Insights for this care profile</label><p className="mt-2 text-xs leading-5 text-slate-600">Optional, subtle indicators for fluids logged, unresolved scheduled medication and an open sleep log. Fluid comparisons begin after at least five recorded days and adapt to this profile's history. They describe logs, not care quality or medical advice. Save this profile to apply; widgets update on their next refresh.</p></div>}
+
                   {careProfileTab === "feeding" && <FeedingSettings value={childProfile.feedingSettings} onChange={feedingSettings=>setChildProfile(p=>({...p,feedingSettings}))}/>}
                   {careProfileTab === "medication" ? (
                   <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">

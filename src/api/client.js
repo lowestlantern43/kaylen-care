@@ -155,6 +155,7 @@ async function uploadFamilyDocument(familyId, payload, file) {
 }
 
 export const api = {
+  smartInsights: (familyId,childId,timeZone) => request(`/families/${familyId}/children/${childId}/smart-insights?timeZone=${encodeURIComponent(timeZone)}`),
   activation: (familyId,payload={}) => request(`/families/${familyId}/activation`,{method:'POST',body:JSON.stringify(payload)}),
   activationInsights: () => request('/admin/insights/activation'),
   correctCareLog: (familyId,id,payload) => request(`/families/${familyId}/care-logs/${id}/correction`,{method:"POST",body:JSON.stringify(payload)}),

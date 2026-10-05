@@ -8,6 +8,12 @@ struct CareRecord: Codable {
     var label: String
     var timestamp: Double
 }
+struct SmartInsight: Codable {
+    var kind: String
+    var title: String
+    var detail: String
+    var checkedAt: Double?
+}
 struct MedicineRecord: Codable {
     var name: String
     var dose: String
@@ -39,6 +45,7 @@ struct ChildSnapshot: Codable, Identifiable {
     var canEndSleep: Bool?
     var sleepingSince: Double?
     var photo: String?
+    var smartInsights: [SmartInsight]?
 }
 struct WidgetSnapshot: Codable {
     var children: [ChildSnapshot]
@@ -202,7 +209,10 @@ struct CareWidgetView: View {
     }
     @ViewBuilder private func medicine(_ child: ChildSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Label("Medication", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 3) {
+                Label("Medication", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                insightIndicator(child, kind: "medication")
+            }
             if let med = child.medicines.first(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
                 Text(entry.configuration.showMedicine ? med.name : "Medication").font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 if entry.configuration.showMedicine { Text(med.dose).font(.caption).lineLimit(1) }
@@ -221,7 +231,10 @@ struct CareWidgetView: View {
     }
     @ViewBuilder private func fluids(_ child: ChildSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 5) {
-            Label("Fluids", systemImage: "drop.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+            HStack(spacing: 3) {
+                Label("Fluids", systemImage: "drop.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
+                insightIndicator(child, kind: "fluids")
+            }
             if sameDay {
                 Text("\(Int(child.fluid)) ml").font(.headline)
                 if child.target > 0 { ProgressView(value: min(child.fluid, child.target), total: child.target).tint(.cyan); Text("of \(Int(child.target)) ml").font(.caption) }
@@ -243,8 +256,11 @@ struct CareWidgetView: View {
                 } else {
                     Image(systemName: "moon.zzz.fill").font(.title2).foregroundStyle(.indigo)
                 }
-                Text(entry.date.timeIntervalSince1970 - started > 46800 ? "Sleep still running?" : "Sleeping")
-                    .font(.subheadline.weight(.semibold))
+                HStack(spacing: 3) {
+                    Text(entry.date.timeIntervalSince1970 - started > 46800 ? "Sleep still running?" : "Sleeping")
+                        .font(.subheadline.weight(.semibold))
+                    insightIndicator(child, kind: "sleep")
+                }
                 Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
                 if child.canEndSleep == true && entry.date.timeIntervalSince1970 - started <= 46800 {
                     sleepButton(child, action: "end", title: "Wake up", symbol: "sun.max.fill")
@@ -271,6 +287,14 @@ struct CareWidgetView: View {
         let parts = time.split(separator: ":").compactMap { Int($0) }
         guard parts.count == 2, let bedtime = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: entry.date) else { return false }
         return entry.date >= bedtime && (child.sleepCompletedAt ?? 0) < bedtime.timeIntervalSince1970
+    }
+    @ViewBuilder private func insightIndicator(_ child: ChildSnapshot, kind: String) -> some View {
+        // Expired hints disappear; the actual care widget never goes blank.
+        if sameDay, let insight = child.smartInsights?.first(where: { $0.kind == kind }),
+           entry.date.timeIntervalSince1970 - (insight.checkedAt ?? child.updated) < 1800 {
+            Image(systemName: "info.circle.fill").font(.system(size: 10)).foregroundStyle(.orange)
+                .accessibilityLabel("\(insight.title). Open FamilyTrack for details.")
+        }
     }
     private func sleepButton(_ child: ChildSnapshot, action: String, title: String, symbol: String) -> some View {
         Button(intent: SleepLogIntent(profileID: child.id, action: action, expectedSleepID: child.sleepLogId ?? "")) {
