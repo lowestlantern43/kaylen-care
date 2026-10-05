@@ -1,3 +1,4 @@
+import { normaliseFeed } from '../services/feeding.js';
 import { Router } from "express";
 import { query, withTransaction } from "../db/pool.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -47,14 +48,14 @@ function requireLogDate(body) {
   return logDate;
 }
 
-function jsonData(body) {
+function jsonData(body, category = body.category) {
   if (!body.data) return {};
 
   if (typeof body.data !== "object" || Array.isArray(body.data)) {
     throw badRequest("Log data must be an object.");
   }
 
-  return body.data;
+  try { return normaliseFeed(body.data, category); } catch(e) { throw badRequest(e.message); }
 }
 
 async function assertChildInFamily(childId, familyId) {
@@ -318,7 +319,7 @@ careLogsRouter.post('/:logId/correction', requireAtLeastRole('parent'),
  if(action==='restore' && (!old.deleted_at || Date.now()-new Date(old.deleted_at).getTime()>15*60*1000))throw badRequest('Undo is available for 15 minutes after deletion.');
  let changed;
  if(action==='edit'){
- const date=requireLogDate(req.body),time=optionalTime(req.body,'logTime'),data=jsonData(req.body),notes=optionalString(req.body,'notes');
+ const date=requireLogDate(req.body),time=optionalTime(req.body,'logTime'),data=jsonData(req.body,old.category),notes=optionalString(req.body,'notes');
  if(old.category==='sleep' && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.bedtime!==old.data?.bedtime))delete data.sleep_started_at;
  changed=await db.query('UPDATE care_logs SET log_date=$3,log_time=$4,data=$5,notes=$6 WHERE id=$1 AND family_id=$2 RETURNING updated_at',[id,familyId,date,time,JSON.stringify(data),notes]);
  }else if(action==='move')changed=await db.query('UPDATE care_logs SET child_id=$3 WHERE id=$1 AND family_id=$2 RETURNING updated_at',[id,familyId,target]);

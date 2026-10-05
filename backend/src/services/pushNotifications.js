@@ -425,6 +425,7 @@ const toFiniteNumber = (value) => {
 };
 
 const fluidMlFromLogData = (data = {}) => {
+  if (data.feeding) return Math.max(0, toFiniteNumber(data.amount));
   const entryType = String(data.entry_type || data.entryType || data.type || "").toLowerCase();
   if (entryType && !entryType.includes("drink") && !entryType.includes("fluid")) {
     return 0;
