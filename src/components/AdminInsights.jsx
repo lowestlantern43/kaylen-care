@@ -1,3 +1,4 @@
+import ActivationInsights from './ActivationInsights';
 import { useEffect,useState } from 'react';
 import { api } from '../api/client';
 
@@ -17,6 +18,7 @@ export default function AdminInsights(){
       <div className="mt-5 space-y-2" aria-label="Daily page views">{t.daily.length?t.daily.map(day=><div key={day.day} className="flex items-center gap-3 text-xs"><span className="w-24 shrink-0">{day.day}</span><div className="h-3 flex-1 rounded bg-slate-100"><div className="h-3 rounded bg-indigo-400" style={{width:`${Math.max(1,100*day.views/Math.max(...t.daily.map(d=>d.views))) }%`}}/></div><span>{day.views} views</span></div>):<p className="text-sm text-slate-500">No measured visits yet.</p>}</div></>:<p className="mt-4">Loading traffic…</p>}
     </div>
     {t?<div className="grid gap-4 md:grid-cols-3">{[['Popular pages',t.pages],['Referral sources',t.sources],['Devices',t.devices]].map(([title,rows])=><div className={box} key={title}><h3 className="font-bold">{title}</h3>{rows.length?rows.map(row=><div key={row.label} className="mt-3 flex justify-between gap-3 text-sm"><span className="break-all">{row.label}</span><strong>{row.views}</strong></div>):<p className="mt-3 text-sm text-slate-500">No data yet</p>}</div>)}</div>:null}
+    <ActivationInsights/>
     <div className={box}><h2 className="font-bold">Nightly admin update</h2><p className="mt-2 text-sm text-slate-500">Every night at 22:30 UK time. Includes new users, measured traffic, upcoming trial endings and recorded email activity. Subject: FamilyTrack Admin Update — date.</p>
       <label className="mt-4 block text-sm">Recipient email<input type="email" value={recipient} onChange={e=>setRecipient(e.target.value)} className="mt-1 block w-full rounded-lg border p-2"/></label>
       <label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Send nightly admin update</label>

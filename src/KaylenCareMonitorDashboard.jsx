@@ -1,3 +1,4 @@
+import ActivationCoach from './components/ActivationCoach';
 import FeedForm from './components/FeedForm';
 import {feedingEnabled,feedDetails,routeLabels} from './feeding';
 import CareEntryEditor from "./components/CareEntryEditor";
@@ -3937,9 +3938,12 @@ export default function KaylenCareMonitorDashboard({
     return createTableReport({childName, title:"Care report", range:reportBuilderFilters.startDate + " to " + reportBuilderFilters.endDate,
       sections: groups.map(group=>({title:group.label,columns,rows:group.entries.map(entry=>keys.map(key=>getReportBuilderFieldValue(entry,key,childName)))}))});
   };
+  const noteActivation = (action) => {
+    if (useSaasApi && familyId) api.activation(familyId,{action}).then(()=>window.dispatchEvent(new Event('familytrack:activation-report'))).catch(()=>{});
+  };
   const exportReportBuilderPdf = async () => {
     setIsExportingPdf(true);
-    try { makeBuilderPdf().save('familytrack-report-' + todayIsoValue() + '.pdf'); }
+    try { makeBuilderPdf().save('familytrack-report-' + todayIsoValue() + '.pdf'); noteActivation('report'); }
     catch(error){ showToast?.({message:error.message || "Could not export report",type:"error"}); }
     finally { setIsExportingPdf(false); }
   };
@@ -8001,6 +8005,7 @@ export default function KaylenCareMonitorDashboard({
       await waitForReportPdfReady();
       const pdf = await createReportPdf({ variant });
       pdf.save(filename || defaultReportPdfFilename(variant));
+      noteActivation('report');
       showToast?.({
         message:
           variant === "trends"
@@ -8063,6 +8068,7 @@ export default function KaylenCareMonitorDashboard({
         pdfBase64,
       });
 
+      noteActivation('share');
       setIsReportEmailOpen(false);
       setReportEmailForm({
         recipientEmail: "",
@@ -16085,7 +16091,9 @@ export default function KaylenCareMonitorDashboard({
           </div>
         </div>
 
-        {showOnboardingChecklist ? (
+        {useSaasApi && familyId && !isReadOnly ? <ActivationCoach key={familyId} familyId={familyId} revision={loadedLogs.loadedAt}
+          onAdd={()=>setQuickAddOpen(true)} onReminders={onOpenNotifications} onReports={()=>openOnboardingItem('reports')} onSettings={onOpenSettings}/> : null}
+        {!useSaasApi && showOnboardingChecklist ? (
           <section className="relative mb-4 rounded-[1.5rem] border border-indigo-100 bg-gradient-to-br from-indigo-50 via-white to-sky-50 p-4 pr-12 shadow-sm">
             <button
               type="button"
@@ -16142,7 +16150,7 @@ export default function KaylenCareMonitorDashboard({
           </section>
         ) : null}
 
-        {!isCareSnapshotPromptDismissed && isModuleEnabled("snapshot") ? (
+        {!useSaasApi && !isCareSnapshotPromptDismissed && isModuleEnabled("snapshot") ? (
         <section className="relative mb-5 rounded-[1.5rem] border border-cyan-100 bg-cyan-50/80 p-4 pr-12 shadow-sm">
           <button
             type="button"
