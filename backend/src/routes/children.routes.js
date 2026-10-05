@@ -1,4 +1,5 @@
 import { validateFeedingSettings } from '../services/feeding.js';
+import {widgetSnapshot} from '../services/widgetSnapshot.js';
 import { privatePhotoChild, retainedAvatar } from "../services/profilePhotos.js";
 import { Router } from "express";
 import { query } from "../db/pool.js";
@@ -30,6 +31,7 @@ const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
 async function ensureChildProfileHydrationSchema() {
   await query(`
     ALTER TABLE child_profiles
+      ADD COLUMN IF NOT EXISTS smart_insights_enabled BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS feeding_settings JSONB NOT NULL DEFAULT '{}'::JSONB,
       ADD COLUMN IF NOT EXISTS usual_bedtime TEXT,
       ADD COLUMN IF NOT EXISTS hydration_checkpoints JSONB NOT NULL DEFAULT
@@ -66,6 +68,7 @@ const profileFields = [
   "sleepPreferences",
   "usualBedtime",
   "feedingSettings",
+  "smartInsightsEnabled",
   "toiletingNotes",
   "sensoryNeeds",
   "schoolEhcpNotes",
@@ -91,6 +94,7 @@ const profileColumnMap = {
   sleepPreferences: "sleep_preferences",
   usualBedtime: "usual_bedtime",
   feedingSettings: "feeding_settings",
+  smartInsightsEnabled: "smart_insights_enabled",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
   schoolEhcpNotes: "school_ehcp_notes",
@@ -342,6 +346,7 @@ childrenRouter.get(
           sleep_preferences AS "sleepPreferences",
           usual_bedtime AS "usualBedtime",
           feeding_settings AS "feedingSettings",
+          smart_insights_enabled AS "smartInsightsEnabled",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -371,7 +376,7 @@ childrenRouter.put(
       throw badRequest("Usual bedtime must be a valid HH:mm time.");
     }
     const values = profileFields.map((field) =>
-      field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
+      field === "smartInsightsEnabled" ? smartInsightsBoolean(req.body.smartInsightsEnabled) : field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
         ? optionalTime(req.body, field)
         : field === "dailyFluidTargetMl"
         ? optionalInteger(req.body, field, "Daily fluid target")
@@ -386,7 +391,7 @@ childrenRouter.put(
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
     const updateColumns = profileFields.map(
-      (field) => ["usualBedtime", "feedingSettings"].includes(field) && !Object.hasOwn(req.body, field)
+      (field) => ["usualBedtime", "feedingSettings", "smartInsightsEnabled"].includes(field) && !Object.hasOwn(req.body, field)
         ? `${profileColumnMap[field]} = child_profiles.${profileColumnMap[field]}`
         : `${profileColumnMap[field]} = EXCLUDED.${profileColumnMap[field]}`,
     );
@@ -424,6 +429,7 @@ childrenRouter.put(
           sleep_preferences AS "sleepPreferences",
           usual_bedtime AS "usualBedtime",
           feeding_settings AS "feedingSettings",
+          smart_insights_enabled AS "smartInsightsEnabled",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -718,3 +724,15 @@ childrenRouter.delete(
 );
 
 function feedingSettingsJson(value) {try{return JSON.stringify(validateFeedingSettings(value));}catch(e){throw badRequest(e.message);}}
+
+function smartInsightsBoolean(value) {
+  if(value===undefined)return false;
+  if(typeof value!=='boolean')throw badRequest('Smart Insights must be on or off.');
+  return value;
+}
+childrenRouter.get('/:childId/smart-insights',asyncHandler(async(req,res)=>{
+  const childId=requireUuid(req.params.childId,'Care profile ID');
+  await assertChildInFamily(childId,req.familyMember.family_id);
+  const result=await widgetSnapshot(req.familyMember.family_id,req.query.timeZone || 'Europe/London',new Date(),{childId});
+  res.set('Cache-Control','no-store').json({data:{indicators:result.children[0]?.smartInsights || [],checkedAt:Date.now()},error:null});
+}));

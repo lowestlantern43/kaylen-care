@@ -60,7 +60,7 @@ test('routes are disabled by default, no cookie substitution, no family escalati
   const snapshot=await fetch(base+'/snapshot?timeZone=Europe%2FLondon',{headers:{Authorization:`Bearer ${data.token}`}});
   assert.equal(snapshot.status,200);assert.deepEqual((await snapshot.json()).data,{children:[]});
   const profileRead=calls.find(c=>c.sql.includes('FROM children c LEFT JOIN'));
-  assert.deepEqual(profileRead.params,['family']);assert.ok(profileRead.sql.includes('c.deleted_at IS NULL'));
+  assert.deepEqual(profileRead.params,['family',null]);assert.ok(profileRead.sql.includes('c.deleted_at IS NULL'));
   await revokeSessionWidgets('private-session');
   assert.equal(calls.at(-1).params[0],widgetTokenHash('private-session'));
   assert.ok(calls.at(-1).sql.includes('session_hash=$1'));

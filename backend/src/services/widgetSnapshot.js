@@ -3,6 +3,7 @@ import { getFamilyPlanAccess } from './planAccess.js';
 import { query } from '../db/pool.js';
 import { badRequest, HttpError } from '../utils/httpError.js';
 import { pendingWidgetDoses } from './widgetMedication.js';
+import {deriveSmartInsights,ensureSmartInsightsSchema} from './smartInsights.js';
 
 // UTC-shaped dates allow calendar arithmetic without changing the process timezone.
 export function wallTime(date, zone) {
@@ -55,19 +56,24 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
   // whose recorded clock time is later today, matching the app dashboard.
   const fluid=rows.filter(r=>r.day===today&&r.category==='food'&&['drink','milk'].includes(r.type))
     .reduce((sum,r)=>sum+(Number.isFinite(Number(r.amount))?Math.max(0,Number(r.amount))*(r.unit==='ml'?1:29.5735):0),0);
+  const sleepingSince=sleep?.bedtime&&!sleep.wake_time?instant(sleep.date,zone):null;
+  const smartInsights=deriveSmartInsights({enabled:profile.smart_insights_enabled,rows,today,time:wallNow.toISOString().slice(11,16),nowEpoch:now.getTime()/1000,fluid,medicines,sleepingSince,
+    historyStartDay:rows.length>=3000?rows.map(r=>r.day).sort()[0]:null});
   return {id:`${familyId}:${profile.id}`,name:String(profile.first_name||'Care profile').slice(0,80),updated:now.getTime()/1000,
+    smartInsights,
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,
     usualBedtime:profile.usual_bedtime || null, sleepLogId:sleep?.id || '',
     sleepCompletedAt:sleepCompletedAt(sleep,zone),
-    sleepingSince:sleep?.bedtime&&!sleep.wake_time?instant(sleep.date,zone):null};
+    sleepingSince};
 }
 export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) {
   await ensureWidgetSleepSchema();
+  await ensureSmartInsightsSchema();
   if(typeof zone!=='string'||zone.length>100) throw badRequest('A timezone is required.');
   try { wallTime(now,zone); } catch { throw badRequest('Invalid timezone.'); }
-  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime
+  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime,cp.smart_insights_enabled
     FROM children c LEFT JOIN child_profiles cp ON cp.child_id=c.id AND cp.family_id=c.family_id
-    WHERE c.family_id=$1 AND c.deleted_at IS NULL ORDER BY c.id LIMIT 51`,[familyId]);
+    WHERE c.family_id=$1 AND c.deleted_at IS NULL AND ($2::uuid IS NULL OR c.id=$2) ORDER BY c.id LIMIT 51`,[familyId,access.childId||null]);
   if(profiles.length>50) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');
   const plan = access.sleep_actions ? await getFamilyPlanAccess(familyId) : {};
   const canStartSleep = !!(access.sleep_actions && ['owner','parent','carer'].includes(access.role) && plan.canAddLogs);
