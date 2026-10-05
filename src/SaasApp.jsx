@@ -1,3 +1,4 @@
+import FeedingSettings from './components/FeedingSettings';
 import AdminEmail from "./components/AdminEmail";
 import AdminInsights from "./components/AdminInsights";
 import PublicTraffic from "./components/PublicTraffic";
@@ -1608,6 +1609,7 @@ const emptyChildProfile = {
   triggers: "",
   calmingStrategies: "",
   eatingPreferences: "",
+  feedingSettings: {route:"oral",fluidMode:"unsure",routes:[]},
   dailyFluidTargetMl: "",
   hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
   hydrationNotificationTone: "gentle",
@@ -8591,6 +8593,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     ["general", "General"],
                     ["medication", "Medication"],
                     ["fluids", "Fluid intake"],
+                    ["feeding", "Feeding"],
                     ["support", "Support notes"],
                   ].map(([tabKey, label]) => (
                     <button
@@ -8609,6 +8612,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                 </div>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
+                  {careProfileTab === "feeding" && <FeedingSettings value={childProfile.feedingSettings} onChange={feedingSettings=>setChildProfile(p=>({...p,feedingSettings}))}/>}
                   {careProfileTab === "medication" ? (
                   <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
