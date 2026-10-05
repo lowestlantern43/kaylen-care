@@ -1,3 +1,4 @@
+import FeedingSettings from './components/FeedingSettings';
 import ArchivedCareProfiles from "./ArchivedCareProfiles";
 import { Capacitor as ActivityCapacitor } from "@capacitor/core";
 import { clearWidgets, consumeWidgetOpen } from "./nativeWidgets";
@@ -1605,6 +1606,7 @@ const emptyChildProfile = {
   triggers: "",
   calmingStrategies: "",
   eatingPreferences: "",
+  feedingSettings: {route:"oral",fluidMode:"unsure",routes:[]},
   dailyFluidTargetMl: "",
   hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
   hydrationNotificationTone: "gentle",
@@ -8579,11 +8581,13 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                     <option value="general">General</option>
                     <option value="medication">Medication</option>
                     <option value="fluids">Fluid intake</option>
+                    <option value="feeding">Feeding</option>
                     <option value="support">Support notes</option>
                   </select>
                 </div>
 
                 <form className="mt-4 space-y-4" onSubmit={saveChildProfile}>
+                  {careProfileTab === "feeding" && <FeedingSettings value={childProfile.feedingSettings} onChange={feedingSettings=>setChildProfile(p=>({...p,feedingSettings}))}/>}
                   {careProfileTab === "medication" ? (
                   <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

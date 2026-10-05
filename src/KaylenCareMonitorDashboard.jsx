@@ -1,3 +1,5 @@
+import FeedForm from './components/FeedForm';
+import {feedingEnabled,feedDetails,routeLabels} from './feeding';
 import CareEntryEditor from "./components/CareEntryEditor";
 import UnfinishedSleepPrompt from "./UnfinishedSleepPrompt";
 import { makeWidgetSnapshot, updateWidgets, widgetPhoto } from "./nativeWidgets";
@@ -677,6 +679,7 @@ const REPORT_BUILDER_GROUP_OPTIONS = [
 ];
 
 const REPORT_BUILDER_CATEGORY_OPTIONS = [
+  "Feeds",
   "Food",
   "Drink",
   "Medication",
@@ -719,7 +722,7 @@ const REPORT_BUILDER_PRESETS = [
     name: "Food & Drink Summary",
     layout: "summary",
     groupBy: "day",
-    categories: ["Food", "Drink"],
+    categories: ["Food", "Drink", "Feeds"],
     columns: ["date", "time", "category", "summary", "amount", "notes"],
   },
   {
@@ -757,6 +760,7 @@ const REPORT_BUILDER_PRESETS = [
 ];
 
 const getReportBuilderCategory = (entry) => {
+  if(entry.rawData?.feeding) return "Feeds";
   if (isMeasurementEntry(entry)) return "Measurements";
   if (entry?.section === "Food Diary") return entry?.isMilk ? "Drink" : "Food";
   if (entry?.section === "General Notes") return "Notes";
@@ -793,6 +797,7 @@ const getReportBuilderFieldValue = (entry, fieldKey, childName = "") => {
     case "summary":
       return entry?.summary || entry?.event || entry?.type || category;
     case "amount":
+      if(entry.rawData?.feeding) return `${entry.rawData.feed_given_ml||0}ml feed; ${entry.rawData.flush_before_ml||0} / ${entry.rawData.flush_after_ml||0}ml flushes`;
       if (fluidMl > 0) return `${Math.round(fluidMl)}ml`;
       return [entry?.amount, entry?.dose, entry?.doseAmount, entry?.intakeStatus]
         .filter(Boolean)
@@ -1289,7 +1294,11 @@ export default function KaylenCareMonitorDashboard({
     }
   });
 
+  const [feedEditor, setFeedEditor] = useState(null);
+  const [feedFormVersion, setFeedFormVersion] = useState(0);
+  useEffect(()=>{setFeedEditor(null);},[childId]);
   const sections = [
+    {title:"Feeds",subtitle:"Feeds, formula and water flushes",button:"Log feed",emoji:"F",color:"from-teal-400 to-emerald-600",soft:"bg-teal-50 border-teal-200"},
     {
       title: "Food Diary",
       subtitle: "Meals, drinks, amounts, and refusals",
@@ -1448,6 +1457,7 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const isSectionVisible = (section) => {
+    if(section.title === "Feeds") return useSaasApi && feedingEnabled(childProfile.feedingSettings);
     const moduleKey = sectionModuleKey(section.title);
     if (moduleKey === "hidden") return false;
     return moduleKey ? isModuleEnabled(moduleKey) : true;
@@ -2837,8 +2847,8 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const mapSaasFoodEntry = (row) => {
-    const isDrink = row.data?.type === "drink" || row.data?.type === "milk";
-    const amount = row.data?.amount || "";
+    const isDrink = row.data?.feeding || row.data?.type === "drink" || row.data?.type === "milk";
+    const amount = row.data?.amount ?? "";
     const unit = row.data?.unit || "oz";
     const amountNumber = toFiniteNumber(amount);
 
@@ -2850,16 +2860,17 @@ export default function KaylenCareMonitorDashboard({
       time: row.logTime || "",
       amountOz: isDrink && unit === "oz" ? amountNumber : undefined,
       amountMl:
-        isDrink && amountNumber
+        isDrink
           ? unit === "ml"
             ? amountNumber
             : amountNumber * 29.5735
           : undefined,
       isMilk: isDrink,
-      summary: `${row.data?.item || (isDrink ? "Drink" : "Food entry")} - ${
+      summary: row.data?.feeding ? `${row.data.item} — ${row.data.feed_status === "active" ? "Feed running" : `${row.data.feed_given_ml || 0}ml given`} · ${row.data.flush_before_ml||0} / ${row.data.flush_after_ml||0}ml flushes` : `${row.data?.item || (isDrink ? "Drink" : "Food entry")} - ${
         isDrink ? `${amount || 0}${unit}` : amount || "No amount"
       }`,
       details: [
+        ...(row.data?.feeding ? feedDetails(row.data) : []),
         row.data?.intake_status
           ? `Intake: ${row.data.intake_status}`
           : null,
@@ -2978,6 +2989,7 @@ export default function KaylenCareMonitorDashboard({
         ? `Scheduled dose: ${formatTimeWindowLabel(row.data.scheduled_window)}`
         : null,
       row.data?.scheduled_day ? `Scheduled day: ${row.data.scheduled_day}` : null,
+      row.data?.route ? `Route: ${routeLabels[row.data.route] || row.data.route}` : null,
       `Given by: ${row.data?.given_by || "Not set"}`,
       row.notes ? `Notes: ${row.notes}` : null,
       row.createdByName ? `Logged by: ${row.createdByName}` : null,
@@ -3646,6 +3658,7 @@ export default function KaylenCareMonitorDashboard({
     if (!activeSection) return "";
 
     switch (activeSection.title) {
+      case "Feeds": return "Record feeds, formula and water flushes.";
       case "Food Diary":
         return "Food saves into the same shared log as everything else.";
       case "Medication":
@@ -4827,7 +4840,7 @@ export default function KaylenCareMonitorDashboard({
     );
     const latestDrink = latestEntryForSection(
       "Food Diary",
-      (entry) => entry.isMilk,
+      (entry) => entry.isMilk && !entry.rawData?.feeding,
     );
     const latestToileting = latestEntryForSection("Toileting");
     const latestBehaviour = latestEntryForSection("Behaviour");
@@ -4849,6 +4862,7 @@ export default function KaylenCareMonitorDashboard({
     const latestDocument = documents?.[0] || null;
 
     return [
+      ...(useSaasApi && feedingEnabled(childProfile.feedingSettings) ? [{key:"feeds",title:"Feeds",value:sharedLog.find(e=>e.rawData?.feeding)?.summary || "Log feed or water flush",meta:"Formula, volumes and tolerance",section:"Feeds",module:"feeds"}] : []),
       {
         key: "sleep",
         title: "Sleep last night",
@@ -4946,7 +4960,7 @@ export default function KaylenCareMonitorDashboard({
         module: "documents",
       },
     ].filter((card) => isModuleEnabled(card.module));
-  }, [documents, sharedLog, todayDashboard, visibleModules]);
+  }, [documents, sharedLog, todayDashboard, visibleModules, childProfile.feedingSettings]);
 
   const recentActivityPreview = useMemo(
     () => sharedLog.slice(0, 5),
@@ -6608,6 +6622,7 @@ export default function KaylenCareMonitorDashboard({
               : selectedGivenBy || "Not set",
             scheduled_window: medicationForm.scheduledWindow || "",
             scheduled_day: medicationForm.scheduledDay || "",
+            ...(medicationForm.route ? {route:medicationForm.route} : {}),
           },
           notes: medicationForm.notes || "",
         });
@@ -8945,6 +8960,7 @@ export default function KaylenCareMonitorDashboard({
           </>
         ) : null}
 
+        {feedingEnabled(childProfile.feedingSettings) && <div className={`${cardClassName} md:col-span-2`}><label className="block text-sm font-semibold">Medication route (optional)<select className="mt-1 w-full rounded-xl border bg-white p-3" value={medicationForm.route||''} onChange={e=>setMedicationForm({...medicationForm,route:e.target.value})}><option value="">Not recorded</option>{Object.entries(routeLabels).filter(([r])=>r!=='combination').map(([r,l])=><option key={r} value={r}>{l}</option>)}</select></label><p className="mt-2 text-sm text-slate-600">Record associated water once in Feeds → Water flush only. Medication stays in this log so scheduled doses and widgets update normally.</p></div>}
         <div className={`${cardClassName} md:col-span-2`}>
           <label className="text-sm font-semibold text-slate-700">
             {isSkippedMedication ? "Reason / details" : "Notes"}
@@ -12668,6 +12684,7 @@ export default function KaylenCareMonitorDashboard({
 
   const getFormLastLoggedConfig = (sectionTitle) => {
     const configBySection = {
+      Feeds:{key:"feeds",title:"Feeds",section:"Food Diary",tone:"from-teal-400 to-emerald-500",empty:"No feeds logged in the last 24 hours."},
       Hydration: {
         key: "drink",
         title: "Hydration",
@@ -12763,6 +12780,7 @@ export default function KaylenCareMonitorDashboard({
 
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     const matchesView = (entry) => {
+      if(view.key === "feeds") return !!entry.rawData?.feeding;
       if (view.key === "drink") {
         return entry.section === "Food Diary" && entry.isMilk;
       }
@@ -15678,6 +15696,18 @@ export default function KaylenCareMonitorDashboard({
     if (!activeSection) return null;
 
     switch (activeSection.title) {
+      case "Feeds":
+        return <div className="mt-4">
+          {sharedLog.filter(e=>e.rawData?.feeding && e.rawData.feed_status==='active').map(e=><div key={e.id} className="mb-3 rounded-xl border border-teal-200 bg-teal-50 p-3"><p className="font-bold">{e.summary}</p><p className="text-sm">Started {e.rawData.feed_start}</p>{canCorrectEntries&&<button type="button" className="mt-2 rounded-xl bg-teal-700 px-4 py-2 text-white" onClick={()=>setFeedEditor(e)}>Finish feed</button>}{entryActions(e)}</div>)}
+          {!isReadOnly && accountAccess?.canAddLogs !== false ? <FeedForm key={`${childId}:${feedFormVersion}:${feedEditor?.id||'new'}`} settings={childProfile.feedingSettings} entry={feedEditor} canStart={canCorrectEntries} presets={sharedLog.filter(e=>e.rawData?.feeding && e.rawData.feed_method!=='flush').slice(0,6)} onCancel={feedEditor?()=>setFeedEditor(null):undefined} onSave={async(data,notes,entry)=>{
+            const payload={childId,category:'food',logDate:data.feed_start.slice(0,10),logTime:data.feed_start.slice(11,16),data,notes};
+            if(entry) await api.correctCareLog(familyId,entry.id.replace(/^care-/,''),{action:'edit',expectedUpdatedAt:entry.rawUpdatedAt,...payload});
+            else await api.createCareLog(familyId,payload);
+            setFeedEditor(null);setFeedFormVersion(n=>n+1);showToast?.({message:'Feed saved',type:'success'});
+            try {await refreshCorrectedEntries();} catch {showToast?.({message:'Feed saved. Refresh the diary to see it.',type:'success'});}
+          }}/> : <p className="text-sm">Your access does not allow new feed entries.</p>}
+        </div>;
+
       case "Food Diary":
         return renderFoodForm();
       case "Hydration":
