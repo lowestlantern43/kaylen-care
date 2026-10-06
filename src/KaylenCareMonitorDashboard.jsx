@@ -1,3 +1,5 @@
+import AttendanceForm from './components/AttendanceForm';
+import {attendanceLabels,attendanceDetails} from './attendance';
 import SmartInsightBadge, {useSmartInsights} from './components/SmartInsightBadge';
 import ActivationCoach from './components/ActivationCoach';
 import FeedForm from './components/FeedForm';
@@ -677,6 +679,7 @@ const REPORT_BUILDER_GROUP_OPTIONS = [
 ];
 
 const REPORT_BUILDER_CATEGORY_OPTIONS = [
+  "Attendance",
   "Feeds",
   "Food",
   "Drink",
@@ -1302,10 +1305,12 @@ export default function KaylenCareMonitorDashboard({
     }
   });
 
+  const [attendanceVersion,setAttendanceVersion]=useState(0);
   const [feedEditor, setFeedEditor] = useState(null);
   const [feedFormVersion, setFeedFormVersion] = useState(0);
   useEffect(()=>{setFeedEditor(null);},[childId]);
   const sections = [
+    {title:"Attendance",subtitle:"School and nursery attendance",button:"Log attendance",emoji:"S",color:"from-indigo-400 to-violet-600",soft:"bg-indigo-50 border-indigo-200"},
     {title:"Feeds",subtitle:"Feeds, formula and water flushes",button:"Log feed",emoji:"F",color:"from-teal-400 to-emerald-600",soft:"bg-teal-50 border-teal-200"},
     {
       title: "Food Diary",
@@ -1465,6 +1470,7 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const isSectionVisible = (section) => {
+    if(section.title === "Attendance") return useSaasApi && childProfile.attendanceEnabled === true;
     if(section.title === "Feeds") return useSaasApi && feedingEnabled(childProfile.feedingSettings);
     const moduleKey = sectionModuleKey(section.title);
     if (moduleKey === "hidden") return false;
@@ -3173,7 +3179,11 @@ export default function KaylenCareMonitorDashboard({
   };
 
   const mapSaasCareLogEntry = (row) => {
-    const mapped =
+    const mapped = row.category==='general' && row.data?.attendance ? {
+      id:`care-${row.id}`,createdAt:row.createdAt,section:'Attendance',date:formatDisplayDateFromIso(row.logDate),time:row.data.arrival||'',
+      summary:attendanceLabels[row.data.attendanceStatus]||'Attendance',status:attendanceLabels[row.data.attendanceStatus],
+      details:[...attendanceDetails(row.data),row.notes?`Notes: ${row.notes}`:null,row.createdByName?`Logged by: ${row.createdByName}`:null].filter(Boolean)
+    } :
       row.category === "food"
         ? mapSaasFoodEntry(row)
         : row.category === "medication"
@@ -4232,6 +4242,7 @@ export default function KaylenCareMonitorDashboard({
 
   const timelineCategoryOptions = [
     "All",
+    "Attendance",
     "Food Diary",
     "Hydration",
     "Medication",
@@ -4825,6 +4836,7 @@ export default function KaylenCareMonitorDashboard({
     const latestDocument = documents?.[0] || null;
 
     return [
+      ...(useSaasApi && childProfile.attendanceEnabled ? [{key:'attendance',title:'School / Nursery',value:sharedLog.find(e=>e.rawData?.attendance && e.date===todayValue())?.summary||'Not recorded today',meta:'Attendance, closures and absence',section:'Attendance',module:'attendance'}] : []),
       ...(useSaasApi && feedingEnabled(childProfile.feedingSettings) ? [{key:"feeds",title:"Feeds",value:sharedLog.find(e=>e.rawData?.feeding)?.summary || "Log feed or water flush",meta:"Formula, volumes and tolerance",section:"Feeds",module:"feeds"}] : []),
       {
         key: "sleep",
@@ -4923,7 +4935,7 @@ export default function KaylenCareMonitorDashboard({
         module: "documents",
       },
     ].filter((card) => isModuleEnabled(card.module));
-  }, [documents, sharedLog, todayDashboard, visibleModules, childProfile.feedingSettings]);
+  }, [documents, sharedLog, todayDashboard, visibleModules, childProfile.feedingSettings, childProfile.attendanceEnabled]);
 
   const recentActivityPreview = useMemo(
     () => sharedLog.slice(0, 5),
@@ -5001,6 +5013,7 @@ export default function KaylenCareMonitorDashboard({
   }, []);
 
   const reportCategoryOrder = [
+    "Attendance",
     "Food Diary",
     "Medication",
     "Sleep",
@@ -15640,6 +15653,7 @@ export default function KaylenCareMonitorDashboard({
             </div>
           </section>
 
+          {recentEntries.some(e=>e.rawData?.attendance) && <section className="rounded-2xl border bg-white p-4"><h3 className="font-bold">School / Nursery attendance</h3><p className="mt-1 text-xs text-slate-500">Recorded days in the selected period. Closures and unrecorded days are not counted as absences; part-day appointments are shown separately.</p><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{Object.entries(attendanceLabels).map(([key,label])=>{const count=recentEntries.filter(e=>e.rawData?.attendance && e.rawData.attendanceStatus===key && (key!=='medical'||!e.rawData.partDay)).length;return count?<div key={key} className="rounded-xl bg-indigo-50 p-3 text-sm"><strong>{count}</strong> {label}</div>:null;})}<div className="rounded-xl bg-indigo-50 p-3 text-sm"><strong>{recentEntries.filter(e=>e.rawData?.attendance && e.rawData.attendanceStatus==='medical' && e.rawData.partDay).length}</strong> Part-day medical appointment</div></div></section>}
           <section className="rounded-2xl border bg-white p-4"><h3 className="text-lg font-bold">Details to include in export</h3><p className="mt-1 text-sm text-slate-600">The summary above covers the selected period and category filter. These choices control detailed rows in the PDF and emailed PDF.</p><div className="mt-3 grid gap-2 sm:grid-cols-3">{REPORT_BUILDER_CATEGORY_OPTIONS.map(category=><label key={category} className="flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-sm"><input type="checkbox" checked={fullExportCategories.includes(category)} onChange={()=>setFullExportCategories(current=>current.includes(category)?current.filter(item=>item!==category):[...current,category])}/>{category}</label>)}</div><label className="mt-3 flex items-center gap-2 text-sm"><input type="checkbox" checked={fullExportProfile} onChange={event=>setFullExportProfile(event.target.checked)}/>Include care profile</label><label className="mt-3 block text-sm font-bold">PDF layout<select className={reportInputClassName} value={fullExportLayout} onChange={event=>setFullExportLayout(event.target.value)}><option value="category">Grouped category tables</option><option value="timeline">Chronological timeline table</option></select></label></section>
           </> : null}
 
@@ -15655,6 +15669,17 @@ export default function KaylenCareMonitorDashboard({
     if (!activeSection) return null;
 
     switch (activeSection.title) {
+      case "Attendance":
+        return <div className="mt-4">
+          {!isReadOnly && accountAccess?.canAddLogs !== false && <AttendanceForm key={`${childId}:${attendanceVersion}`} onSave={async payload=>{
+            await api.saveAttendance(familyId,{childId,...payload});setAttendanceVersion(n=>n+1);
+            showToast?.({message:'Attendance saved',type:'success'});try{await refreshCorrectedEntries();}catch{showToast?.({message:'Saved. Refresh to see attendance.',type:'success'});}
+          }}/>}
+          <h3 className="mb-2 mt-6 font-bold">Recorded attendance</h3>
+          <p className="mb-3 text-xs text-slate-500">Edit a day to add collection time or correct its status. Holiday ranges are saved as separate days.</p>
+          {sharedLog.filter(e=>e.rawData?.attendance).slice(0,60).map(e=><div key={e.id} className="mb-2 rounded-xl border bg-white p-3"><p className="font-bold">{e.date} · {e.summary}</p>{attendanceDetails(e.rawData).map(t=><p key={t} className="text-sm">{t}</p>)}{e.rawNotes&&<p className="text-sm">{e.rawNotes}</p>}{entryActions(e)}</div>)}
+        </div>;
+
       case "Feeds":
         return <div className="mt-4">
           {sharedLog.filter(e=>e.rawData?.feeding && e.rawData.feed_status==='active').map(e=><div key={e.id} className="mb-3 rounded-xl border border-teal-200 bg-teal-50 p-3"><p className="font-bold">{e.summary}</p><p className="text-sm">Started {e.rawData.feed_start}</p>{canCorrectEntries&&<button type="button" className="mt-2 rounded-xl bg-teal-700 px-4 py-2 text-white" onClick={()=>setFeedEditor(e)}>Finish feed</button>}{entryActions(e)}</div>)}
