@@ -94,6 +94,7 @@ careLogsRouter.get(
 
     const params = [familyId];
     const where = ["cl.family_id = $1", "cl.deleted_at IS NULL", "c.deleted_at IS NULL"];
+    if (req.query.attendance === "true") where.push("cl.category = 'general' AND cl.data->>'attendance'='true'");
 
     if (childId) {
       params.push(childId);

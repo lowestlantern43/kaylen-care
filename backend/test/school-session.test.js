@@ -46,3 +46,8 @@ test('pickup follows selected weekdays without starting a school session',()=>{
  const weekday=projectWidget(configured,[],family,zone,now);assert.equal(weekday.schoolPickup,'15:15');assert.equal(weekday.schoolSince,null);
  assert.equal(projectWidget(configured,[],family,zone,new Date('2026-10-10T08:00:00Z')).schoolPickup,null);
 });
+
+test('part-day attendance clears live school state and preserves real recorded times',()=>{
+ const data=normaliseAttendance({attendance:true,attendanceStatus:'part_day',schoolActive:true,schoolStartedAt:now.toISOString(),arrival:'09:00',collection:'12:00'});
+ assert.equal(data.partDay,true);assert.equal(data.schoolActive,false);assert.equal(data.arrival,'09:00');assert.equal(data.collection,'12:00');assert.equal(activeSchoolRecord([{data}]),null);
+});
