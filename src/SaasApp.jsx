@@ -4928,7 +4928,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     event.preventDefault();
     if (!selectedFamilyId || !selectedChildId) return;
     // Native time pickers can commit their DOM value before React's change event.
-    const submittedBedtime = new FormData(event.currentTarget).get("usualBedtime");
+    const formData = new FormData(event.currentTarget);
+    const submittedBedtime = formData.get("usualBedtime");
+    const schoolSettings = {...(childProfile.schoolSettings || {}), days: {...childProfile.schoolSettings?.days}};
+    for (const day of ["mon","tue","wed","thu","fri","sat","sun"]) {
+      for (const field of ["departure","pickup"]) {
+        const value = formData.get(`school_${day}_${field}`);
+        if (value !== null) schoolSettings.days[day] = {...schoolSettings.days[day], [field]:String(value)};
+      }
+    }
 
     setIsSavingProfile(true);
     setError("");
@@ -4936,6 +4944,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     try {
       const profileToSave = {
         ...childProfile,
+        schoolSettings,
         ...(submittedBedtime !== null ? { usualBedtime: String(submittedBedtime) } : {}),
         currentMedications: serializeCareMedicationRows(careMedicationRows),
       };
