@@ -1,3 +1,4 @@
+import {validateSchoolSettings,ensureSchoolSettingsSchema} from '../services/schoolSettings.js';
 import { validateFeedingSettings } from '../services/feeding.js';
 import {widgetSnapshot} from '../services/widgetSnapshot.js';
 import { privatePhotoChild, retainedAvatar } from "../services/profilePhotos.js";
@@ -29,6 +30,7 @@ const DEFAULT_HYDRATION_CHECKPOINTS = [
 const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
 
 async function ensureChildProfileHydrationSchema() {
+  await ensureSchoolSettingsSchema();
   await query(`
     ALTER TABLE child_profiles
       ADD COLUMN IF NOT EXISTS attendance_enabled BOOLEAN NOT NULL DEFAULT false,
@@ -71,6 +73,7 @@ const profileFields = [
   "feedingSettings",
   "smartInsightsEnabled",
   "attendanceEnabled",
+  "schoolSettings",
   "toiletingNotes",
   "sensoryNeeds",
   "schoolEhcpNotes",
@@ -98,6 +101,7 @@ const profileColumnMap = {
   feedingSettings: "feeding_settings",
   smartInsightsEnabled: "smart_insights_enabled",
   attendanceEnabled: "attendance_enabled",
+  schoolSettings: "school_settings",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
   schoolEhcpNotes: "school_ehcp_notes",
@@ -351,6 +355,7 @@ childrenRouter.get(
           feeding_settings AS "feedingSettings",
           smart_insights_enabled AS "smartInsightsEnabled",
           attendance_enabled AS "attendanceEnabled",
+          school_settings AS "schoolSettings",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -380,7 +385,7 @@ childrenRouter.put(
       throw badRequest("Usual bedtime must be a valid HH:mm time.");
     }
     const values = profileFields.map((field) =>
-      field === "attendanceEnabled" ? smartInsightsBoolean(req.body.attendanceEnabled) : field === "smartInsightsEnabled" ? smartInsightsBoolean(req.body.smartInsightsEnabled) : field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
+      field === "schoolSettings" ? schoolSettingsJson(req.body.schoolSettings) : field === "attendanceEnabled" ? smartInsightsBoolean(req.body.attendanceEnabled) : field === "smartInsightsEnabled" ? smartInsightsBoolean(req.body.smartInsightsEnabled) : field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
         ? optionalTime(req.body, field)
         : field === "dailyFluidTargetMl"
         ? optionalInteger(req.body, field, "Daily fluid target")
@@ -395,7 +400,7 @@ childrenRouter.put(
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
     const updateColumns = profileFields.map(
-      (field) => ["usualBedtime", "feedingSettings", "smartInsightsEnabled", "attendanceEnabled"].includes(field) && !Object.hasOwn(req.body, field)
+      (field) => ["usualBedtime", "feedingSettings", "smartInsightsEnabled", "attendanceEnabled", "schoolSettings"].includes(field) && !Object.hasOwn(req.body, field)
         ? `${profileColumnMap[field]} = child_profiles.${profileColumnMap[field]}`
         : `${profileColumnMap[field]} = EXCLUDED.${profileColumnMap[field]}`,
     );
@@ -435,6 +440,7 @@ childrenRouter.put(
           feeding_settings AS "feedingSettings",
           smart_insights_enabled AS "smartInsightsEnabled",
           attendance_enabled AS "attendanceEnabled",
+          school_settings AS "schoolSettings",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -741,3 +747,5 @@ childrenRouter.get('/:childId/smart-insights',asyncHandler(async(req,res)=>{
   const result=await widgetSnapshot(req.familyMember.family_id,req.query.timeZone || 'Europe/London',new Date(),{childId});
   res.set('Cache-Control','no-store').json({data:{indicators:result.children[0]?.smartInsights || [],checkedAt:Date.now()},error:null});
 }));
+
+function schoolSettingsJson(value){try{return JSON.stringify(validateSchoolSettings(value));}catch(e){throw badRequest(e.message);}}

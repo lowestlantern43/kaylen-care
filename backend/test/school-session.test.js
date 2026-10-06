@@ -2,6 +2,7 @@ import {test,mock} from 'node:test';
 import assert from 'node:assert/strict';
 let records=[],activeChild=true;const child='22222222-2222-4222-8222-222222222222',family='f';
 const query=async(sql,p=[])=>{
+ if(sql.includes('SELECT school_settings'))return {rows:[{school_settings:{name:'Demo School'}}]};
  if(sql.includes('FROM children'))return {rows:activeChild&&p[1]===family?[{id:child}]:[]};
  if(sql.includes('SELECT id,data,updated_at'))return {rows:records.filter(r=>r.family===p[0]&&r.child===p[1]&&!r.deleted)};
  if(sql.startsWith('INSERT INTO care_logs')){const row={id:'school-1',family:p[0],child:p[1],day:p[3],data:JSON.parse(p[5]),updated_at:new Date('2026-10-06T08:00:00Z')};records.push(row);return {rows:[row]};}
@@ -18,7 +19,7 @@ const project=(saved=records)=>projectWidget(profile,[...baseRows,...saved.filte
 test('home -> school -> persisted reopen -> home leaves one completed attendance and unchanged other widget data',async()=>{
  records=[];const before=project();assert.equal(before.schoolSince,null);
  await schoolSession(family,child,'user',{action:'start',expectedLogId:'',timeZone:zone},now);
- assert.equal(records.length,1);assert.equal(records[0].data.attendanceStatus,'attended');assert.equal(project().schoolSince,now.getTime()/1000);
+ assert.equal(records[0].data.setting,'Demo School');assert.equal(records.length,1);assert.equal(records[0].data.attendanceStatus,'attended');assert.equal(project().schoolSince,now.getTime()/1000);
  const reloaded=JSON.parse(JSON.stringify(records));assert.equal(project(reloaded).schoolSince,project().schoolSince);assert.equal(activeSchoolRecord(reloaded).id,'school-1');
  assert.equal(project().fluid,before.fluid);assert.deepEqual(project().medicines,before.medicines);assert.equal(project().sleepingSince,before.sleepingSince);
  await assert.rejects(()=>schoolSession(family,child,'other',{action:'start',expectedLogId:'',timeZone:zone},now));
@@ -38,4 +39,10 @@ test('absence edits, collection, deletion and future planned days never leave an
 test('school session rejects foreign and archived profiles and stale carers',async()=>{
  await assert.rejects(()=>schoolSession('other',child,'user',{action:'start',timeZone:zone},now));activeChild=false;await assert.rejects(()=>schoolSession(family,child,'user',{action:'start',timeZone:zone},now));activeChild=true;
  await assert.rejects(()=>schoolSession(family,child,'user',{action:'start',expectedLogId:'',timeZone:zone},now));
+});
+
+test('pickup follows selected weekdays without starting a school session',()=>{
+ const configured={...profile,school_settings:{days:{tue:{enabled:true,pickup:'15:15'}}}};
+ const weekday=projectWidget(configured,[],family,zone,now);assert.equal(weekday.schoolPickup,'15:15');assert.equal(weekday.schoolSince,null);
+ assert.equal(projectWidget(configured,[],family,zone,new Date('2026-10-10T08:00:00Z')).schoolPickup,null);
 });

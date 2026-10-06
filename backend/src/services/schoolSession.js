@@ -1,3 +1,4 @@
+import {ensureSchoolSettingsSchema} from './schoolSettings.js';
 import {withTransaction} from '../db/pool.js';
 import {badRequest,notFound,HttpError} from '../utils/httpError.js';
 import {wallTime} from './widgetSnapshot.js';
@@ -6,6 +7,7 @@ export async function schoolSession(familyId,childId,userId,body,now=new Date())
  if(!['start','end'].includes(body.action))throw badRequest('Choose Left for School or Back Home.');
  let wall;try{if(typeof body.timeZone!=='string'||body.timeZone.length>100)throw Error();wall=wallTime(now,body.timeZone);}catch{throw badRequest('A valid timezone is required.');}
  const day=wall.toISOString().slice(0,10),time=wall.toISOString().slice(11,16);
+ await ensureSchoolSettingsSchema();
  return withTransaction(async db=>{
   await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`attendance:${childId}`]);
   const child=await db.query('SELECT id FROM children WHERE id=$1 AND family_id=$2 AND deleted_at IS NULL FOR UPDATE',[childId,familyId]);if(!child.rows.length)throw notFound('Care profile not found.');
@@ -18,7 +20,8 @@ export async function schoolSession(familyId,childId,userId,body,now=new Date())
   if((current?.id||'')!==(body.expectedLogId||'') || (current && new Date(current.updated_at).getTime()!==new Date(body.expectedUpdatedAt).getTime()))throw new HttpError(409,'school_changed','Attendance has changed. Refresh before trying again.');
   if(body.action==='start' && current && current.data.attendanceStatus!=='attended')throw badRequest('This day is recorded as an absence or closure. Edit its status before starting school.');
   if(body.action==='start' && current?.data.schoolStartedAt)throw badRequest('This day already has a school period. Edit the saved attendance rather than replacing it.');
-  const data=normaliseAttendance(body.action==='start'?{...(current?.data||{}),attendance:true,attendanceStatus:'attended',arrival:time,collection:'',schoolStartedAt:now.toISOString(),schoolEndedAt:null,schoolActive:true}:{...current.data,collection:current.day===day?time:'',schoolEndedAt:now.toISOString(),schoolActive:false});
+  const settings=await db.query("SELECT school_settings FROM child_profiles WHERE child_id=$1 AND family_id=$2",[childId,familyId]);
+  const data=normaliseAttendance(body.action==='start'?{...(current?.data||{}),attendance:true,attendanceStatus:'attended',setting:current?.data?.setting||settings.rows[0]?.school_settings?.name||'',arrival:time,collection:'',schoolStartedAt:now.toISOString(),schoolEndedAt:null,schoolActive:true}:{...current.data,collection:current.day===day?time:'',schoolEndedAt:now.toISOString(),schoolActive:false});
   let saved;
   if(current)saved=await db.query('UPDATE care_logs SET data=$3,log_time=$4,updated_at=now() WHERE id=$1 AND family_id=$2 RETURNING id,updated_at',[current.id,familyId,JSON.stringify(data),data.arrival||null]);
   else saved=await db.query("INSERT INTO care_logs(family_id,child_id,created_by_user_id,category,log_date,log_time,data,notes) VALUES($1,$2,$3,'general',$4,$5,$6,'') RETURNING id,updated_at",[familyId,childId,userId,day,time,JSON.stringify(data)]);

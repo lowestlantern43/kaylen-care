@@ -1,3 +1,4 @@
+import {ensureSchoolSettingsSchema,schoolPlanForDay} from './schoolSettings.js';
 import {activeSchoolRecord} from './attendance.js';
 import { ensureWidgetSleepSchema } from './widgetSleepSchema.js';
 import { getFamilyPlanAccess } from './planAccess.js';
@@ -61,6 +62,7 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
   const smartInsights=deriveSmartInsights({enabled:profile.smart_insights_enabled,rows,today,time:wallNow.toISOString().slice(11,16),nowEpoch:now.getTime()/1000,fluid,medicines,sleepingSince,
     historyStartDay:rows.length>=3000?rows.map(r=>r.day).sort()[0]:null});
   return {id:`${familyId}:${profile.id}`,name:String(profile.first_name||'Care profile').slice(0,80),updated:now.getTime()/1000,
+    schoolPickup:schoolPlanForDay(profile.school_settings,today)?.pickup||null,
     smartInsights,
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,
     usualBedtime:profile.usual_bedtime || null, sleepLogId:sleep?.id || '',
@@ -69,10 +71,11 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
 }
 export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) {
   await ensureWidgetSleepSchema();
+  await ensureSchoolSettingsSchema();
   await ensureSmartInsightsSchema();
   if(typeof zone!=='string'||zone.length>100) throw badRequest('A timezone is required.');
   try { wallTime(now,zone); } catch { throw badRequest('Invalid timezone.'); }
-  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime,cp.smart_insights_enabled
+  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime,cp.smart_insights_enabled,cp.school_settings
     FROM children c LEFT JOIN child_profiles cp ON cp.child_id=c.id AND cp.family_id=c.family_id
     WHERE c.family_id=$1 AND c.deleted_at IS NULL AND ($2::uuid IS NULL OR c.id=$2) ORDER BY c.id LIMIT 51`,[familyId,access.childId||null]);
   if(profiles.length>50) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');

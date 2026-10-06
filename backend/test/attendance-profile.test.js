@@ -1,13 +1,14 @@
 import {test,mock} from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-const id='11111111-1111-4111-8111-111111111111';let enabled=true,active=true;
+const id='11111111-1111-4111-8111-111111111111';let enabled=true,active=true,schoolSettings={};
 const query=async(sql,params=[])=>{
   if(sql.includes('FROM children'))return {rows:active?[{id}]:[]};
   if(sql.includes('INSERT INTO child_profiles')){
     const fields=sql.match(/INSERT INTO child_profiles \(([\s\S]*?)\)/)[1].split(',').map(x=>x.trim());
     if(!sql.includes('attendance_enabled = child_profiles.attendance_enabled'))enabled=params[fields.indexOf('attendance_enabled')];
-    return {rows:[{attendanceEnabled:enabled}]};
+    if(!sql.includes('school_settings = child_profiles.school_settings'))schoolSettings=JSON.parse(params[fields.indexOf('school_settings')]);
+    return {rows:[{attendanceEnabled:enabled,schoolSettings}]};
   }
   return {rows:[]};
 };
@@ -26,6 +27,10 @@ test('attendance profile choice survives legacy saves, rejects invalid values an
     assert.equal((await save({})).status,200);assert.equal(enabled,false);
     assert.equal((await save({attendanceEnabled:'false'})).status,400);assert.equal(enabled,false);
     assert.equal((await save({attendanceEnabled:true},'viewer')).status,403);
+    const plan={name:'Test Nursery',days:{tue:{enabled:true,departure:'08:30',pickup:'15:00'}}};
+    assert.equal((await save({schoolSettings:plan})).status,200);assert.equal(schoolSettings.days.tue.pickup,'15:00');
+    assert.equal((await save({})).status,200);assert.equal(schoolSettings.name,'Test Nursery');
+    assert.equal((await save({schoolSettings:{days:{mon:{pickup:'99:99'}}}})).status,400);assert.equal(schoolSettings.days.tue.pickup,'15:00');
     active=false;assert.equal((await save({attendanceEnabled:true})).status,404);
     assert.equal((await fetch(base+'/smart-insights?timeZone=Europe%2FLondon')).status,404);
   }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
