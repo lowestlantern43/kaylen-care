@@ -1,3 +1,4 @@
+import SchoolSettings from './components/SchoolSettings';
 import FeedingSettings from './components/FeedingSettings';
 import ArchivedCareProfiles from "./ArchivedCareProfiles";
 import { Capacitor as ActivityCapacitor } from "@capacitor/core";
@@ -1608,6 +1609,7 @@ const emptyChildProfile = {
   eatingPreferences: "",
   smartInsightsEnabled: false,
   attendanceEnabled: false,
+  schoolSettings: {name:"",days:{}},
   feedingSettings: {route:"oral",fluidMode:"unsure",routes:[]},
   dailyFluidTargetMl: "",
   hydrationCheckpoints: DEFAULT_HYDRATION_CHECKPOINTS.map((item) => ({ ...item })),
@@ -8592,6 +8594,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                   {careProfileTab === "general" && <label className="flex items-start gap-3 rounded-2xl border bg-indigo-50 p-4 text-sm font-semibold"><input type="checkbox" className="mt-1 h-4 w-4" checked={childProfile.attendanceEnabled === true} onChange={e=>setChildProfile(p=>({...p,attendanceEnabled:e.target.checked}))}/><span>School / Nursery attendance<span className="mt-1 block font-normal text-slate-600">Show the attendance tile for this profile. Save this care profile to apply.</span></span></label>}
                   {careProfileTab === "general" && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><label className="flex items-start gap-3 text-sm font-semibold"><input className="mt-1 h-4 w-4 shrink-0" type="checkbox" checked={childProfile.smartInsightsEnabled === true} onChange={e=>setChildProfile(p=>({...p,smartInsightsEnabled:e.target.checked}))}/>Smart Insights for this care profile</label><p className="mt-2 text-xs leading-5 text-slate-600">Optional, subtle indicators for fluids logged, unresolved scheduled medication and an open sleep log. Fluid comparisons begin after at least five recorded days and adapt to this profile's history. They describe logs, not care quality or medical advice. Save this profile to apply; widgets update on their next refresh.</p></div>}
 
+                  {careProfileTab === "school" && <SchoolSettings value={childProfile.schoolSettings||{}} enabled={childProfile.attendanceEnabled} onEnabled={attendanceEnabled=>setChildProfile(p=>({...p,attendanceEnabled}))} onChange={schoolSettings=>setChildProfile(p=>({...p,schoolSettings}))}/>}
                   {careProfileTab === "feeding" && <FeedingSettings value={childProfile.feedingSettings} onChange={feedingSettings=>setChildProfile(p=>({...p,feedingSettings}))}/>}
                   {careProfileTab === "medication" ? (
                   <section className="rounded-2xl border border-rose-100 bg-rose-50 p-4">

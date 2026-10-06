@@ -1,3 +1,4 @@
+import {schoolPlanForDay} from './schoolSettings';
 import {activeSchoolRecord} from './attendance';
 import { pendingWidgetDoses } from './widgetMedication.js';
 import { api } from './api/client';
@@ -47,7 +48,7 @@ export function updateWidgets(scope, snapshot, profiles) {
   });
   return writes;
 }
-export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,fluid,usualBedtime,now=new Date(),entryDate}) {
+export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,fluid,usualBedtime,schoolSettings,now=new Date(),entryDate}) {
   const care = {};
   const sorted = entries.map(e=>({e,date:entryDate(e)})).filter(v=>v.date && Number.isFinite(v.date.getTime()) && v.date<=now).sort((a,b)=>b.date-a.date);
   for (const [key,match] of Object.entries({latest:()=>true,toileting:e=>e.section==='Toileting',sleep:e=>e.section==='Sleep',food:e=>e.section==='Food Diary'&&!e.isMilk})) {
@@ -61,7 +62,8 @@ export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,f
     !latestSleep.e.rawData?.wake_time && latestSleep.e.rawData?.bedtime
     ? latestSleep.date.getTime()/1000 : null;
   const school=activeSchoolRecord(entries.map(e=>({id:e.id,data:e.rawData})),now.getTime());
-  return {schoolSince:school?Date.parse(school.data.schoolStartedAt)/1000:null,id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince,usualBedtime:usualBedtime || null,sleepLogId:String(latestSleep?.e.id || '').replace(/^care-/, '')};
+  const day=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  return {schoolPickup:schoolPlanForDay(schoolSettings,day)?.pickup||null,schoolSince:school?Date.parse(school.data.schoolStartedAt)/1000:null,id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince,usualBedtime:usualBedtime || null,sleepLogId:String(latestSleep?.e.id || '').replace(/^care-/, '')};
 }
 
 // Store a tiny thumbnail, not a remote URL or a full-size profile photograph.

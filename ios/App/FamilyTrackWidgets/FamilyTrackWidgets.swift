@@ -45,6 +45,7 @@ struct ChildSnapshot: Codable, Identifiable {
     var canEndSleep: Bool?
     var sleepingSince: Double?
     var schoolSince: Double?
+    var schoolPickup: String?
     var photo: String?
     var smartInsights: [SmartInsight]?
 }
@@ -270,7 +271,9 @@ struct CareWidgetView: View {
                 Image(systemName: "building.2.fill").font(.title2).foregroundStyle(.indigo)
                 Text(entry.date.timeIntervalSince1970 - started > 64800 ? "School still active?" : "At School / Away")
                     .font(.subheadline.weight(.semibold)).lineLimit(2)
-                Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
+                if Calendar.current.isDate(Date(timeIntervalSince1970: started), inSameDayAs: entry.date), sameDay, let pickup = child.schoolPickup, !pickup.isEmpty {
+                    Text("Pickup \(pickup)").font(.caption.weight(.semibold))
+                } else { Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption) }
             } else if canOfferSleep(child) {
                 VStack(alignment: .center, spacing: 8) {
                     Image(systemName: "moon.stars.fill")

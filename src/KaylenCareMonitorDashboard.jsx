@@ -4792,7 +4792,7 @@ export default function KaylenCareMonitorDashboard({
     if (!logsReady || !currentUser?.id || widgetLoadedKey !== `${familyId}:${childId}`) return;
     const snapshot = makeWidgetSnapshot({ id: `${familyId}:${childId}`, name: childName,
       entries: sharedLog, medicines: profileMedicationOptions, scheduled: isMedicationScheduledForDate,
-      usualBedtime: childProfile.usualBedtime, target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
+      schoolSettings:childProfile.schoolSettings, usualBedtime: childProfile.usualBedtime, target: todayDashboard.fluidTargetMl, fluid: todayDashboard.fluidMl, entryDate: getEntryDateTime });
     let cancelled = false;
     const selected = children.find(child => child.id === childId);
     const profiles = children.map(child => ({ id: `${familyId}:${child.id}`, name: child.firstName || child.first_name || child.name || 'Care profile' }));
@@ -15728,8 +15728,8 @@ export default function KaylenCareMonitorDashboard({
     switch (activeSection.title) {
       case "Attendance":
         return <div className="mt-4">
-          <SchoolSessionControls key={childId} entries={sharedLog} canStart={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEnd={logsReady && !isReadOnly && accountAccess?.canEditLogs !== false} onAction={async payload=>{try{await api.schoolSession(familyId,{childId,...payload});await refreshCorrectedEntries();showToast?.({message:payload.action==='start'?'At School / Away':'Back Home recorded',type:'success'});}catch(e){await refreshCorrectedEntries().catch(()=>{});throw e;}}}/>
-          {!isReadOnly && accountAccess?.canAddLogs !== false && <AttendanceForm key={`${childId}:${attendanceVersion}`} onSave={async payload=>{
+          <SchoolSessionControls settings={childProfile.schoolSettings} key={childId} entries={sharedLog} canStart={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEnd={logsReady && !isReadOnly && accountAccess?.canEditLogs !== false} onAction={async payload=>{try{await api.schoolSession(familyId,{childId,...payload});await refreshCorrectedEntries();showToast?.({message:payload.action==='start'?'At School / Away':'Back Home recorded',type:'success'});}catch(e){await refreshCorrectedEntries().catch(()=>{});throw e;}}}/>
+          {!isReadOnly && accountAccess?.canAddLogs !== false && <AttendanceForm settings={childProfile.schoolSettings} key={`${childId}:${attendanceVersion}`} onSave={async payload=>{
             await api.saveAttendance(familyId,{childId,...payload});setAttendanceVersion(n=>n+1);
             showToast?.({message:'Attendance saved',type:'success'});try{await refreshCorrectedEntries();}catch{showToast?.({message:'Saved. Refresh to see attendance.',type:'success'});}
           }}/>}
