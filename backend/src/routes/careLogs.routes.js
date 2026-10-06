@@ -1,3 +1,4 @@
+import {normaliseAttendance,attendanceDates} from '../services/attendance.js';
 import { normaliseFeed } from '../services/feeding.js';
 import { Router } from "express";
 import { query, withTransaction } from "../db/pool.js";
@@ -55,7 +56,7 @@ function jsonData(body, category = body.category) {
     throw badRequest("Log data must be an object.");
   }
 
-  try { return normaliseFeed(body.data, category); } catch(e) { throw badRequest(e.message); }
+  try { return normaliseAttendance(normaliseFeed(body.data, category), category); } catch(e) { throw badRequest(e.message); }
 }
 
 async function assertChildInFamily(childId, familyId) {
@@ -142,6 +143,24 @@ careLogsRouter.get(
   }),
 );
 
+// A range is atomic; repeated submissions do not duplicate identical daily records.
+careLogsRouter.post('/attendance',requireAtLeastRole('carer'),requirePlanAccess('addLog'),asyncHandler(async(req,res)=>{
+ const familyId=req.familyMember.family_id,childId=requireUuid(req.body.childId,'Care profile');
+ let dates,data;try{dates=attendanceDates(req.body.startDate,req.body.endDate||req.body.startDate);data=normaliseAttendance({...req.body.data,attendance:true},'general');}catch(e){throw badRequest(e.message);}
+ if(dates.length>1&&!['school_holiday','holiday','training','sick','other'].includes(data.attendanceStatus))throw badRequest('Record attendance and appointments one day at a time.');
+ const notes=optionalString(req.body,'notes');
+ await assertChildInFamily(childId,familyId);
+ const count=await withTransaction(async db=>{
+  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`attendance:${childId}`]);
+  let saved=0;
+  for(const date of dates){
+   const existing=await db.query("SELECT data,notes FROM care_logs WHERE family_id=$1 AND child_id=$2 AND log_date=$3 AND category='general' AND data->>'attendance'='true' AND deleted_at IS NULL",[familyId,childId,date]);
+   if(existing.rows.length){if(existing.rows.length===1&&JSON.stringify(normaliseAttendance(existing.rows[0].data))===JSON.stringify(data)&&(existing.rows[0].notes||'')===(notes||''))continue;throw badRequest(`Attendance already recorded for ${date}. Edit the existing day instead.`);}
+   await db.query("INSERT INTO care_logs(family_id,child_id,created_by_user_id,category,log_date,log_time,data,notes) VALUES($1,$2,$3,'general',$4,$5,$6,$7)",[familyId,childId,req.user.id,date,data.arrival||null,JSON.stringify(data),notes]);saved++;
+  }return saved;
+ });res.status(201).json({data:{saved:count},error:null});
+}));
+
 careLogsRouter.post(
   "/",
   requireAtLeastRole("carer"),
@@ -153,6 +172,7 @@ careLogsRouter.post(
     const logDate = requireLogDate(req.body);
     const logTime = optionalTime(req.body, "logTime");
     const data = jsonData(req.body);
+    if(data.attendance) throw badRequest("Use the attendance endpoint or edit the saved attendance day.");
     const notes = optionalString(req.body, "notes");
 
     await assertChildInFamily(childId, familyId);
@@ -235,6 +255,7 @@ careLogsRouter.patch(
     const logDate = requireLogDate(req.body);
     const logTime = optionalTime(req.body, "logTime");
     const data = jsonData(req.body);
+    if(data.attendance) throw badRequest("Use the attendance endpoint or edit the saved attendance day.");
     const notes = optionalString(req.body, "notes");
 
     const { rows } = await query(
@@ -315,6 +336,14 @@ careLogsRouter.post('/:logId/correction', requireAtLeastRole('parent'),
  if(old.category==='sleep' && !old.data?.wake_time && ['move','restore'].includes(action)) {
  const other=await db.query("SELECT id FROM care_logs WHERE family_id=$1 AND child_id=$2 AND id<>$3 AND category='sleep' AND deleted_at IS NULL AND COALESCE(data->>'wake_time','')='' LIMIT 1",[familyId,target,id]);
  if(other.rows.length)throw badRequest('This profile already has an active sleep. End or clear it first.');
+ }
+ if(old.data?.attendance && action!=='delete'){
+ const date=action==='edit'?requireLogDate(req.body):String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date);
+ try{attendanceDates(date);}catch(e){throw badRequest(e.message);}
+ if(action==='edit' && req.body.data?.attendance!==true)throw badRequest('Keep attendance details when editing this day.');
+ await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`attendance:${target}`]);
+ const duplicate=await db.query("SELECT id FROM care_logs WHERE family_id=$1 AND child_id=$2 AND id<>$3 AND log_date=$4 AND category='general' AND data->>'attendance'='true' AND deleted_at IS NULL",[familyId,target,id,date]);
+ if(duplicate.rows.length)throw badRequest('Attendance is already recorded for that profile and date.');
  }
  if(action==='restore' && (!old.deleted_at || Date.now()-new Date(old.deleted_at).getTime()>15*60*1000))throw badRequest('Undo is available for 15 minutes after deletion.');
  let changed;

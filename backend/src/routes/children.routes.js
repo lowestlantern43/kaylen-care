@@ -31,6 +31,7 @@ const DEFAULT_QUIET_HOURS = { enabled: false, start: "21:00", end: "07:00" };
 async function ensureChildProfileHydrationSchema() {
   await query(`
     ALTER TABLE child_profiles
+      ADD COLUMN IF NOT EXISTS attendance_enabled BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS smart_insights_enabled BOOLEAN NOT NULL DEFAULT false,
       ADD COLUMN IF NOT EXISTS feeding_settings JSONB NOT NULL DEFAULT '{}'::JSONB,
       ADD COLUMN IF NOT EXISTS usual_bedtime TEXT,
@@ -69,6 +70,7 @@ const profileFields = [
   "usualBedtime",
   "feedingSettings",
   "smartInsightsEnabled",
+  "attendanceEnabled",
   "toiletingNotes",
   "sensoryNeeds",
   "schoolEhcpNotes",
@@ -95,6 +97,7 @@ const profileColumnMap = {
   usualBedtime: "usual_bedtime",
   feedingSettings: "feeding_settings",
   smartInsightsEnabled: "smart_insights_enabled",
+  attendanceEnabled: "attendance_enabled",
   toiletingNotes: "toileting_notes",
   sensoryNeeds: "sensory_needs",
   schoolEhcpNotes: "school_ehcp_notes",
@@ -347,6 +350,7 @@ childrenRouter.get(
           usual_bedtime AS "usualBedtime",
           feeding_settings AS "feedingSettings",
           smart_insights_enabled AS "smartInsightsEnabled",
+          attendance_enabled AS "attendanceEnabled",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
@@ -376,7 +380,7 @@ childrenRouter.put(
       throw badRequest("Usual bedtime must be a valid HH:mm time.");
     }
     const values = profileFields.map((field) =>
-      field === "smartInsightsEnabled" ? smartInsightsBoolean(req.body.smartInsightsEnabled) : field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
+      field === "attendanceEnabled" ? smartInsightsBoolean(req.body.attendanceEnabled) : field === "smartInsightsEnabled" ? smartInsightsBoolean(req.body.smartInsightsEnabled) : field === "feedingSettings" ? feedingSettingsJson(req.body.feedingSettings) : field === "usualBedtime"
         ? optionalTime(req.body, field)
         : field === "dailyFluidTargetMl"
         ? optionalInteger(req.body, field, "Daily fluid target")
@@ -391,7 +395,7 @@ childrenRouter.put(
     const insertColumns = profileFields.map((field) => profileColumnMap[field]);
     const insertPlaceholders = values.map((_, index) => `$${index + 4}`);
     const updateColumns = profileFields.map(
-      (field) => ["usualBedtime", "feedingSettings", "smartInsightsEnabled"].includes(field) && !Object.hasOwn(req.body, field)
+      (field) => ["usualBedtime", "feedingSettings", "smartInsightsEnabled", "attendanceEnabled"].includes(field) && !Object.hasOwn(req.body, field)
         ? `${profileColumnMap[field]} = child_profiles.${profileColumnMap[field]}`
         : `${profileColumnMap[field]} = EXCLUDED.${profileColumnMap[field]}`,
     );
@@ -430,6 +434,7 @@ childrenRouter.put(
           usual_bedtime AS "usualBedtime",
           feeding_settings AS "feedingSettings",
           smart_insights_enabled AS "smartInsightsEnabled",
+          attendance_enabled AS "attendanceEnabled",
           toileting_notes AS "toiletingNotes",
           sensory_needs AS "sensoryNeeds",
           school_ehcp_notes AS "schoolEhcpNotes",
