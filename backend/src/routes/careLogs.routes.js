@@ -1,3 +1,5 @@
+import {wallTime,instant} from '../services/widgetSnapshot.js';
+import {schoolSession} from '../services/schoolSession.js';
 import {normaliseAttendance,attendanceDates} from '../services/attendance.js';
 import { normaliseFeed } from '../services/feeding.js';
 import { Router } from "express";
@@ -143,10 +145,16 @@ careLogsRouter.get(
   }),
 );
 
+careLogsRouter.post('/attendance/session',requireAtLeastRole('carer'),(req,res,next)=>requirePlanAccess(req.body.action==='start'?'addLog':'editLog')(req,res,next),asyncHandler(async(req,res)=>{
+ const childId=requireUuid(req.body.childId,'Care profile');
+ const data=await schoolSession(req.familyMember.family_id,childId,req.user.id,req.body);
+ res.json({data,error:null});
+}));
+
 // A range is atomic; repeated submissions do not duplicate identical daily records.
 careLogsRouter.post('/attendance',requireAtLeastRole('carer'),requirePlanAccess('addLog'),asyncHandler(async(req,res)=>{
  const familyId=req.familyMember.family_id,childId=requireUuid(req.body.childId,'Care profile');
- let dates,data;try{dates=attendanceDates(req.body.startDate,req.body.endDate||req.body.startDate);data=normaliseAttendance({...req.body.data,attendance:true},'general');}catch(e){throw badRequest(e.message);}
+ let dates,data;try{dates=attendanceDates(req.body.startDate,req.body.endDate||req.body.startDate);data=normaliseAttendance({...req.body.data,attendance:true,schoolStartedAt:null,schoolEndedAt:null,schoolActive:false},'general');}catch(e){throw badRequest(e.message);}
  if(dates.length>1&&!['school_holiday','holiday','training','sick','other'].includes(data.attendanceStatus))throw badRequest('Record attendance and appointments one day at a time.');
  const notes=optionalString(req.body,'notes');
  await assertChildInFamily(childId,familyId);
@@ -327,6 +335,11 @@ careLogsRouter.post('/:logId/correction', requireAtLeastRole('parent'),
  const action=req.body.action;
  if(!['edit','move','delete','restore'].includes(action))throw badRequest('Unknown entry action.');
  const result=await withTransaction(async db=>{
+ const peek=await db.query('SELECT child_id,data FROM care_logs WHERE id=$1 AND family_id=$2',[id,familyId]);
+ if(peek.rows[0]?.data?.attendance){
+  const targets=[peek.rows[0].child_id,...(action==='move'?[requireUuid(req.body.childId,'Care profile')]:[])].sort();
+  for(const target of [...new Set(targets)])await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`attendance:${target}`]);
+ }
  const {rows}=await db.query('SELECT * FROM care_logs WHERE id=$1 AND family_id=$2 FOR UPDATE',[id,familyId]);const old=rows[0];
  if(!old || (action!=='restore' && old.deleted_at))throw notFound('Entry not found.');
  if(!req.body.expectedUpdatedAt || new Date(req.body.expectedUpdatedAt).getTime()!==new Date(old.updated_at).getTime())throw badRequest('This entry has changed. Refresh it before trying again.');
@@ -343,12 +356,16 @@ careLogsRouter.post('/:logId/correction', requireAtLeastRole('parent'),
  if(action==='edit' && req.body.data?.attendance!==true)throw badRequest('Keep attendance details when editing this day.');
  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`attendance:${target}`]);
  const duplicate=await db.query("SELECT id FROM care_logs WHERE family_id=$1 AND child_id=$2 AND id<>$3 AND log_date=$4 AND category='general' AND data->>'attendance'='true' AND deleted_at IS NULL",[familyId,target,id,date]);
+ if(old.data.schoolActive && action==='move'){const open=await db.query("SELECT id FROM care_logs WHERE family_id=$1 AND child_id=$2 AND id<>$3 AND deleted_at IS NULL AND data->>'schoolActive'='true'",[familyId,target,id]);if(open.rows.length)throw badRequest('That profile already has an active school session.');}
  if(duplicate.rows.length)throw badRequest('Attendance is already recorded for that profile and date.');
  }
  if(action==='restore' && (!old.deleted_at || Date.now()-new Date(old.deleted_at).getTime()>15*60*1000))throw badRequest('Undo is available for 15 minutes after deletion.');
  let changed;
  if(action==='edit'){
- const date=requireLogDate(req.body),time=optionalTime(req.body,'logTime'),data=jsonData(req.body,old.category),notes=optionalString(req.body,'notes');
+ const date=requireLogDate(req.body),time=optionalTime(req.body,'logTime'),data=jsonData(old.data?.attendance?{...req.body,data:{...req.body.data,schoolStartedAt:old.data.schoolStartedAt,schoolEndedAt:old.data.schoolEndedAt,schoolActive:old.data.schoolActive}}:req.body,old.category),notes=optionalString(req.body,'notes');
+ if(old.data?.attendance && data.schoolStartedAt && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.arrival!==old.data.arrival)){
+  try{if(typeof req.body.timeZone!=='string'||req.body.timeZone.length>100||!data.arrival)throw Error();wallTime(new Date(),req.body.timeZone);data.schoolStartedAt=new Date(instant(new Date(`${date}T${data.arrival}Z`),req.body.timeZone)*1000).toISOString();}catch{throw badRequest('Enter a valid arrival time and timezone for this school period.');}
+ }
  if(old.category==='sleep' && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.bedtime!==old.data?.bedtime))delete data.sleep_started_at;
  changed=await db.query('UPDATE care_logs SET log_date=$3,log_time=$4,data=$5,notes=$6 WHERE id=$1 AND family_id=$2 RETURNING updated_at',[id,familyId,date,time,JSON.stringify(data),notes]);
  }else if(action==='move')changed=await db.query('UPDATE care_logs SET child_id=$3 WHERE id=$1 AND family_id=$2 RETURNING updated_at',[id,familyId,target]);

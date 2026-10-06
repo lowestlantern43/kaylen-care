@@ -1,3 +1,4 @@
+import {activeSchoolRecord} from './attendance.js';
 import { ensureWidgetSleepSchema } from './widgetSleepSchema.js';
 import { getFamilyPlanAccess } from './planAccess.js';
 import { query } from '../db/pool.js';
@@ -64,7 +65,7 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,
     usualBedtime:profile.usual_bedtime || null, sleepLogId:sleep?.id || '',
     sleepCompletedAt:sleepCompletedAt(sleep,zone),
-    sleepingSince};
+    sleepingSince,schoolSince:(()=>{const school=activeSchoolRecord(rows.map(r=>({id:r.id,data:{attendance:r.attendance==='true'||r.attendance===true,attendanceStatus:r.attendance_status,schoolActive:r.school_active==='true'||r.school_active===true,schoolStartedAt:r.school_started_at,schoolEndedAt:r.school_ended_at,collection:r.school_collection}})),now.getTime());return school?Date.parse(school.data.schoolStartedAt)/1000:null;})()};
 }
 export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) {
   await ensureWidgetSleepSchema();
@@ -84,6 +85,7 @@ export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) 
     const {rows}=await query(`SELECT id,category,log_date::text AS day,to_char(log_time,'HH24:MI') AS time,
       data->>'type' AS type,data->>'amount' AS amount,data->>'unit' AS unit,
       data->>'medicine' AS medicine,data->>'dose' AS dose,data->>'status' AS status,
+      data->>'attendance' AS attendance,data->>'attendanceStatus' AS attendance_status,data->>'schoolActive' AS school_active,data->>'schoolStartedAt' AS school_started_at,data->>'schoolEndedAt' AS school_ended_at,data->>'collection' AS school_collection,
       data->>'scheduled_window' AS scheduled_window,data->>'bedtime' AS bedtime,data->>'wake_time' AS wake_time,data->>'wake_date' AS wake_date
       FROM care_logs WHERE family_id=$1 AND child_id=$2 AND deleted_at IS NULL
       ORDER BY log_date DESC,log_time DESC,created_at DESC LIMIT 3001`,[familyId,profile.id]);
