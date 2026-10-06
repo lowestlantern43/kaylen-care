@@ -2,8 +2,8 @@ import {useState,useRef} from 'react';
 import {attendanceLabels,attendanceDates,normaliseAttendance} from '../attendance';
 const field='mt-1 block w-full min-w-0 rounded-xl border border-slate-300 bg-white p-3';
 const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;};
-export default function AttendanceForm({entry,onSave}){
- const [start,setStart]=useState(entry?.rawLogDate||today()),[end,setEnd]=useState(''),[data,setData]=useState(entry?.rawData||{attendance:true,attendanceStatus:'attended',setting:'',arrival:'',collection:'',partDay:false}),[notes,setNotes]=useState(entry?.rawNotes||''),[busy,setBusy]=useState(false),[error,setError]=useState('');const lock=useRef(false);
+export default function AttendanceForm({entry,onSave,settings={}}){
+ const [start,setStart]=useState(entry?.rawLogDate||today()),[end,setEnd]=useState(''),[data,setData]=useState(entry?.rawData||{attendance:true,attendanceStatus:'attended',setting:settings.name||'',arrival:'',collection:'',partDay:false}),[notes,setNotes]=useState(entry?.rawNotes||''),[busy,setBusy]=useState(false),[error,setError]=useState('');const lock=useRef(false);
  const set=(k,v)=>setData(d=>({...d,[k]:v}));
  const range=!entry&&['school_holiday','holiday','training','sick','other'].includes(data.attendanceStatus);
  return <div className="mt-4 space-y-4"><p className="text-sm text-slate-600">Record attendance or why they were away. Unlogged days stay not recorded; closures are not absences.</p>{error&&<p role="alert" className="rounded-xl bg-rose-50 p-3 text-rose-800">{error}</p>}<fieldset disabled={busy} className="min-w-0 space-y-4">
