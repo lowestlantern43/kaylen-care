@@ -1,3 +1,4 @@
+import SmartInsightBadge, {useSmartInsights} from './components/SmartInsightBadge';
 import ActivationCoach from './components/ActivationCoach';
 import FeedForm from './components/FeedForm';
 import {feedingEnabled,feedDetails,routeLabels} from './feeding';
@@ -4792,6 +4793,7 @@ export default function KaylenCareMonitorDashboard({
     return entry.time || entry.date || emptyText;
   };
 
+  const smartInsights = useSmartInsights(familyId,childId,useSaasApi && childProfile.smartInsightsEnabled === true,loadedLogs.loadedAt);
   const homeSummaryCards = useMemo(() => {
     const latestSleep = latestEntryForSection("Sleep");
     const latestMedication = latestEntryForSection("Medication");
@@ -16232,6 +16234,7 @@ export default function KaylenCareMonitorDashboard({
                   </p>
                 ) : null}
                 </button>
+                <SmartInsightBadge key={childId+':fluids'} insight={smartInsights.find(i=>i.kind==='fluids')} className="absolute bottom-2 right-2 z-20"/>
                 {todayDashboard.fluidTargetMl && todayDashboard.fluidPercent >= 100 ? (
                   <span className="absolute right-4 top-4 z-10 rounded-full bg-white/90 px-3 py-1 text-xs font-black text-cyan-700 shadow-sm animate-bounce">
                     Goal reached
@@ -16257,7 +16260,7 @@ export default function KaylenCareMonitorDashboard({
                     </span>
                     <div className="min-w-0">
                       <p className="text-[11px] font-black uppercase tracking-[0.16em] text-rose-700">
-                        Medication
+                        Medication <SmartInsightBadge key={childId+':medication'} insight={smartInsights.find(i=>i.kind==='medication')} />
                       </p>
                       <h2 className="mt-0.5 text-base font-black text-slate-950">
                         {todayDashboard.activeRequiredMedication.some(
@@ -16332,12 +16335,13 @@ export default function KaylenCareMonitorDashboard({
             {homeSummaryCards
               .filter((card) => card.key !== "medication")
               .map((card) => (
+              <div key={card.key} className="relative min-w-0">
               <button
                 type="button"
                 key={card.key}
                 onClick={() => !isReadOnly && openQuickAdd(card.section, card.preset)}
                 disabled={isReadOnly}
-                className={`min-w-0 rounded-2xl border p-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default ${
+                className={`h-full w-full min-w-0 rounded-2xl border p-2.5 text-left shadow-sm transition active:scale-[0.99] disabled:cursor-default ${
                   card.alert
                     ? "border-amber-200"
                     : homeTileTone(card.key)
@@ -16354,12 +16358,14 @@ export default function KaylenCareMonitorDashboard({
                     <p className="mt-1 line-clamp-2 text-sm font-black leading-5 text-slate-950">
                       {card.value}
                     </p>
-                    <p className="mt-1 truncate text-xs font-bold text-slate-500">
+                    <p className={`mt-1 truncate text-xs font-bold text-slate-500 ${card.key==='sleep' && smartInsights.some(i=>i.kind==='sleep') ? 'pr-7' : ''}`}>
                       {card.meta}
                     </p>
                   </div>
                 </div>
               </button>
+              {card.key==='sleep' && <SmartInsightBadge key={childId+':sleep'} insight={smartInsights.find(i=>i.kind==='sleep')} className="absolute bottom-2 right-2"/>}
+              </div>
             ))}
           </div>
 
