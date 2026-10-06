@@ -1,4 +1,4 @@
-export const attendanceLabels = {attended:'Attended',training:'Training / inset day',school_holiday:'School holiday',holiday:'Personal holiday',medical:'Medical appointment',sick:'Sick day',other:'Other absence'};
+export const attendanceLabels = {attended:'Present',part_day:'Part-day',training:'Training / inset day',school_holiday:'School holiday',holiday:'Personal holiday',medical:'Medical appointment',sick:'Sick day',other:'Other absence'};
 export function attendanceDates(start,end=start) {
  const valid=d=>typeof d==='string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d+'T12:00:00Z')) && new Date(d+'T12:00:00Z').toISOString().slice(0,10)===d;
  if(!valid(start)||!valid(end)||end<start)throw new Error('Choose a valid date range.');
@@ -8,7 +8,7 @@ export function normaliseAttendance(data,category='general') {
  if(!data?.attendance)return data;
  if(category!=='general')throw new Error('Attendance must use the attendance log.');
  if(!Object.hasOwn(attendanceLabels,data.attendanceStatus))throw new Error('Choose an attendance status.');
- const status=data.attendanceStatus, partDay=status==='medical' && data.partDay===true;
+ const status=data.attendanceStatus, partDay=status==='part_day' || (status==='medical' && data.partDay===true);
  const arrival=status==='attended'||partDay?String(data.arrival||''):'';
  const collection=status==='attended'||partDay?String(data.collection||''):'';
  for(const t of [arrival,collection])if(t&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(t))throw new Error('Use a valid arrival or collection time.');
