@@ -364,7 +364,7 @@ careLogsRouter.post('/:logId/correction', requireAtLeastRole('parent'),
  let changed;
  if(action==='edit'){
  const date=requireLogDate(req.body),time=optionalTime(req.body,'logTime'),data=jsonData(old.data?.attendance?{...req.body,data:{...req.body.data,schoolStartedAt:old.data.schoolStartedAt,schoolEndedAt:old.data.schoolEndedAt,schoolActive:old.data.schoolActive}}:req.body,old.category),notes=optionalString(req.body,'notes');
- if(old.data?.attendance && data.schoolStartedAt && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.arrival!==old.data.arrival)){
+ if(old.data?.attendance && data.schoolStartedAt && data.arrival && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.arrival!==old.data.arrival)){
   try{if(typeof req.body.timeZone!=='string'||req.body.timeZone.length>100||!data.arrival)throw Error();wallTime(new Date(),req.body.timeZone);data.schoolStartedAt=new Date(instant(new Date(`${date}T${data.arrival}Z`),req.body.timeZone)*1000).toISOString();}catch{throw badRequest('Enter a valid arrival time and timezone for this school period.');}
  }
  if(old.category==='sleep' && (date!==String(old.log_date instanceof Date?old.log_date.toISOString().slice(0,10):old.log_date) || data.bedtime!==old.data?.bedtime))delete data.sleep_started_at;
