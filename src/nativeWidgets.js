@@ -1,3 +1,4 @@
+import {activeSchoolRecord} from './attendance';
 import { pendingWidgetDoses } from './widgetMedication.js';
 import { api } from './api/client';
 import { Capacitor, registerPlugin } from '@capacitor/core';
@@ -59,7 +60,8 @@ export function makeWidgetSnapshot({id,name,entries,medicines,scheduled,target,f
   const sleepingSince = latestSleep?.e.rawCategory === 'sleep' &&
     !latestSleep.e.rawData?.wake_time && latestSleep.e.rawData?.bedtime
     ? latestSleep.date.getTime()/1000 : null;
-  return {id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince,usualBedtime:usualBedtime || null,sleepLogId:String(latestSleep?.e.id || '').replace(/^care-/, '')};
+  const school=activeSchoolRecord(entries.map(e=>({id:e.id,data:e.rawData})),now.getTime());
+  return {schoolSince:school?Date.parse(school.data.schoolStartedAt)/1000:null,id,name:String(name).slice(0,80),updated:now.getTime()/1000,day:now.toDateString(),fluid:Number(fluid)||0,target:Number(target)||0,medicines:doses,care,sleepingSince,usualBedtime:usualBedtime || null,sleepLogId:String(latestSleep?.e.id || '').replace(/^care-/, '')};
 }
 
 // Store a tiny thumbnail, not a remote URL or a full-size profile photograph.

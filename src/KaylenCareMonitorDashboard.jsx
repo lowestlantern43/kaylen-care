@@ -1,5 +1,6 @@
+import SchoolSessionControls from './components/SchoolSessionControls';
 import AttendanceForm from './components/AttendanceForm';
-import {attendanceLabels,attendanceDetails} from './attendance';
+import {attendanceLabels,attendanceDetails,activeSchoolRecord} from './attendance';
 import SmartInsightBadge, {useSmartInsights} from './components/SmartInsightBadge';
 import ActivationCoach from './components/ActivationCoach';
 import FeedForm from './components/FeedForm';
@@ -3178,7 +3179,7 @@ export default function KaylenCareMonitorDashboard({
   const mapSaasCareLogEntry = (row) => {
     const mapped = row.category==='general' && row.data?.attendance ? {
       id:`care-${row.id}`,createdAt:row.createdAt,section:'Attendance',date:formatDisplayDateFromIso(row.logDate),time:row.data.arrival||'',
-      summary:attendanceLabels[row.data.attendanceStatus]||'Attendance',status:attendanceLabels[row.data.attendanceStatus],
+      summary:row.data.schoolActive && !row.data.collection && !row.data.schoolEndedAt && row.data.attendanceStatus==='attended'?'At School / Away':attendanceLabels[row.data.attendanceStatus]||'Attendance',status:attendanceLabels[row.data.attendanceStatus],
       details:[...attendanceDetails(row.data),row.notes?`Notes: ${row.notes}`:null,row.createdByName?`Logged by: ${row.createdByName}`:null].filter(Boolean)
     } :
       row.category === "food"
@@ -3274,6 +3275,12 @@ export default function KaylenCareMonitorDashboard({
     document.addEventListener("visibilitychange", refresh);
     return () => document.removeEventListener("visibilitychange", refresh);
   }, [useSaasApi, familyId, childId]);
+
+  useEffect(()=>{
+    if(!useSaasApi||!familyId||!childId||!childProfile.attendanceEnabled)return;
+    const timer=setInterval(()=>{if(document.visibilityState==='visible')loadEntriesFromSaasApi().catch(()=>{});},60000);
+    return()=>clearInterval(timer);
+  },[useSaasApi,familyId,childId,childProfile.attendanceEnabled]);
 
   const loadEntriesFromSupabase = async () => {
     if (useSaasApi) {
@@ -3670,6 +3677,7 @@ export default function KaylenCareMonitorDashboard({
     if (!activeSection) return "";
 
     switch (activeSection.title) {
+      case "Attendance": return "Track school, nursery and time away.";
       case "Feeds": return "Record feeds, formula and water flushes.";
       case "Food Diary":
         return "Food saves into the same shared log as everything else.";
@@ -4879,7 +4887,7 @@ export default function KaylenCareMonitorDashboard({
     const latestDocument = documents?.[0] || null;
 
     return [
-      ...(useSaasApi && childProfile.attendanceEnabled ? [{key:'attendance',title:'School / Nursery',value:sharedLog.find(e=>e.rawData?.attendance && e.date===todayValue())?.summary||'Not recorded today',meta:'Attendance, closures and absence',section:'Attendance',module:'attendance'}] : []),
+      ...(useSaasApi && childProfile.attendanceEnabled ? [{key:'attendance',title:'School / Nursery',value:activeSchoolRecord(sharedLog.map(e=>({data:e.rawData})))?'At School / Away':sharedLog.find(e=>e.rawData?.attendance && e.date===todayValue())?.summary||'Not recorded today',meta:'Attendance, closures and absence',section:'Attendance',module:'attendance'}] : []),
       ...(useSaasApi && feedingEnabled(childProfile.feedingSettings) ? [{key:"feeds",title:"Feeds",value:sharedLog.find(e=>e.rawData?.feeding)?.summary || "Log feed or water flush",meta:"Formula, volumes and tolerance",section:"Feeds",module:"feeds"}] : []),
       {
         key: "sleep",
@@ -15720,6 +15728,7 @@ export default function KaylenCareMonitorDashboard({
     switch (activeSection.title) {
       case "Attendance":
         return <div className="mt-4">
+          <SchoolSessionControls key={childId} entries={sharedLog} canStart={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEnd={logsReady && !isReadOnly && accountAccess?.canEditLogs !== false} onAction={async payload=>{try{await api.schoolSession(familyId,{childId,...payload});await refreshCorrectedEntries();showToast?.({message:payload.action==='start'?'At School / Away':'Back Home recorded',type:'success'});}catch(e){await refreshCorrectedEntries().catch(()=>{});throw e;}}}/>
           {!isReadOnly && accountAccess?.canAddLogs !== false && <AttendanceForm key={`${childId}:${attendanceVersion}`} onSave={async payload=>{
             await api.saveAttendance(familyId,{childId,...payload});setAttendanceVersion(n=>n+1);
             showToast?.({message:'Attendance saved',type:'success'});try{await refreshCorrectedEntries();}catch{showToast?.({message:'Saved. Refresh to see attendance.',type:'success'});}

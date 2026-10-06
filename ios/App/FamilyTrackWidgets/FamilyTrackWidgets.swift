@@ -44,6 +44,7 @@ struct ChildSnapshot: Codable, Identifiable {
     var canStartSleep: Bool?
     var canEndSleep: Bool?
     var sleepingSince: Double?
+    var schoolSince: Double?
     var photo: String?
     var smartInsights: [SmartInsight]?
 }
@@ -265,6 +266,11 @@ struct CareWidgetView: View {
                 if child.canEndSleep == true && entry.date.timeIntervalSince1970 - started <= 46800 {
                     sleepButton(child, action: "end", title: "Wake up", symbol: "sun.max.fill")
                 }
+            } else if let started = child.schoolSince {
+                Image(systemName: "building.2.fill").font(.title2).foregroundStyle(.indigo)
+                Text(entry.date.timeIntervalSince1970 - started > 64800 ? "School still active?" : "At School / Away")
+                    .font(.subheadline.weight(.semibold)).lineLimit(2)
+                Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
             } else if canOfferSleep(child) {
                 VStack(alignment: .center, spacing: 8) {
                     Image(systemName: "moon.stars.fill")
@@ -393,6 +399,9 @@ struct LockScreenCareView: View {
                         Text("Open app to refresh").font(.headline).lineLimit(1)
                         Text("Check today's schedule").font(.caption2).lineLimit(1)
                     }
+                } else if child.sleepingSince == nil, let started = child.schoolSince {
+                    Text("At School / Away").font(.headline).lineLimit(1)
+                    Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption)
                 } else if let record = child.care["latest"] {
                     Text(record.label).font(.headline).lineLimit(1)
                     HStack(spacing: 4) {
