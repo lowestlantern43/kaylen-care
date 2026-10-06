@@ -1,5 +1,5 @@
 import SchoolSessionControls from './components/SchoolSessionControls';
-import AttendanceForm from './components/AttendanceForm';
+import AttendanceCalendar from './components/AttendanceCalendar';
 import {attendanceLabels,attendanceDetails,activeSchoolRecord} from './attendance';
 import SmartInsightBadge, {useSmartInsights} from './components/SmartInsightBadge';
 import ActivationCoach from './components/ActivationCoach';
@@ -15729,13 +15729,14 @@ export default function KaylenCareMonitorDashboard({
       case "Attendance":
         return <div className="mt-4">
           <SchoolSessionControls settings={childProfile.schoolSettings} key={childId} entries={sharedLog} canStart={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEnd={logsReady && !isReadOnly && accountAccess?.canEditLogs !== false} onAction={async payload=>{try{await api.schoolSession(familyId,{childId,...payload});await refreshCorrectedEntries();showToast?.({message:payload.action==='start'?'At School / Away':'Back Home recorded',type:'success'});}catch(e){await refreshCorrectedEntries().catch(()=>{});throw e;}}}/>
-          {!isReadOnly && accountAccess?.canAddLogs !== false && <AttendanceForm settings={childProfile.schoolSettings} key={`${childId}:${attendanceVersion}`} onSave={async payload=>{
-            await api.saveAttendance(familyId,{childId,...payload});setAttendanceVersion(n=>n+1);
-            showToast?.({message:'Attendance saved',type:'success'});try{await refreshCorrectedEntries();}catch{showToast?.({message:'Saved. Refresh to see attendance.',type:'success'});}
-          }}/>}
-          <h3 className="mb-2 mt-6 font-bold">Recorded attendance</h3>
-          <p className="mb-3 text-xs text-slate-500">Edit a day to add collection time or correct its status. Holiday ranges are saved as separate days.</p>
-          {sharedLog.filter(e=>e.rawData?.attendance).slice(0,60).map(e=><div key={e.id} className="mb-2 rounded-xl border bg-white p-3"><p className="font-bold">{e.date} · {e.summary}</p>{attendanceDetails(e.rawData).map(t=><p key={t} className="text-sm">{t}</p>)}{e.rawNotes&&<p className="text-sm">{e.rawNotes}</p>}{entryActions(e)}</div>)}
+          <AttendanceCalendar key={childId} settings={childProfile.schoolSettings} refreshKey={loadedLogs.loadedAt}
+            canAdd={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEdit={canCorrectEntries}
+            loadMonth={async(startDate,endDate)=>(await api.listCareLogs(familyId,{childId,startDate,endDate,attendance:'true'})).map(mapSaasCareLogEntry).filter(Boolean)}
+            onSave={async(entry,payload)=>{
+              if(entry) await api.correctCareLog(familyId,entry.id.replace(/^care-/,''),{action:'edit',expectedUpdatedAt:entry.rawUpdatedAt,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,logDate:payload.startDate,logTime:payload.data.arrival||'',data:payload.data,notes:payload.notes});
+              else await api.saveAttendance(familyId,{childId,...payload});
+              await refreshCorrectedEntries();showToast?.({message:'Attendance saved',type:'success'});
+            }}/>
         </div>;
 
       case "Feeds":
