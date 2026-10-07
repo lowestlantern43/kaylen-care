@@ -1,3 +1,4 @@
+import DashboardLayout from './components/DashboardLayout';
 import SchoolSessionControls from './components/SchoolSessionControls';
 import AttendanceCalendar from './components/AttendanceCalendar';
 import {attendanceLabels,attendanceDetails,activeSchoolRecord} from './attendance';
@@ -16239,8 +16240,8 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <div className="mb-4">
-          <div className="grid gap-3">
-            {isModuleEnabled("drink") ? (
+          <DashboardLayout key={`${currentUser?.id||'local'}:${familyId}:${childId}`} storageKey={`familytrack:tiles:v1:${currentUser?.id||'local'}:${familyId}:${childId}`} items={[
+            {id:'hydration',label:'Hydration',wide:true,content:(isModuleEnabled("drink") ? (
               <article className="relative overflow-hidden rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition">
                 <button
                   type="button"
@@ -16297,9 +16298,8 @@ export default function KaylenCareMonitorDashboard({
                   </span>
                 ) : null}
               </article>
-            ) : null}
-
-            {isModuleEnabled("medication") && todayDashboard.requiredMedication.length ? (
+            ) : null)},
+            {id:'medication',label:'Medication',wide:true,content:(isModuleEnabled("medication") && todayDashboard.requiredMedication.length ? (
               <article
                 className={`rounded-[1.55rem] border p-4 shadow-md ${
                   todayDashboard.activeRequiredMedication.some(
@@ -16384,14 +16384,8 @@ export default function KaylenCareMonitorDashboard({
                   </p>
                 )}
               </article>
-            ) : null}
-          </div>
-
-          <div className="mt-2.5 grid grid-cols-2 gap-2.5 lg:grid-cols-3">
-            {homeSummaryCards
-              .filter((card) => card.key !== "medication")
-              .map((card) => (
-              <div key={card.key} className="relative min-w-0">
+            ) : null)},
+            ...homeSummaryCards.filter(card=>card.key!=='medication').map(card=>({id:card.key,label:card.title,content:(<div key={card.key} className="relative min-w-0">
               <button
                 type="button"
                 key={card.key}
@@ -16421,9 +16415,8 @@ export default function KaylenCareMonitorDashboard({
                 </div>
               </button>
               {card.key==='sleep' && <SmartInsightBadge key={childId+':sleep'} insight={smartInsights.find(i=>i.kind==='sleep')} className="absolute bottom-2 right-2"/>}
-              </div>
-            ))}
-          </div>
+              </div>)}))
+          ]}/>
 
           {todayDashboard.alerts.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
