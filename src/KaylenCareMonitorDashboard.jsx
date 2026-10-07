@@ -1,3 +1,4 @@
+import {calendarOnlyAttendance} from './attendanceCalendar';
 import DashboardLayout from './components/DashboardLayout';
 import SchoolSessionControls from './components/SchoolSessionControls';
 import AttendanceCalendar from './components/AttendanceCalendar';
@@ -3185,7 +3186,8 @@ export default function KaylenCareMonitorDashboard({
     };
   };
 
-  const mapSaasCareLogEntry = (row) => {
+  const mapSaasCareLogEntry = (row, includeCalendarOnly = false) => {
+    if (includeCalendarOnly !== true && calendarOnlyAttendance(row.data)) return null;
     const mapped = row.category==='general' && row.data?.attendance ? {
       id:`care-${row.id}`,createdAt:row.createdAt,section:'Attendance',date:formatDisplayDateFromIso(row.logDate),time:row.data.arrival||'',
       summary:row.data.schoolActive && !row.data.collection && !row.data.schoolEndedAt && row.data.attendanceStatus==='attended'?'At School / Away':attendanceLabels[row.data.attendanceStatus]||'Attendance',status:attendanceLabels[row.data.attendanceStatus],
@@ -15688,7 +15690,7 @@ export default function KaylenCareMonitorDashboard({
           <SchoolSessionControls settings={childProfile.schoolSettings} key={childId} entries={sharedLog} canStart={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEnd={logsReady && !isReadOnly && accountAccess?.canEditLogs !== false} onAction={async payload=>{try{await api.schoolSession(familyId,{childId,...payload});await refreshCorrectedEntries();showToast?.({message:payload.action==='start'?'At School / Away':'Back Home recorded',type:'success'});}catch(e){await refreshCorrectedEntries().catch(()=>{});throw e;}}}/>
           <AttendanceCalendar key={childId} settings={childProfile.schoolSettings} refreshKey={loadedLogs.loadedAt}
             canAdd={logsReady && !isReadOnly && accountAccess?.canAddLogs !== false} canEdit={canCorrectEntries}
-            loadMonth={async(startDate,endDate)=>(await api.listCareLogs(familyId,{childId,startDate,endDate,attendance:'true'})).map(mapSaasCareLogEntry).filter(Boolean)}
+            loadMonth={async(startDate,endDate)=>(await api.listCareLogs(familyId,{childId,startDate,endDate,attendance:'true'})).map(row=>mapSaasCareLogEntry(row,true)).filter(Boolean)}
             onSave={async(entry,payload)=>{
               if(entry) await api.correctCareLog(familyId,entry.id.replace(/^care-/,''),{action:'edit',expectedUpdatedAt:entry.rawUpdatedAt,timeZone:Intl.DateTimeFormat().resolvedOptions().timeZone,logDate:payload.startDate,logTime:payload.data.arrival||'',data:payload.data,notes:payload.notes});
               else await api.saveAttendance(familyId,{childId,...payload});
