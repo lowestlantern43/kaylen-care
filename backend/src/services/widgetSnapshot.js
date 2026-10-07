@@ -61,7 +61,15 @@ export function projectWidget(profile, rows, familyId, zone, now=new Date()) {
   const sleepingSince=sleep?.bedtime&&!sleep.wake_time?instant(sleep.date,zone):null;
   const smartInsights=deriveSmartInsights({enabled:profile.smart_insights_enabled,rows,today,time:wallNow.toISOString().slice(11,16),nowEpoch:now.getTime()/1000,fluid,medicines,sleepingSince,
     historyStartDay:rows.length>=3000?rows.map(r=>r.day).sort()[0]:null});
+  const schoolRows=rows.filter(r=>r.attendance==='true'||r.attendance===true);
+  const activeSchool=schoolRows.find(r=>(r.school_active==='true'||r.school_active===true)&&r.attendance_status==='attended'&&!r.school_ended_at&&!r.school_collection);
+  const schoolCurrent=activeSchool||schoolRows.find(r=>r.day===today);
+  const schoolPlan=schoolPlanForDay(profile.school_settings,today);
+  const schoolTime=time=>time?instant(new Date(`${today}T${time}Z`),zone):null;
+  const schoolDeparture=profile.attendance_enabled&&schoolPlan?.departure&&!activeSchool&&(!schoolCurrent||schoolCurrent.attendance_status==='attended'&&!schoolCurrent.school_started_at)?schoolTime(schoolPlan.departure):null;
   return {id:`${familyId}:${profile.id}`,name:String(profile.first_name||'Care profile').slice(0,80),updated:now.getTime()/1000,
+    schoolDeparture,schoolPickupAt:schoolTime(schoolPlan?.pickup),schoolDayEnd:instant(new Date(`${today}T23:59:59Z`),zone),
+    schoolLogId:schoolCurrent?.id||'',schoolUpdatedAt:schoolCurrent?.updated_at||null,
     schoolPickup:schoolPlanForDay(profile.school_settings,today)?.pickup||null,
     smartInsights,
     day:today,fluid,target:Number(profile.daily_fluid_target_ml)||0,medicines,care,
@@ -75,17 +83,17 @@ export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) 
   await ensureSmartInsightsSchema();
   if(typeof zone!=='string'||zone.length>100) throw badRequest('A timezone is required.');
   try { wallTime(now,zone); } catch { throw badRequest('Invalid timezone.'); }
-  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime,cp.smart_insights_enabled,cp.school_settings
+  const {rows:profiles}=await query(`SELECT c.id,c.first_name,cp.current_medications,cp.daily_fluid_target_ml,cp.usual_bedtime,cp.smart_insights_enabled,cp.school_settings,cp.attendance_enabled
     FROM children c LEFT JOIN child_profiles cp ON cp.child_id=c.id AND cp.family_id=c.family_id
     WHERE c.family_id=$1 AND c.deleted_at IS NULL AND ($2::uuid IS NULL OR c.id=$2) ORDER BY c.id LIMIT 51`,[familyId,access.childId||null]);
   if(profiles.length>50) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');
-  const plan = access.sleep_actions ? await getFamilyPlanAccess(familyId) : {};
+  const plan = (access.sleep_actions||access.school_actions) ? await getFamilyPlanAccess(familyId) : {};
   const canStartSleep = !!(access.sleep_actions && ['owner','parent','carer'].includes(access.role) && plan.canAddLogs);
   const canEndSleep = !!(access.sleep_actions && ['owner','parent'].includes(access.role) && plan.canEditLogs);
   const children=[];
   for(const profile of profiles) {
     // Whitelist structured fields. Never load notes, diagnoses or whole JSON records.
-    const {rows}=await query(`SELECT id,category,log_date::text AS day,to_char(log_time,'HH24:MI') AS time,
+    const {rows}=await query(`SELECT id,updated_at,category,log_date::text AS day,to_char(log_time,'HH24:MI') AS time,
       data->>'type' AS type,data->>'amount' AS amount,data->>'unit' AS unit,
       data->>'medicine' AS medicine,data->>'dose' AS dose,data->>'status' AS status,
       data->>'attendance' AS attendance,data->>'attendanceStatus' AS attendance_status,data->>'schoolActive' AS school_active,data->>'schoolStartedAt' AS school_started_at,data->>'schoolEndedAt' AS school_ended_at,data->>'collection' AS school_collection,
@@ -95,7 +103,7 @@ export async function widgetSnapshot(familyId, zone, now=new Date(), access={}) 
     // Do not present truncated totals as complete.
     if(rows.length>3000 && rows.at(-1).day>=wallTime(now,zone).toISOString().slice(0,10))
       throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');
-    children.push({...projectWidget(profile,rows,familyId,zone,now),canStartSleep,canEndSleep});
+    children.push({...projectWidget(profile,rows,familyId,zone,now),canStartSleep,canEndSleep,canStartSchool:!!(access.school_actions&&['owner','parent','carer'].includes(access.role)&&plan.canAddLogs),canEndSchool:!!(access.school_actions&&['owner','parent','carer'].includes(access.role)&&plan.canEditLogs)});
   }
   const result={children};
   if(Buffer.byteLength(JSON.stringify(result))>190000) throw new HttpError(503,'widget_limit','Open FamilyTrack to update widgets.');

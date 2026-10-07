@@ -1,8 +1,8 @@
 import {test,mock} from 'node:test';
 import assert from 'node:assert/strict';
-let records=[],activeChild=true;const child='22222222-2222-4222-8222-222222222222',family='f';
+let records=[],activeChild=true,schoolSettings={name:'Demo School',days:{tue:{enabled:true,departure:'08:30',pickup:'15:15'}}};const child='22222222-2222-4222-8222-222222222222',family='f';
 const query=async(sql,p=[])=>{
- if(sql.includes('SELECT school_settings'))return {rows:[{school_settings:{name:'Demo School'}}]};
+ if(sql.includes('SELECT school_settings'))return {rows:[{school_settings:schoolSettings,attendance_enabled:true}]};
  if(sql.includes('FROM children'))return {rows:activeChild&&p[1]===family?[{id:child}]:[]};
  if(sql.includes('SELECT id,data,updated_at'))return {rows:records.filter(r=>r.family===p[0]&&r.child===p[1]&&!r.deleted)};
  if(sql.startsWith('INSERT INTO care_logs')){const row={id:'school-1',family:p[0],child:p[1],day:p[3],data:JSON.parse(p[5]),updated_at:new Date('2026-10-06T08:00:00Z')};records.push(row);return {rows:[row]};}
@@ -50,4 +50,24 @@ test('pickup follows selected weekdays without starting a school session',()=>{
 test('part-day attendance clears live school state and preserves real recorded times',()=>{
  const data=normaliseAttendance({attendance:true,attendanceStatus:'part_day',schoolActive:true,schoolStartedAt:now.toISOString(),arrival:'09:00',collection:'12:00'});
  assert.equal(data.partDay,true);assert.equal(data.schoolActive,false);assert.equal(data.arrival,'09:00');assert.equal(data.collection,'12:00');assert.equal(activeSchoolRecord([{data}]),null);
+});
+
+test('widget school start requires scheduled departure and respects absences and duplicate taps',async()=>{
+ records=[];activeChild=true;
+ const body={action:'start',expectedLogId:'',timeZone:zone};
+ await assert.rejects(()=>schoolSession(family,child,'user',body,new Date('2026-10-06T07:00:00Z'),{widget:true}));
+ await assert.rejects(()=>schoolSession(family,child,'user',body,new Date('2026-10-10T08:00:00Z'),{widget:true}));
+ await schoolSession(family,child,'user',body,now,{widget:true});assert.equal(records.length,1);
+ await assert.rejects(()=>schoolSession(family,child,'user',body,now,{widget:true}));
+ records=[];await assert.rejects(()=>schoolSession(family,child,'user',body,new Date('2026-10-06T15:00:00Z'),{widget:true}));
+ records=[{id:'closure',family,child,day:'2026-10-06',updated_at:now,data:{attendance:true,attendanceStatus:'school_holiday'}}];
+ await assert.rejects(()=>schoolSession(family,child,'user',{...body,expectedLogId:'closure',expectedUpdatedAt:now},now,{widget:true}));
+});
+test('school widget schedule excludes non-school days, overrides and completed sessions',()=>{
+ const configured={...profile,attendance_enabled:true,school_settings:schoolSettings};
+ const get=(rows,date=now)=>projectWidget(configured,rows,family,zone,date);
+ assert.equal(get([]).schoolDeparture,Date.parse('2026-10-06T07:30:00Z')/1000);
+ assert.equal(get([],new Date('2026-10-10T08:00:00Z')).schoolDeparture,null);
+ for(const attendance_status of ['school_holiday','holiday','training','sick','medical','not_scheduled'])assert.equal(get([{attendance:'true',day:'2026-10-06',attendance_status}]).schoolDeparture,null);
+ assert.equal(get([{attendance:'true',day:'2026-10-06',attendance_status:'attended',school_started_at:now.toISOString(),school_ended_at:now.toISOString()}]).schoolDeparture,null);
 });

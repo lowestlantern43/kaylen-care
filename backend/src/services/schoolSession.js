@@ -1,9 +1,9 @@
-import {ensureSchoolSettingsSchema} from './schoolSettings.js';
+import {ensureSchoolSettingsSchema,schoolPlanForDay} from './schoolSettings.js';
 import {withTransaction} from '../db/pool.js';
 import {badRequest,notFound,HttpError} from '../utils/httpError.js';
 import {wallTime} from './widgetSnapshot.js';
 import {normaliseAttendance} from './attendance.js';
-export async function schoolSession(familyId,childId,userId,body,now=new Date()) {
+export async function schoolSession(familyId,childId,userId,body,now=new Date(),options={}) {
  if(!['start','end'].includes(body.action))throw badRequest('Choose Left for School or Back Home.');
  let wall;try{if(typeof body.timeZone!=='string'||body.timeZone.length>100)throw Error();wall=wallTime(now,body.timeZone);}catch{throw badRequest('A valid timezone is required.');}
  const day=wall.toISOString().slice(0,10),time=wall.toISOString().slice(11,16);
@@ -20,7 +20,11 @@ export async function schoolSession(familyId,childId,userId,body,now=new Date())
   if((current?.id||'')!==(body.expectedLogId||'') || (current && new Date(current.updated_at).getTime()!==new Date(body.expectedUpdatedAt).getTime()))throw new HttpError(409,'school_changed','Attendance has changed. Refresh before trying again.');
   if(body.action==='start' && current && current.data.attendanceStatus!=='attended')throw badRequest('This day is recorded as an absence or closure. Edit its status before starting school.');
   if(body.action==='start' && current?.data.schoolStartedAt)throw badRequest('This day already has a school period. Edit the saved attendance rather than replacing it.');
-  const settings=await db.query("SELECT school_settings FROM child_profiles WHERE child_id=$1 AND family_id=$2",[childId,familyId]);
+  const settings=await db.query("SELECT school_settings,attendance_enabled FROM child_profiles WHERE child_id=$1 AND family_id=$2",[childId,familyId]);
+  if(options.widget && body.action==='start'){
+   const setting=settings.rows[0],schedule=schoolPlanForDay(setting?.school_settings,day);
+   if(!setting?.attendance_enabled||!schedule?.departure||time<schedule.departure||(schedule.pickup&&time>=schedule.pickup))throw badRequest('No school departure is scheduled now. Open FamilyTrack to check.');
+  }
   const data=normaliseAttendance(body.action==='start'?{...(current?.data||{}),attendance:true,attendanceStatus:'attended',setting:current?.data?.setting||settings.rows[0]?.school_settings?.name||'',arrival:time,collection:'',schoolStartedAt:now.toISOString(),schoolEndedAt:null,schoolActive:true}:{...current.data,collection:current.day===day?time:'',schoolEndedAt:now.toISOString(),schoolActive:false});
   let saved;
   if(current)saved=await db.query('UPDATE care_logs SET data=$3,log_time=$4,updated_at=now() WHERE id=$1 AND family_id=$2 RETURNING id,updated_at',[current.id,familyId,JSON.stringify(data),data.arrival||null]);

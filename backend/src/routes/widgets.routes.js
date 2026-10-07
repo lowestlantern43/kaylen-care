@@ -1,3 +1,4 @@
+import {widgetSchoolAction} from '../services/widgetSchool.js';
 import { widgetSleepAction } from '../services/widgetSleep.js';
 import { Router } from 'express';
 import { sessionCookieName } from '../utils/sessions.js';
@@ -21,7 +22,7 @@ widgetsRouter.use((req,res,next) => {
 widgetsRouter.post('/families/:familyId/access', requireAuth, requirePrivacyConsent, requireFamilyMember,
   asyncHandler(async(req,res) => {
     const installationId = requireUuid(req.body?.installationId, 'Installation ID');
-    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId,req.cookies?.[sessionCookieName],req.body?.sleepActions === true);
+    const data = await issueWidgetAccess(req.user.id,req.familyMember.family_id,installationId,req.cookies?.[sessionCookieName],req.body?.sleepActions === true,req.body?.schoolActions === true);
     res.json({data,error:null});
   }));
 widgetsRouter.delete('/access', asyncHandler(async(req,res) => {
@@ -46,4 +47,10 @@ widgetsRouter.post('/sleep', asyncHandler(async(req,res) => {
   const access = await readWidgetAccess(token);
   const data = await widgetSleepAction(access, req.body);
   res.json({data,error:null});
+}));
+
+widgetsRouter.post('/school',asyncHandler(async(req,res)=>{
+ const access=await readWidgetAccess(bearerWidgetToken(req));
+ const data=await widgetSchoolAction(access,req.body);
+ res.json({data,error:null});
 }));
