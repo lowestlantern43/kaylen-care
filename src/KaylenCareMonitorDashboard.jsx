@@ -1293,6 +1293,11 @@ export default function KaylenCareMonitorDashboard({
   const [draftPrompts, setDraftPrompts] = useState({});
   const [draggingCardTitle, setDraggingCardTitle] = useState("");
   const [isReorderMode, setIsReorderMode] = useState(false);
+  useEffect(() => {
+    const arrange = () => {setActiveSection(null);setIsReorderMode(value=>!value);};
+    window.addEventListener('familytrack:arrange-tiles',arrange);
+    return ()=>window.removeEventListener('familytrack:arrange-tiles',arrange);
+  }, []);
   const [dashboardOrder, setDashboardOrder] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("familytrack:dashboard-order") || "[]");
@@ -16240,7 +16245,7 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <div className="mb-4">
-          <DashboardLayout key={`${currentUser?.id||'local'}:${familyId}:${childId}`} storageKey={`familytrack:tiles:v1:${currentUser?.id||'local'}:${familyId}:${childId}`} items={[
+          <DashboardLayout editing={isReorderMode} setEditing={setIsReorderMode} key={`${currentUser?.id||'local'}:${familyId}:${childId}`} storageKey={`familytrack:tiles:v1:${currentUser?.id||'local'}:${familyId}:${childId}`} items={[
             {id:'hydration',label:'Hydration',wide:true,content:(isModuleEnabled("drink") ? (
               <article className="relative overflow-hidden rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition">
                 <button
