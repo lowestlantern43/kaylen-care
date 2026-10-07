@@ -7,6 +7,7 @@ import ArchivedCareProfiles from "./ArchivedCareProfiles";
 import ChildSetupWizard from "./ChildSetupWizard";
 import PrivacyGate from "./PrivacyGate";
 import "./adminTheme.css";
+import "./profile-switcher.css";
 import AdminNavigation from "./components/AdminNavigation";
 import AdminServiceHealth from "./components/AdminServiceHealth";
 import AdminFamilyList from "./components/AdminFamilyList";
