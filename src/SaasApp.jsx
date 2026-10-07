@@ -7476,7 +7476,15 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
       {!showAdmin && !showPlatformAdmin ? (
       <div className="border-b border-slate-200 bg-white/80 px-3 py-3 shadow-sm backdrop-blur">
         <div className="mx-auto max-w-6xl">
-          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-24 md:pr-36 shadow-md">
+          <div className="relative rounded-2xl border border-indigo-100 bg-gradient-to-r from-indigo-100 via-purple-50 to-white px-4 py-3 pr-36 md:pr-44 shadow-md">
+            <button type="button" onClick={() => window.dispatchEvent(new Event("familytrack:arrange-tiles"))}
+              className="absolute right-24 md:right-[8.5rem] top-3 flex h-9 w-9 items-center justify-center rounded-full border border-indigo-100 bg-white/90 text-indigo-700 shadow-sm hover:bg-indigo-50"
+              title="Arrange dashboard tiles" aria-label="Arrange dashboard tiles">
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="15" width="6" height="6" rx="1.5"/>
+                <path d="M16 3v18m-3-15 3-3 3 3m-6 12 3 3 3-3"/>
+              </svg>
+            </button>
             <button type="button" onClick={() => window.dispatchEvent(new Event("familytrack:desktop-menu"))}
               className="absolute right-24 top-3 hidden h-9 w-9 items-center justify-center rounded-full border border-indigo-100 bg-white/90 text-indigo-700 shadow-sm hover:bg-indigo-50 md:flex"
               title="Tools & settings" aria-label="Open tools and settings">
