@@ -7593,7 +7593,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
               <div className="flex min-w-0 flex-1 flex-col gap-3 lg:flex-row lg:items-center lg:justify-end">
                 <div className="min-w-0 flex-1 lg:max-w-xl">
-                  <div className="flex gap-2 overflow-x-auto pb-1">
+                  <div className="care-profile-switcher" aria-label="Care profiles">
                   {children.map((child) => {
                     const childName = childDisplayName(child);
                     const isSelected = selectedChildId === child.id;
@@ -7602,7 +7602,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         key={child.id}
                         type="button"
                         onClick={() => selectChild(child.id)}
-                        className={`inline-flex items-center gap-2 whitespace-nowrap rounded-full border px-3 py-2 text-sm font-bold transition ${
+                        className={`care-profile-button inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${
                           isSelected
                             ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
                             : "border-slate-200 bg-white text-slate-700 shadow-sm"
