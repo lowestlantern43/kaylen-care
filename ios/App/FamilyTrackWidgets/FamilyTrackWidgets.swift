@@ -46,6 +46,13 @@ struct ChildSnapshot: Codable, Identifiable {
     var sleepingSince: Double?
     var schoolSince: Double?
     var schoolPickup: String?
+    var schoolDeparture: Double?
+    var schoolPickupAt: Double?
+    var schoolDayEnd: Double?
+    var schoolLogId: String?
+    var schoolUpdatedAt: String?
+    var canStartSchool: Bool?
+    var canEndSchool: Bool?
     var photo: String?
     var smartInsights: [SmartInsight]?
 }
@@ -136,6 +143,9 @@ struct CareProvider: AppIntentTimelineProvider {
             if parts.count == 2, let bedtime = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: current.date), bedtime > current.date {
                 dates.insert(bedtime)
             }
+        }
+        for time in [current.child?.schoolDeparture, current.child?.schoolPickupAt, current.child?.schoolDayEnd].compactMap({ $0 }) {
+            if time > current.date.timeIntervalSince1970 { dates.insert(Date(timeIntervalSince1970: time)) }
         }
         let entries = dates.sorted().map { CareEntry(date: $0, configuration: configuration, child: current.child) }
         return Timeline(entries: entries, policy: .after(current.date.addingTimeInterval(600)))
@@ -274,6 +284,14 @@ struct CareWidgetView: View {
                 if Calendar.current.isDate(Date(timeIntervalSince1970: started), inSameDayAs: entry.date), sameDay, let pickup = child.schoolPickup, !pickup.isEmpty {
                     Text("Pickup \(pickup)").font(.caption.weight(.semibold))
                 } else { Text("Since \(Date(timeIntervalSince1970: started), style: .time)").font(.caption) }
+                if child.canEndSchool == true {
+                    if let pickup = child.schoolPickupAt, entry.date.timeIntervalSince1970 >= pickup { Text("Picked up?").font(.caption.weight(.semibold)) }
+                    schoolButton(child, action: "end", title: "Home", symbol: "house.fill")
+                }
+            } else if canOfferSchool(child) {
+                Image(systemName: "building.2.fill").font(.title2).foregroundStyle(.indigo)
+                Text("Ready for school?").font(.caption.weight(.semibold))
+                schoolButton(child, action: "start", title: "Leave", symbol: "arrow.up.right")
             } else if canOfferSleep(child) {
                 VStack(alignment: .center, spacing: 8) {
                     Image(systemName: "moon.stars.fill")
@@ -290,6 +308,18 @@ struct CareWidgetView: View {
             } else { Text("No activity recorded").font(.caption) }
             }
         }
+    }
+    private func canOfferSchool(_ child: ChildSnapshot) -> Bool {
+        guard child.canStartSchool == true, let departure = child.schoolDeparture, let end = child.schoolDayEnd else { return false }
+        let now = entry.date.timeIntervalSince1970
+        return now >= departure && now < min(child.schoolPickupAt ?? end, end)
+    }
+    private func schoolButton(_ child: ChildSnapshot, action: String, title: String, symbol: String) -> some View {
+        Button(intent: SchoolLogIntent(profileID: child.id, action: action, expectedSchoolID: child.schoolLogId ?? "", expectedUpdatedAt: child.schoolUpdatedAt ?? "")) {
+            Label(title, systemImage: symbol).font(.system(size: compact ? 12 : 14, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                .frame(maxWidth: .infinity, minHeight: compact ? 30 : 36)
+        }.buttonStyle(.borderedProminent).tint(.indigo)
+        .accessibilityLabel("\(action == "start" ? "Left for school" : "Picked up or home") for \(child.name)")
     }
     private func canOfferSleep(_ child: ChildSnapshot) -> Bool {
         guard child.canStartSleep == true, let time = child.usualBedtime else { return false }
@@ -497,6 +527,66 @@ enum WidgetSleepAction {
             if let http = response as? HTTPURLResponse {
                 if http.statusCode == 200 { message = action == "start" ? "Sleep started" : "Wake-up saved" }
                 else if http.statusCode == 409 { message = "Sleep changed. Check app." }
+                else if http.statusCode == 401 || http.statusCode == 403 { message = "Open app to check access." }
+            }
+        } catch { message = "Check connection; open app." }
+        guard WidgetBackground.grant()?.generation == access.generation else { return }
+        if let data = try? JSONSerialization.data(withJSONObject: ["profile": profileID,"time": Date().timeIntervalSince1970,"message": message]) {
+            try? WidgetBackground.save(data, name: "widget-action-\(access.generation).json")
+        }
+        await WidgetFetcher.shared.refresh(force: true)
+    }
+}
+
+@available(iOS 17.0, *)
+struct SchoolLogIntent: AppIntent {
+    static var title: LocalizedStringResource = "Log school"
+    static var openAppWhenRun: Bool = false
+    static var authenticationPolicy: IntentAuthenticationPolicy = .requiresAuthentication
+    @Parameter(title: "Care profile") var profileID: String
+    @Parameter(title: "Action") var action: String
+    @Parameter(title: "Expected school session") var expectedSchoolID: String
+    @Parameter(title: "Expected update") var expectedUpdatedAt: String
+    init() {}
+    init(profileID: String, action: String, expectedSchoolID: String, expectedUpdatedAt: String) {
+        self.profileID = profileID; self.action = action; self.expectedSchoolID = expectedSchoolID; self.expectedUpdatedAt = expectedUpdatedAt
+    }
+    func perform() async throws -> some IntentResult {
+        await WidgetSchoolAction.save(profileID: profileID, action: action, expectedSchoolID: expectedSchoolID, expectedUpdatedAt: expectedUpdatedAt)
+        WidgetCenter.shared.reloadAllTimelines()
+        return .result()
+    }
+}
+
+@available(iOS 17.0, *)
+enum WidgetSchoolAction {
+    static func message(for profile: String) -> String? {
+        guard let access = WidgetBackground.grant(), let saved = WidgetBackground.dictionary("widget-action-\(access.generation).json"),
+              saved["profile"] as? String == profile, let time = saved["time"] as? Double,
+              Date().timeIntervalSince1970 - time < 180 else { return nil }
+        return saved["message"] as? String
+    }
+    static func save(profileID: String, action: String, expectedSchoolID: String, expectedUpdatedAt: String) async {
+        guard let access = WidgetBackground.grant(), access.expires > Date().timeIntervalSince1970, !WidgetBackground.denied(access),
+              let family = access.scope.split(separator: ":").last,
+              profileID.hasPrefix("\(family):"), let child = profileID.split(separator: ":").last else { return }
+        var message = "Not saved. Open app to check."
+        var request = URLRequest(url: URL(string: "https://familytrack.care/api/widgets/school")!)
+        request.httpMethod = "POST"; request.timeoutInterval = 12
+        request.setValue("Bearer \(access.token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["childId": String(child), "action": action,
+            "expectedLogId": expectedSchoolID, "expectedUpdatedAt": expectedUpdatedAt, "timeZone": TimeZone.current.identifier])
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil; config.urlCache = nil; config.timeoutIntervalForResource = 15
+        let session = URLSession(configuration: config, delegate: WidgetNoRedirect(), delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        do {
+            let (_, response) = try await session.data(for: request)
+            guard WidgetBackground.grant()?.generation == access.generation else { return }
+            if let http = response as? HTTPURLResponse {
+                if http.statusCode == 200 { message = action == "start" ? "Left for school saved" : "Pickup saved" }
+                else if http.statusCode == 409 { message = "School changed. Check app." }
                 else if http.statusCode == 401 || http.statusCode == 403 { message = "Open app to check access." }
             }
         } catch { message = "Check connection; open app." }

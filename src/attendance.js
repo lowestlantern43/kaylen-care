@@ -1,4 +1,4 @@
-export const attendanceLabels = {attended:'Present',part_day:'Part-day',training:'Training / inset day',school_holiday:'School holiday',holiday:'Personal holiday',medical:'Medical appointment',sick:'Sick day',other:'Other absence'};
+export const attendanceLabels = {attended:'Present',not_scheduled:'Not a school day',part_day:'Part-day',training:'Training / inset day',school_holiday:'School holiday',holiday:'Personal holiday',medical:'Medical appointment',sick:'Sick day',other:'Other absence'};
 export function attendanceDates(start,end=start) {
  const valid=d=>typeof d==='string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && Number.isFinite(Date.parse(d+'T12:00:00Z')) && new Date(d+'T12:00:00Z').toISOString().slice(0,10)===d;
  if(!valid(start)||!valid(end)||end<start)throw new Error('Choose a valid date range.');

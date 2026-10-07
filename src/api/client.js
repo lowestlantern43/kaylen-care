@@ -162,7 +162,7 @@ export const api = {
   activationInsights: () => request('/admin/insights/activation'),
   correctCareLog: (familyId,id,payload) => request(`/families/${familyId}/care-logs/${id}/correction`,{method:"POST",body:JSON.stringify(payload)}),
   issueWidgetAccess: (familyId, installationId) => request(`/widgets/families/${familyId}/access`, {
-    method: 'POST', body: JSON.stringify({installationId, sleepActions: true}),
+    method: 'POST', body: JSON.stringify({installationId, sleepActions: true, schoolActions: true}),
   }),
   archiveCareProfile: (familyId, id) => request(`/families/${familyId}/children/${id}`, { method: 'DELETE' }),
   adminArchivedProfiles: () => request('/admin/archived-profiles'),

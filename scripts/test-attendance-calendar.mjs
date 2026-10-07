@@ -17,3 +17,11 @@ console.log('PASS calendar statuses, neutral future dates, active/completed sess
 assert.equal(calendarOnlyAttendance({attendance:true,attendanceStatus:'school_holiday'}),true);
 assert.equal(calendarOnlyAttendance({attendance:true,attendanceStatus:'attended'}),false);
 assert.equal(calendarOnlyAttendance({attendance:true,attendanceStatus:'medical'}),false);
+
+const schoolWeek={days:{mon:{enabled:true},tue:{enabled:true},wed:{enabled:true},thu:{enabled:true},fri:{enabled:true}}};
+assert.equal(attendanceState(null,'2026-10-10',day,schoolWeek),'not_scheduled');
+assert.equal(attendanceState(null,'2026-10-07',day,schoolWeek),'neutral');
+assert.equal(attendanceState(null,'2026-10-10',day,{}),'neutral');
+assert.equal(attendanceState(entry('holiday'),'2026-10-10',day,schoolWeek),'closed');
+assert.equal(attendanceState(entry('attended'),'2026-10-10',day,schoolWeek),'present');
+assert.equal(calendarOnlyAttendance({attendance:true,attendanceStatus:'not_scheduled'}),true);

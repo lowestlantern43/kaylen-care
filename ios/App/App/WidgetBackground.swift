@@ -54,7 +54,7 @@ enum WidgetBackground {
             let remoteProfile = profiles.first { $0["id"] as? String == id }
             var chosen = (localProfile?["updated"] as? Double ?? 0) > (remoteProfile?["updated"] as? Double ?? 0) ? localProfile ?? item : remoteProfile ?? item
             // Action permissions and state come only from a successful server snapshot.
-            for key in ["canStartSleep", "canEndSleep", "sleepLogId", "sleepCompletedAt"] {
+            for key in ["canStartSleep", "canEndSleep", "sleepLogId", "sleepCompletedAt", "canStartSchool", "canEndSchool", "schoolLogId", "schoolUpdatedAt", "schoolDeparture", "schoolPickupAt", "schoolDayEnd"] {
                 chosen[key] = remoteProfile?[key]
             }
             if let photo = localProfile?["photo"] as? String { chosen["photo"] = photo }

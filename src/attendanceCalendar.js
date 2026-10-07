@@ -1,8 +1,9 @@
 import {schoolPlanForDay} from './schoolSettings.js';
 export const localDay=(date=new Date())=>`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-export function attendanceState(entry,day,today=localDay()){
- if(!entry)return 'neutral';
+export function attendanceState(entry,day,today=localDay(),settings={}){
+ if(!entry)return Object.values(settings?.days||{}).some(day=>day?.enabled===true) && !schoolPlanForDay(settings,day) ? 'not_scheduled' : 'neutral';
  const d=entry.rawData||{};
+ if(d.attendanceStatus==='not_scheduled')return 'not_scheduled';
  if(d.schoolActive&&!d.schoolEndedAt&&!d.collection&&d.attendanceStatus==='attended')return 'active';
  if(d.partDay||d.attendanceStatus==='part_day')return 'partial';
  if(d.attendanceStatus==='attended')return 'present';
@@ -17,4 +18,4 @@ export function pickupConfirmationDue(active,settings,now=new Date()){
  return now>=due;
 }
 
-export const calendarOnlyAttendance = data => data?.attendance === true && ['school_holiday','holiday','training'].includes(data.attendanceStatus);
+export const calendarOnlyAttendance = data => data?.attendance === true && ['school_holiday','holiday','training','not_scheduled'].includes(data.attendanceStatus);
