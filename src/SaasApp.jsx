@@ -198,6 +198,14 @@ const MODULE_VISIBILITY_ICONS = {
   timeline: "Search",
   calendar: "Cal",
 };
+const screenshotDimensions = {
+  "/screenshots/dashboard.png": [1072, 1467],
+  "/screenshots/logging-food.png": [1320, 1660],
+  "/screenshots/medication-log.png": [1320, 1904],
+  "/screenshots/reports-page.png": [1320, 1873],
+  "/screenshots/sleep-log.png": [1320, 1788],
+};
+
 const screenshotAssets = {
   "/screenshots/dashboard.png": dashboardScreenshot,
   "/screenshots/logging-food.png": foodScreenshot,
@@ -218,7 +226,7 @@ function formatStripeDiscount(subscription = {}) {
 
 const publicPages = {
   "/": {
-    title: "FamilyTrack - Simple Care Tracking for Families",
+    title: "FamilyTrack | Care Diary, Medication & Sleep Tracker",
     description:
       "FamilyTrack helps parents and carers keep medication, sleep, hydration, behaviour and appointments organised in one secure place.",
     h1: "When appointments ask questions you can't fully remember.",
@@ -279,9 +287,9 @@ const publicPages = {
       "Create useful care reports from food, sleep, medication, toileting and health logs for appointments and reviews.",
     h1: "Create care reports from daily family logs",
     canonical: `${PRODUCTION_URL}/care-report-app`,
-    screenshot: "/screenshots/pdf-report.png",
+    screenshot: "/screenshots/reports-page.png",
     screenshotAlt:
-      "FamilyTrack PDF care report prepared for sharing with professionals",
+      "FamilyTrack report builder for preparing care reports",
     focus:
       "Turn everyday logging into compact reports for appointments, reviews, carers and school conversations.",
   },
@@ -1350,6 +1358,24 @@ function ChildPhotoPreview({ child, url }) {
   );
 }
 
+function publicStructuredData(page, faqs = []) {
+  const graph = [
+    { "@type": "Organization", "@id": `${PRODUCTION_URL}/#organization`, name: "FamilyTrack", url: `${PRODUCTION_URL}/`, logo: `${PRODUCTION_URL}/familytrack-care-icon-512.png` },
+    { "@type": "WebSite", "@id": `${PRODUCTION_URL}/#website`, name: "FamilyTrack", url: `${PRODUCTION_URL}/`, publisher: { "@id": `${PRODUCTION_URL}/#organization` } },
+    { "@type": "WebPage", "@id": `${page.canonical}#webpage`, url: page.canonical, name: page.title, description: page.description, isPartOf: { "@id": `${PRODUCTION_URL}/#website` } },
+  ];
+  if (page.canonical === `${PRODUCTION_URL}/`) {
+    graph.push({ "@type": "SoftwareApplication", name: "FamilyTrack", url: page.canonical, applicationCategory: "LifestyleApplication", operatingSystem: "iOS, Web", description: page.description });
+  } else {
+    graph.push({ "@type": "BreadcrumbList", itemListElement: [
+      { "@type": "ListItem", position: 1, name: "FamilyTrack", item: `${PRODUCTION_URL}/` },
+      { "@type": "ListItem", position: 2, name: page.h1, item: page.canonical },
+    ] });
+  }
+  if (faqs.length) graph.push({ "@type": "FAQPage", mainEntity: faqs.map(([question, answer]) => ({ "@type": "Question", name: question, acceptedAnswer: { "@type": "Answer", text: answer } })) });
+  return { "@context": "https://schema.org", "@graph": graph };
+}
+
 function SeoHead({ page, jsonLd }) {
   useEffect(() => {
     const upsertMeta = (selector, attrs) => {
@@ -1402,6 +1428,12 @@ function SeoHead({ page, jsonLd }) {
       identity: { property: "og:image" },
       values: { content: page.ogImage || `${PRODUCTION_URL}${page.screenshot || "/screenshots/dashboard.png"}` },
     });
+    for (const [name, content] of Object.entries({
+      "twitter:card": "summary_large_image",
+      "twitter:title": page.title,
+      "twitter:description": page.description,
+      "twitter:image": page.ogImage || `${PRODUCTION_URL}${page.screenshot || "/screenshots/dashboard.png"}`,
+    })) upsertMeta(`meta[name='${name}']`, { identity: { name }, values: { content } });
     upsertLink("link[rel='canonical']", {
       rel: "canonical",
       href: page.canonical,
@@ -1461,6 +1493,9 @@ function MarketingScreenshot({
       src={displaySrc}
       alt={alt}
       loading={priority ? "eager" : "lazy"}
+      decoding="async"
+      width={screenshotDimensions[src]?.[0]}
+      height={screenshotDimensions[src]?.[1]}
       className={`${sizeClass} rounded-[1.5rem] border border-slate-200 bg-white object-contain shadow-xl ${className}`}
       onError={() => setFailed(true)}
     />
@@ -1788,21 +1823,7 @@ function LandingPage({ onStartFree, onLogin, pricing = DEFAULT_PUBLIC_PRICING })
     ? []
     : pricing.documentVault?.tiers || [];
   const firstStorageTier = documentVaultTiers[0];
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "WebApplication",
-    name: "FamilyTrack",
-    url: PRODUCTION_URL,
-    applicationCategory: "LifestyleApplication",
-    operatingSystem: "Web",
-    description: page.description,
-    offers: {
-      "@type": "Offer",
-      price: "0",
-      priceCurrency: "GBP",
-      description: "Free trial available",
-    },
-  };
+  const jsonLd = publicStructuredData(page);
 
   const features = [
     [
@@ -2140,18 +2161,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
   const path = new URL(page.canonical).pathname;
   const content = seoLandingContent[path] || seoLandingContent["/care-report-app"];
   const faqs = content.faqs;
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "FAQPage",
-    mainEntity: faqs.map(([question, answer]) => ({
-      "@type": "Question",
-      name: question,
-      acceptedAnswer: {
-        "@type": "Answer",
-        text: answer,
-      },
-    })),
-  };
+  const jsonLd = publicStructuredData(page, faqs);
   const relatedLinks = landingPageLinks.filter(([href]) => href !== path);
 
   return (
@@ -2177,7 +2187,7 @@ function SeoLandingPage({ page, onStartFree, onLogin }) {
               <button type="button" onClick={onStartFree} className={buttonClass}>
                 Start tracking
               </button>
-              <a href="/care-report-app" className={secondaryButtonClass}>
+              <a href="/#reports-example" className={secondaryButtonClass}>
                 View reports example
               </a>
             </div>
@@ -15502,3 +15512,6 @@ function CompleteStripeSetupScreen({
     </div>
   );
 }
+
+// Build-time rendering uses the same public components as visitors. No workspace is rendered.
+export { LandingPage, SeoLandingPage, publicPages, seoLandingContent, publicStructuredData };
