@@ -10,6 +10,7 @@ import { IS_NATIVE_APP } from "./platform";
 import { hasNativePush, nativePermission, registerNativePush, disableNativePush, currentPushEndpoint, savedNativePush, listenForPushTap, promptNativePushAfterSignIn } from "./nativePush";
 import CompanionAccessScreen from "./CompanionAccessScreen";
 import "./settings-layout.css";
+import "./profile-switcher.css";
 import { Component, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import KaylenCareMonitorDashboard from "./KaylenCareMonitorDashboard";
@@ -7573,7 +7574,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
               <div className="min-w-0 border-t border-indigo-100/80 pt-3">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap gap-2">
+                  <div className="care-profile-switcher" aria-label="Care profiles">
                   {children.map((child) => {
                     const childName = childDisplayName(child);
                     const isSelected = selectedChildId === child.id;
@@ -7583,7 +7584,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                         type="button"
                         onClick={() => selectChild(child.id)}
                         aria-pressed={isSelected}
-                        className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${
+                        className={`care-profile-button inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-bold transition ${
                           isSelected
                             ? "border-indigo-300 bg-indigo-600 text-white shadow-sm"
                             : "border-slate-200 bg-white text-slate-700 shadow-sm"
