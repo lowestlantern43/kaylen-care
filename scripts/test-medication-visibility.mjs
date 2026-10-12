@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import { medicationVisibleNow as visible } from '../src/medicationVisibility.js';
+const at = time => new Date(`2026-10-13T${time}:00`);
+assert.equal(visible({times:['20:00']},at('17:59')),false);
+assert.equal(visible({times:['20:00']},at('18:00')),true);
+assert.equal(visible({times:['20:00']},at('21:00')),true,'unresolved overdue dose stays visible');
+assert.equal(visible({timeWindow:'evening'},at('17:59')),false);
+assert.equal(visible({timeWindow:'evening'},at('18:00')),true);
+assert.equal(visible({times:['11:00'],timeWindow:'morning'},at('08:59')),false);
+assert.equal(visible({times:['11:00'],timeWindow:'morning'},at('09:00')),true);
+assert.equal(visible({times:['08:00','20:00'],timeWindow:'evening'},at('15:00')),false);
+assert.equal(visible({times:['01:00']},at('00:00')),true);
+assert.equal(visible({},at('10:00')),true,'unscheduled records remain accessible');
+console.log('Medication display timing checks passed');
