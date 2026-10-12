@@ -1,3 +1,4 @@
+import { medicationVisibleNow } from "./medicationVisibility";
 import {calendarOnlyAttendance} from './attendanceCalendar';
 import DashboardLayout from './components/DashboardLayout';
 import SchoolSessionControls from './components/SchoolSessionControls';
@@ -4596,6 +4597,15 @@ export default function KaylenCareMonitorDashboard({
     };
   }, [sharedLog]);
 
+  const [medicationDisplayTime, setMedicationDisplayTime] = useState(() => Date.now());
+  useEffect(() => {
+    const refresh = () => setMedicationDisplayTime(Date.now());
+    const timer = setInterval(refresh, 60000);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { clearInterval(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, []);
+
   const todayDashboard = useMemo(() => {
     const today = todayValue();
     const now = new Date();
@@ -4760,7 +4770,7 @@ export default function KaylenCareMonitorDashboard({
       });
 
     const requiredMedication = allRequiredMedication.filter(
-      (item) => !["taken", "skipped"].includes(item.status),
+      (item) => !["taken", "skipped"].includes(item.status) && medicationVisibleNow(item, now),
     );
     const activeRequiredMedication = requiredMedication.filter((item) =>
       ["due", "missed"].includes(item.status),
@@ -4790,6 +4800,7 @@ export default function KaylenCareMonitorDashboard({
       alerts,
     };
   }, [
+    medicationDisplayTime,
     childProfile.dailyFluidTargetMl,
     profileMedicationOptions,
     sharedLog,

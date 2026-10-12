@@ -20,6 +20,11 @@ struct MedicineRecord: Codable {
     var timestamp: Double
     var window: String?
     var windowEnd: Double?
+    var displayFrom: Double { timestamp - (window == nil ? 7200 : 0) }
+    func visible(at date: Date) -> Bool {
+        Calendar.current.isDate(Date(timeIntervalSince1970: timestamp), inSameDayAs: date)
+            && date.timeIntervalSince1970 >= displayFrom
+    }
     func windowLabel(at date: Date) -> String? {
         guard let window = window else { return nil }
         if let end = windowEnd, date.timeIntervalSince1970 >= end {
@@ -138,6 +143,11 @@ struct CareProvider: AppIntentTimelineProvider {
         let current = entry(configuration)
         // Re-evaluate saved data at the original fifteen-minute timeline intervals.
         var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0)*900) })
+        for medicine in current.child?.medicines ?? [] {
+            for boundary in [medicine.displayFrom, medicine.timestamp, medicine.windowEnd].compactMap({ $0 }) {
+                if boundary > current.date.timeIntervalSince1970 { dates.insert(Date(timeIntervalSince1970: boundary)) }
+            }
+        }
         if let time = current.child?.usualBedtime {
             let parts = time.split(separator: ":").compactMap { Int($0) }
             if parts.count == 2, let bedtime = Calendar.current.date(bySettingHour: parts[0], minute: parts[1], second: 0, of: current.date), bedtime > current.date {
@@ -225,7 +235,7 @@ struct CareWidgetView: View {
                 Label("Medication", systemImage: "pills.fill").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).lineLimit(1)
                 insightIndicator(child, kind: "medication")
             }
-            if let med = child.medicines.first(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
+            if let med = child.medicines.first(where: { $0.visible(at: entry.date) }) {
                 Text(entry.configuration.showMedicine ? med.name : "Medication").font(compact ? .subheadline.weight(.semibold) : .headline).lineLimit(2)
                 if entry.configuration.showMedicine { Text(med.dose).font(.caption).lineLimit(1) }
                 if let label = med.windowLabel(at: entry.date) {
@@ -237,6 +247,8 @@ struct CareWidgetView: View {
                     Text("Overdue").font(.caption.weight(.semibold)).foregroundStyle(.orange)
                 }
                 if !Calendar.current.isDate(Date(timeIntervalSince1970: med.timestamp), inSameDayAs: entry.date) { Text(Date(timeIntervalSince1970: med.timestamp), style: .date).font(.caption) }
+            } else if child.medicines.contains(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
+                Text("\(child.medicines.filter { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }.count) due later today").font(.caption.weight(.semibold))
             } else if sameDay { Text("Nothing else due today").font(.caption) }
             else { Text("Open app for today's schedule").font(.caption) }
         }
@@ -396,6 +408,8 @@ struct LockScreenProvider: AppIntentTimelineProvider {
         let end = current.date.addingTimeInterval(21600)
         var dates = Set((0...24).map { current.date.addingTimeInterval(Double($0) * 900) })
         for medicine in current.child?.medicines ?? [] {
+            let display = Date(timeIntervalSince1970: medicine.displayFrom)
+            if display > current.date && display < end { dates.insert(display) }
             let boundary = Date(timeIntervalSince1970: (medicine.windowEnd ?? medicine.timestamp) + 1)
             if boundary > current.date && boundary < end { dates.insert(boundary) }
         }
@@ -415,7 +429,7 @@ struct LockScreenCareView: View {
                     Text("Open diary to refresh").font(.headline).lineLimit(1)
                     Text("Saved information is not current").font(.caption2).lineLimit(1)
                 } else if upcoming {
-                    if let medicine = child.medicines.first(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
+                    if let medicine = child.medicines.first(where: { $0.visible(at: entry.date) }) {
                         Text(entry.configuration.showMedicine ? medicine.name : "Next scheduled medication")
                             .font(.headline).lineLimit(1)
                         HStack(spacing: 4) {
@@ -426,6 +440,8 @@ struct LockScreenCareView: View {
                             if let label = medicine.windowLabel(at: entry.date) { Text(label) }
                             else { Text(Date(timeIntervalSince1970: medicine.timestamp), style: .time) }
                         }.font(.caption)
+                    } else if child.medicines.contains(where: { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }) {
+                        Text("\(child.medicines.filter { Calendar.current.isDate(Date(timeIntervalSince1970: $0.timestamp), inSameDayAs: entry.date) }.count) due later today").font(.caption.weight(.semibold)).lineLimit(2)
                     } else if Calendar.current.isDate(Date(timeIntervalSince1970: child.updated), inSameDayAs: entry.date) {
                         Text("Nothing else due today").font(.caption.weight(.semibold)).lineLimit(2)
                     } else {
