@@ -7,7 +7,9 @@ export function attendanceState(entry,day,today=localDay(),settings={}){
  if(d.schoolActive&&!d.schoolEndedAt&&!d.collection&&d.attendanceStatus==='attended')return 'active';
  if(d.partDay||d.attendanceStatus==='part_day')return 'partial';
  if(d.attendanceStatus==='attended')return 'present';
- if(['holiday','school_holiday','training'].includes(d.attendanceStatus))return 'closed';
+ if(d.attendanceStatus==='holiday')return 'holiday';
+ if(d.attendanceStatus==='training')return 'training';
+ if(d.attendanceStatus==='school_holiday')return 'closed';
  return 'absent';
 }
 export function pickupConfirmationDue(active,settings,now=new Date()){
