@@ -5,8 +5,11 @@ const entries=[row('a','drink','Water'),row('b','drink','Other profile drink'),r
 assert.deepEqual(suggest({saved:[' water '],entries,childId:'a',isDrink:true,query:'wa'}),[{label:'water',source:'Saved'}]);
 assert.deepEqual(suggest({entries,childId:'a',isDrink:true,query:'juice'}),[{label:'Apple juice',source:'Previous entry'}]);
 assert.deepEqual(suggest({entries,childId:'a',query:'toa'}),[{label:'Toast',source:'Previous entry'}]);
-assert.equal(suggest({entries,childId:'a',isDrink:true}).some(x=>x.label.includes('Other')),false);
-assert.equal(suggest({entries:[{...row('a','food','Tube feed'),rawData:{feeding:true,item:'Tube feed'}}],childId:'a'}).length,0);
-assert.equal(suggest({saved:Array.from({length:20},(_,i)=>'Item '+i)}).length,8);
+assert.equal(suggest({entries,childId:'a',isDrink:true,query:'Other'}).some(x=>x.label.includes('Other')),false);
+assert.equal(suggest({entries:[{...row('a','food','Tube feed'),rawData:{feeding:true,item:'Tube feed'}}],childId:'a',query:'Tube'}).length,0);
+assert.equal(suggest({saved:Array.from({length:20},(_,i)=>'Item '+i),query:'Item'}).length,8);
 assert.deepEqual(suggest({saved:['Milk'],query:'tea'}),[]);
 console.log('PASS matching, deduplication, food/drink and profile separation, feed exclusion and result limit');
+
+assert.deepEqual(suggest({saved:['Milk'],entries,childId:'a',isDrink:true}),[]);
+assert.deepEqual(suggest({saved:['Toast'],entries,childId:'a',query:'   '}),[]);
