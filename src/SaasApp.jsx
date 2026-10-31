@@ -5292,7 +5292,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
     if (!selectedFamilyId || !selectedChildId || !option?.id) return;
 
     const label = option.label || "item";
-    const kind = option.category === "location" ? "Location" : "Food";
+    const kind = option.category === "location" ? "Location" : option.category === "drink" ? "Drink" : "Food";
     const confirmed = window.confirm(`Remove ${label}?`);
     if (!confirmed) return;
 
@@ -9652,7 +9652,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
 
                   <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-3">
                     <h3 className="font-bold text-slate-900">
-                      Saved foods and locations
+                      Saved foods, drinks and locations
                     </h3>
                     <p className="mt-1 text-sm text-slate-600">
                       These appear in the food and drink form for the selected child.
@@ -9681,8 +9681,8 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                           </button>
                         </div>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {groupedCareOptions.food.length ? (
-                            groupedCareOptions.food.map((option) => (
+                          {(groupedCareOptions.food.length + groupedCareOptions.drink.length) ? (
+                            [...groupedCareOptions.food, ...groupedCareOptions.drink].map((option) => (
                               <span
                                 key={option.id}
                                 className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-bold text-slate-600 shadow-sm"
@@ -9700,7 +9700,7 @@ function WorkspaceGate({ session, onLogout, publicPricing = DEFAULT_PUBLIC_PRICI
                             ))
                           ) : (
                             <p className="text-sm text-slate-500">
-                              No regular foods saved yet.
+                              No foods or drinks saved yet.
                             </p>
                           )}
                         </div>
