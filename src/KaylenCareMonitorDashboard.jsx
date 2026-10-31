@@ -16239,7 +16239,7 @@ export default function KaylenCareMonitorDashboard({
         ) : null}
 
         <div className="mb-4">
-          <DashboardLayout editing={isReorderMode} setEditing={setIsReorderMode} key={`${currentUser?.id||'local'}:${familyId}:${childId}`} storageKey={`familytrack:tiles:v1:${currentUser?.id||'local'}:${familyId}:${childId}`} items={[
+          <DashboardLayout editing={isReorderMode} setEditing={setIsReorderMode} key={currentUser?.id||'local'} storageKey={`familytrack:tiles:v2:${currentUser?.id||'local'}`} legacyStorageKey={`familytrack:tiles:v1:${currentUser?.id||'local'}:${familyId}:${childId}`} items={[
             {id:'hydration',label:'Hydration',wide:true,content:(isModuleEnabled("drink") ? (
               <article className="relative overflow-hidden rounded-[1.55rem] border border-sky-200 bg-gradient-to-br from-sky-100 via-cyan-50 to-white p-4 text-left shadow-md shadow-sky-100/70 transition">
                 <button
