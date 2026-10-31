@@ -1,3 +1,4 @@
+import {foodDrinkSuggestions} from "./foodDrinkSuggestions";
 import { medicationVisibleNow } from "./medicationVisibility";
 import {calendarOnlyAttendance} from './attendanceCalendar';
 import DashboardLayout from './components/DashboardLayout';
@@ -8327,13 +8328,14 @@ export default function KaylenCareMonitorDashboard({
     ];
     const savedFoodSuggestions = uniqueList(
       isDrink
-        ? [...customDrinkLabels, ...savedFoodOptions.filter(isLikelyDrinkLabel)]
+        ? [...customDrinkLabels, ...(useSaasApi ? [] : savedFoodOptions.filter(isLikelyDrinkLabel))]
         : [
             ...customFoodLabels,
-            ...savedFoodOptions.filter((item) => !isLikelyDrinkLabel(item)),
+            ...(useSaasApi ? [] : savedFoodOptions.filter((item) => !isLikelyDrinkLabel(item))),
             ...(useSaasApi ? [] : ["Cottage pie", "Weetabix", "Heinz Fruit Custard"]),
           ],
     );
+    const matchingFoodSuggestions = foodDrinkSuggestions({saved:savedFoodSuggestions,entries:sharedLog,childId,isDrink,query:typedFood});
     const showOtherLocation = foodForm.location === "Other";
     const typedLocation = foodForm.otherLocation?.trim() || "";
     const selectedLocation = showOtherLocation
@@ -8474,9 +8476,9 @@ export default function KaylenCareMonitorDashboard({
               setFoodForm({ ...foodForm, otherItem: e.target.value, item: "" })
             }
           />
-          {savedFoodSuggestions.length ? (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {savedFoodSuggestions.map((item) => (
+          {matchingFoodSuggestions.length ? (
+            <div className="mt-3 flex flex-wrap gap-2" aria-label="Food and drink suggestions">
+              {matchingFoodSuggestions.map(({label:item,source}) => (
                 <button
                   key={item}
                   type="button"
@@ -8490,7 +8492,7 @@ export default function KaylenCareMonitorDashboard({
                   }}
                   className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800"
                 >
-                  {item}
+                  {item}<span className="ml-2 font-normal">{source}</span>
                 </button>
               ))}
             </div>
